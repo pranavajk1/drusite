@@ -4,12 +4,12 @@
 // to-do's checkbox, a toggle's arrow, a callout's icon, a divider's rule).
 
 import type { Node } from "prosemirror-model";
-import { Plugin, PluginKey, type Transaction } from "prosemirror-state";
+import { type EditorState, Plugin, PluginKey, TextSelection, type Transaction } from "prosemirror-state";
 import { ReplaceStep } from "prosemirror-transform";
 import { Decoration, DecorationSet, type EditorView, type NodeView } from "prosemirror-view";
 
 import { attrsOf } from "./convert";
-import { blockDom } from "./schema";
+import { blockDom, blockType, schema } from "./schema";
 
 interface Display {
   /** Toggles that are folded, by block ID (view state only, never saved). */
@@ -83,16 +83,53 @@ export const displayPlugin = new Plugin<Display>({
   },
   props: {
     decorations: (state) => key.getState(state)?.decorations ?? DecorationSet.empty,
+    // A divider's text isn't shown, so typing with the cursor on one starts a new line below it.
+    handleTextInput(view, from, to, text) {
+      const $from = view.state.doc.resolve(from);
+      if ($from.depth !== 1 || attrsOf($from.parent).kind.type !== "divider" || to !== from) return false;
+      const after = $from.after(1);
+      const para = blockType.create({ id: null, kind: { type: "paragraph" }, indent: attrsOf($from.parent).indent }, schema.text(text));
+      const tr = view.state.tr.insert(after, para);
+      view.dispatch(tr.setSelection(TextSelection.create(tr.doc, after + 1 + text.length)).scrollIntoView());
+      return true;
+    },
   },
 });
 
-/** Folds or unfolds a toggle. */
+/** Folds or unfolds a toggle. A cursor inside what folds away moves to the end of the toggle. */
 export function toggleFold(view: EditorView, id: string): void {
-  view.dispatch(view.state.tr.setMeta(FOLD, id).setMeta("addToHistory", false));
+  const { state } = view;
+  const tr = state.tr.setMeta(FOLD, id).setMeta("addToHistory", false);
+  const at = blockPos(state.doc, id);
+  if (at !== null && !isFolded(state, id)) {
+    const toggle = state.doc.nodeAt(at)!;
+    const end = at + toggle.nodeSize;
+    const hiddenTo = childrenEnd(state.doc, at);
+    const { from, to } = state.selection;
+    if (hiddenTo > end && to > end && from < hiddenTo) tr.setSelection(TextSelection.create(tr.doc, end - 1));
+  }
+  view.dispatch(tr);
 }
 
-export function isFolded(view: EditorView, id: string): boolean {
-  return key.getState(view.state)?.folded.has(id) ?? false;
+/** Where block `id` starts, or null. */
+function blockPos(doc: Node, id: string): number | null {
+  let found: number | null = null;
+  doc.forEach((node, pos) => {
+    if (found === null && attrsOf(node).id === id) found = pos;
+  });
+  return found;
+}
+
+/** The end of the blocks nested under the block at `pos` (those after it, indented deeper). */
+export function childrenEnd(doc: Node, pos: number): number {
+  const indent = attrsOf(doc.nodeAt(pos)!).indent;
+  let at = pos + doc.nodeAt(pos)!.nodeSize;
+  for (let next = doc.nodeAt(at); next && attrsOf(next).indent > indent; next = doc.nodeAt(at)) at += next.nodeSize;
+  return at;
+}
+
+export function isFolded(state: EditorState, id: string): boolean {
+  return key.getState(state)?.folded.has(id) ?? false;
 }
 
 function control(tag: string, className: string): HTMLElement {
@@ -174,8 +211,8 @@ export function blockView(node: Node, view: EditorView, getPos: () => number | u
     const arrow = control("button", "toggle-arrow");
     arrow.setAttribute("aria-label", "Fold");
     const sync = () => {
-      const folded = id() !== null && isFolded(view, id()!);
-      arrow.textContent = folded ? "▸" : "▾";
+      const folded = id() !== null && isFolded(view.state, id()!);
+      arrow.textContent = "▶";
       arrow.setAttribute("aria-expanded", String(!folded));
     };
     sync();

@@ -42,7 +42,8 @@ pub enum Command {
     DeletePage {
         page: PageId,
     },
-    /// Loads a page for editing. Answered with [`Response::Opened`].
+    /// Loads a page for editing. Answered with [`Response::Opened`]. Each open is matched by a
+    /// [`Command::ClosePage`]; the page stays open until every view that opened it has closed it.
     OpenPage {
         page: PageId,
     },

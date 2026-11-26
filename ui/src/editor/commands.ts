@@ -15,10 +15,12 @@ import {
 } from "prosemirror-commands";
 import { redo, undo } from "prosemirror-history";
 import { InputRule, inputRules } from "prosemirror-inputrules";
+import type { MarkType } from "prosemirror-model";
 import { keymap } from "prosemirror-keymap";
-import type { Plugin, Command as PmCommand, EditorState, Transaction } from "prosemirror-state";
+import { type Plugin, type Command as PmCommand, type EditorState, TextSelection, type Transaction } from "prosemirror-state";
 
 import type { BlockKind } from "../core/types";
+import { childrenEnd, isFolded } from "./blocks";
 import { attrsOf } from "./convert";
 import { type BlockAttrs, MAX_INDENT, blockType, schema } from "./schema";
 
@@ -59,6 +61,17 @@ const enter: PmCommand = (state, dispatch) => {
     dispatch?.(tr);
     return true;
   }
+  // At the end of a folded toggle, the new line goes after what the toggle hides, not into it.
+  const node = state.doc.nodeAt(block.pos)!;
+  const id = block.attrs.id;
+  if (kind.type === "toggle" && id && isFolded(state, id) && state.selection.empty && state.selection.$from.parentOffset === node.content.size) {
+    const at = childrenEnd(state.doc, block.pos);
+    if (dispatch) {
+      const tr = state.tr.insert(at, blockType.create({ id: null, kind: { type: "paragraph" }, indent }));
+      dispatch(tr.setSelection(TextSelection.create(tr.doc, at + 1)).scrollIntoView());
+    }
+    return true;
+  }
   const atStart = state.selection.empty && state.selection.$from.parentOffset === 0 && !block.empty;
   const split = splitBlockAs((node, atEnd) => {
     const a = attrsOf(node);
@@ -84,6 +97,13 @@ const backspaceAtStart: PmCommand = (state, dispatch) => {
   }
   if (block.attrs.indent > 0) {
     dispatch?.(setAttrs(state.tr, block.pos, { indent: block.attrs.indent - 1 }));
+    return true;
+  }
+  // Backspace just after a divider removes the divider.
+  const $pos = state.doc.resolve(block.pos);
+  const prev = $pos.nodeBefore;
+  if (prev && attrsOf(prev).kind.type === "divider") {
+    dispatch?.(state.tr.delete(block.pos - prev.nodeSize, block.pos));
     return true;
   }
   return false;
@@ -142,6 +162,30 @@ const toggleTodo: PmCommand = (state, dispatch) => {
   return true;
 };
 
+/** Mod-Enter in a code block: leaves it for a new paragraph below. */
+const exitCode: PmCommand = (state, dispatch) => {
+  const block = currentBlock(state);
+  if (!block || block.attrs.kind.type !== "code") return false;
+  if (dispatch) {
+    const after = block.pos + state.doc.nodeAt(block.pos)!.nodeSize;
+    const tr = state.tr.insert(after, blockType.create({ id: null, kind: { type: "paragraph" }, indent: block.attrs.indent }));
+    dispatch(tr.setSelection(TextSelection.create(tr.doc, after + 1)).scrollIntoView());
+  }
+  return true;
+};
+
+/** Puts the cursor at the end of the page, on an empty paragraph, adding one if the last block isn't. */
+export const focusEnd: PmCommand = (state, dispatch) => {
+  const last = state.doc.lastChild!;
+  const a = attrsOf(last);
+  const tr = state.tr;
+  if (last.content.size > 0 || a.kind.type !== "paragraph") {
+    tr.insert(state.doc.content.size, blockType.create({ id: null, kind: { type: "paragraph" }, indent: 0 }));
+  }
+  dispatch?.(tr.setSelection(TextSelection.atEnd(tr.doc)).scrollIntoView());
+  return true;
+};
+
 const insertNewline: PmCommand = (state, dispatch) => {
   dispatch?.(state.tr.insertText("\n").scrollIntoView());
   return true;
@@ -149,11 +193,27 @@ const insertNewline: PmCommand = (state, dispatch) => {
 
 const marks = schema.marks;
 
+/**
+ * Like toggleMark, for a mark that doesn't grow when you type at its end (inline code). Typing
+ * there is already plain, but the mark looks on, so the shortcut must turn it off, not on again.
+ */
+function toggleClosedMark(type: MarkType): PmCommand {
+  const toggle = toggleMark(type);
+  return (state, dispatch) => {
+    const { empty, $cursor } = state.selection as TextSelection;
+    if (empty && $cursor && !state.storedMarks && $cursor.nodeBefore && type.isInSet($cursor.nodeBefore.marks) && !type.isInSet($cursor.marks())) {
+      dispatch?.(state.tr.setStoredMarks($cursor.marks()));
+      return true;
+    }
+    return toggle(state, dispatch);
+  };
+}
+
 export function editorKeymap(): Plugin {
   return keymap({
     Enter: enter,
     "Shift-Enter": insertNewline,
-    "Mod-Enter": toggleTodo,
+    "Mod-Enter": chainCommands(toggleTodo, exitCode),
     Backspace: chainCommands(deleteSelection, backspaceAtStart, joinBackward, selectNodeBackward),
     Delete: chainCommands(deleteSelection, joinForward),
     Tab: indentBy(1),
@@ -165,7 +225,7 @@ export function editorKeymap(): Plugin {
     "Mod-i": toggleMark(marks.italic!),
     "Mod-u": toggleMark(marks.underline!),
     "Mod-Shift-x": toggleMark(marks.strikethrough!),
-    "Mod-e": toggleMark(marks.code!),
+    "Mod-e": toggleClosedMark(marks.code!),
     "Mod-Alt-0": setKind({ type: "paragraph" }),
     "Mod-Alt-1": setKind({ type: "heading", level: "h1" }),
     "Mod-Alt-2": setKind({ type: "heading", level: "h2" }),
@@ -195,7 +255,23 @@ export function markdownShortcuts(): Plugin {
       rule(/^\[( |x)?\]\s$/, (m) => ({ type: "todo", checked: m[1] === "x" })),
       rule(/^"\s$/, () => ({ type: "quote" })),
       rule(/^```$/, () => ({ type: "code", language: "" })),
-      rule(/^---$/, () => ({ type: "divider" })),
+      new InputRule(/^---$/, (state, _match, start, end) => {
+        // A divider holds no text you can see, so the cursor goes on to a new line below it.
+        const $start = state.doc.resolve(start);
+        if ($start.parentOffset !== 0) return null;
+        const pos = $start.before(1);
+        const block = state.doc.nodeAt(pos)!;
+        const tr = state.tr.delete(start, end);
+        tr.setNodeAttribute(pos, "kind", { type: "divider" });
+        const rest = tr.doc.nodeAt(pos)!;
+        // Text after the `---` moves to the new line rather than hiding inside the divider.
+        const text = rest.content;
+        if (text.size > 0) tr.delete(pos + 1, pos + 1 + text.size);
+        const para = blockType.create({ id: null, kind: { type: "paragraph" }, indent: attrsOf(block).indent }, text);
+        const at = pos + tr.doc.nodeAt(pos)!.nodeSize;
+        tr.insert(at, para);
+        return tr.setSelection(TextSelection.create(tr.doc, at + 1));
+      }),
       rule(/^!\s$/, () => ({ type: "callout", icon: "💡" })),
       rule(/^>\s$/, () => ({ type: "toggle" })),
     ],

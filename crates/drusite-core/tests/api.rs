@@ -334,3 +334,86 @@ fn patches_keep_the_editor_in_step_with_the_core() {
         );
     }
 }
+
+/// Pasting over a page's only block, as the editor sends it: the block goes, the pasted ones
+/// come in at the top. The page then holds just what was pasted, after a reopen too.
+#[test]
+fn replacing_the_only_block_leaves_just_the_new_ones() {
+    let dir = tempfile::tempdir().unwrap();
+    let key = StoreKey::generate().unwrap();
+    let (mut core, _) = core(dir.path(), &key);
+    let page = create(&mut core, "Paste");
+    let only = open(&mut core, page).blocks[0].id;
+    let out = edit(
+        &mut core,
+        page,
+        vec![
+            Edit::DeleteBlock { block: only },
+            Edit::InsertBlock {
+                after: None,
+                kind: BlockKind::Heading {
+                    level: HeadingLevel::H1,
+                },
+            },
+        ],
+    );
+    let heading = out.created[0];
+    let out = edit(
+        &mut core,
+        page,
+        vec![
+            Edit::InsertBlock {
+                after: Some(heading),
+                kind: BlockKind::Paragraph,
+            },
+            Edit::InsertText {
+                block: heading,
+                pos: 0,
+                text: "Title".into(),
+            },
+        ],
+    );
+    edit(
+        &mut core,
+        page,
+        vec![Edit::InsertText {
+            block: out.created[0],
+            pos: 0,
+            text: "Body".into(),
+        }],
+    );
+    let view = open(&mut core, page);
+    assert_eq!(texts(&view.blocks), ["Title", "Body"]);
+    assert_eq!(
+        view.blocks[0].kind,
+        BlockKind::Heading {
+            level: HeadingLevel::H1
+        }
+    );
+    drop(core);
+    let (mut core, _) = self::core(dir.path(), &key);
+    assert_eq!(texts(&open(&mut core, page).blocks), ["Title", "Body"]);
+}
+
+/// Two views of one page (an editor still closing while a new one opens it): the first close
+/// leaves the page open for the other.
+#[test]
+fn a_page_stays_open_until_every_view_closes_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut core, _) = core(dir.path(), &StoreKey::generate().unwrap());
+    let page = create(&mut core, "Twice");
+    let block = open(&mut core, page).blocks[0].id;
+    open(&mut core, page);
+    core.handle(Command::ClosePage { page }).unwrap();
+    let typed = vec![Edit::InsertText {
+        block,
+        pos: 0,
+        text: "still open".into(),
+    }];
+    edit(&mut core, page, typed.clone());
+    core.handle(Command::ClosePage { page }).unwrap();
+    let err = core
+        .handle(Command::Edit { page, edits: typed })
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::PageNotOpen);
+}

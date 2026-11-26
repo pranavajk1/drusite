@@ -35,6 +35,9 @@ pub struct Core {
 struct OpenPage {
     page: Page,
     at: SavePoint,
+    /// How many views have it open. A view that closes after another opened the same page (a
+    /// quick switch away and back) mustn't close it under the newer one.
+    views: u32,
 }
 
 impl std::fmt::Debug for Core {
@@ -107,11 +110,20 @@ impl Core {
                 self.save_workspace()?;
                 Ok(Response::Done)
             }
-            Command::OpenPage { page } => Ok(Response::Opened {
-                view: self.open_page(page)?,
-            }),
+            Command::OpenPage { page } => {
+                let view = self.open_page(page)?;
+                if let Some(open) = self.open.get_mut(&page) {
+                    open.views += 1;
+                }
+                Ok(Response::Opened { view })
+            }
             Command::ClosePage { page } => {
-                self.open.remove(&page);
+                if let Some(open) = self.open.get_mut(&page) {
+                    open.views = open.views.saturating_sub(1);
+                    if open.views == 0 {
+                        self.open.remove(&page);
+                    }
+                }
                 Ok(Response::Done)
             }
             Command::Edit { page, edits } => Ok(Response::Edited {
@@ -149,7 +161,7 @@ impl Core {
             // Only pages in the tree can be opened.
             self.workspace.title(id)?;
             let (page, at) = self.store.load_page(id)?;
-            self.open.insert(id, OpenPage { page, at });
+            self.open.insert(id, OpenPage { page, at, views: 0 });
         }
         self.view(id)
     }
@@ -186,8 +198,11 @@ impl Core {
         if matches!(failure, Some(drusite_crdt::Error::Poisoned)) {
             // Loro failed inside this page: drop it and reload what was last saved.
             let reason = failure.map(|e| e.to_string()).unwrap_or_default();
-            self.open.remove(&id);
+            let views = self.open.remove(&id).map_or(0, |o| o.views);
             let view = self.open_page(id)?;
+            if let Some(open) = self.open.get_mut(&id) {
+                open.views = views;
+            }
             (self.events)(Event::PageReloaded {
                 view,
                 reason: reason.clone(),

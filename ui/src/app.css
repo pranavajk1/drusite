@@ -116,11 +116,37 @@ button {
   outline: 2px solid var(--accent);
 }
 
-.tree-caret {
+.tree-row.drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.tree-row.drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.tree-caret,
+.editor .toggle-arrow {
   width: 20px;
+  height: 20px;
+  display: inline-grid;
+  place-items: center;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 10px;
+  line-height: 1;
+  border-radius: 4px;
   flex: none;
+  transition: transform 0.1s;
+}
+
+/* A triangle pointing right when folded, down when open. */
+.tree-caret[aria-expanded="true"],
+.editor .toggle-arrow[aria-expanded="true"] {
+  transform: rotate(90deg);
+}
+
+.tree-caret:not(:disabled):hover,
+.editor .toggle-arrow:hover {
+  background: var(--line);
 }
 
 .tree-caret:disabled {
@@ -142,6 +168,7 @@ button {
 }
 
 .tree-row:hover .tree-action,
+.tree-row:focus-within .tree-action,
 .tree-action.confirm {
   visibility: visible;
 }
@@ -190,8 +217,18 @@ button {
 
 .page {
   max-width: 720px;
+  min-height: 100%;
   margin: 0 auto;
-  padding: 64px 48px 30vh;
+  padding: 64px 48px 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* All the space below the last block; clicking it continues the page. */
+.page-tail {
+  flex: 1;
+  min-height: 30vh;
+  cursor: text;
 }
 
 .page-title {
@@ -288,9 +325,7 @@ button {
 }
 
 .editor .toggle-arrow {
-  width: 20px;
-  color: var(--muted);
-  flex: none;
+  margin-top: 0.15em;
 }
 
 .editor .block-callout {

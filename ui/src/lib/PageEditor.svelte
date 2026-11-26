@@ -5,6 +5,7 @@
 
   import type { CoreClient } from "../core/client";
   import type { PageId } from "../core/types";
+  import { focusEnd } from "../editor/commands";
   import { type Editor, createEditor } from "../editor/editor";
 
   let {
@@ -21,6 +22,11 @@
     onerror: (e: unknown) => void;
   } = $props();
 
+  // This editor's page, fixed when it's made. The `page` prop is live: once the app switches to
+  // another page, it already names that one while this editor is still saving and closing.
+  // svelte-ignore state_referenced_locally
+  const id = page;
+
   let mount: HTMLDivElement;
   let editor: Editor | null = null;
   let draft = $state("");
@@ -36,7 +42,7 @@
     renaming = setTimeout(async () => {
       renaming = undefined;
       try {
-        await client.renamePage(page, draft);
+        await client.renamePage(id, draft);
       } catch (e) {
         onerror(e);
       }
@@ -52,19 +58,41 @@
     view.focus();
   }
 
+  let titleInput: HTMLInputElement;
+
+  /** Arrow Up on the first line of the page goes to the title. */
+  function bodyKey(e: KeyboardEvent) {
+    if (e.key !== "ArrowUp" || e.shiftKey || e.altKey || e.metaKey || e.ctrlKey || !editor) return;
+    const { view } = editor;
+    const { head, empty } = view.state.selection;
+    if (!empty || view.state.doc.resolve(head).index(0) !== 0 || !view.endOfTextblock("up")) return;
+    e.preventDefault();
+    titleInput.focus();
+    titleInput.setSelectionRange(titleInput.value.length, titleInput.value.length);
+  }
+
+  /** A click in the space below the last block continues the page there. */
+  function tailDown(e: MouseEvent) {
+    if (!editor || e.button !== 0) return;
+    e.preventDefault();
+    const { view } = editor;
+    focusEnd(view.state, view.dispatch);
+    view.focus();
+  }
+
   onMount(() => {
     let closed = false;
     const stop = client.subscribe((event) => {
       if (!editor) return;
-      if (event.type === "pageReloaded" && event.view.id === page) void editor.sync.reload(event.view);
-      if (event.type === "pageChanged" && event.page === page) void editor.sync.reload();
+      if (event.type === "pageReloaded" && event.view.id === id) void editor.sync.reload(event.view);
+      if (event.type === "pageChanged" && event.page === id) void editor.sync.reload();
     });
     (async () => {
       try {
-        const view = await client.openPage(page);
+        const view = await client.openPage(id);
         if (closed) return;
         editor = createEditor(mount, client, view, onerror);
-        if (view.title === "") document.querySelector<HTMLInputElement>(".page-title")?.focus();
+        if (view.title === "") titleInput.focus();
         else editor.view.focus();
         onopened();
       } catch (e) {
@@ -79,10 +107,10 @@
       void (async () => {
         if (renaming !== undefined) {
           clearTimeout(renaming);
-          await client.renamePage(page, draft).catch(onerror);
+          await client.renamePage(id, draft).catch(onerror);
         }
         await e?.close();
-        await client.closePage(page).catch(onerror);
+        await client.closePage(id).catch(onerror);
       })();
     };
   });
@@ -90,6 +118,7 @@
 
 <article class="page">
   <input
+    bind:this={titleInput}
     class="page-title"
     placeholder="Untitled"
     aria-label="Page title"
@@ -97,5 +126,8 @@
     oninput={rename}
     onkeydown={titleKey}
   />
-  <div class="page-body" bind:this={mount}></div>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="page-body" bind:this={mount} onkeydown={bodyKey}></div>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="page-tail" onmousedown={tailDown}></div>
 </article>

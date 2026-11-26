@@ -275,7 +275,7 @@ impl Page {
         let inner = &mut self.inner;
         self.guard.run(|| {
             let at = inner.body_pos(id, pos)?;
-            let new = inner.insert_marker(id, at, &kind)?;
+            let new = inner.insert_marker(id, at, &kind, true)?;
             inner.doc.commit();
             Ok((
                 new,
@@ -298,7 +298,7 @@ impl Page {
         self.guard.run(|| match after {
             Some(a) => {
                 let (_, end) = inner.layout.text_range(a).ok_or(Error::UnknownBlock(a))?;
-                let new = inner.insert_marker(a, end, &kind)?;
+                let new = inner.insert_marker(a, end, &kind, true)?;
                 inner.doc.commit();
                 Ok((
                     new,
@@ -317,7 +317,9 @@ impl Page {
                     .last()
                     .ok_or(Error::UnknownBlock(inner.genesis))?;
                 let end = inner.layout.body_len;
-                let new = inner.insert_marker(last, end, &kind)?;
+                // The new block only sits after `last` in the text; nobody worked in `last`, so a
+                // deleted first block there stays deleted.
+                let new = inner.insert_marker(last, end, &kind, false)?;
                 inner.order().insert(0, new.to_string())?;
                 Ok((new, inner.finish(before, vec![new])?))
             }
@@ -655,10 +657,17 @@ impl Inner {
 
     /// Inserts a new block's marker at body position `at`, inside block `owner`'s text, with
     /// its attributes. The new block takes the owner's indent.
-    fn insert_marker(&mut self, owner: BlockId, at: usize, kind: &BlockKind) -> Result<BlockId> {
-        // A deleted first block is only shown when it is the only block; working in it brings it
-        // back, as typing into it does.
-        if owner == self.genesis && self.is_hidden(owner) {
+    /// Adds a block marker at body position `at`, inside `owner`'s text range. `worked_in` says
+    /// whether this is an edit in or next to `owner` itself (a split, or a block added after it),
+    /// which brings back a deleted first block, as typing into it does.
+    fn insert_marker(
+        &mut self,
+        owner: BlockId,
+        at: usize,
+        kind: &BlockKind,
+        worked_in: bool,
+    ) -> Result<BlockId> {
+        if worked_in && owner == self.genesis && self.is_hidden(owner) {
             self.set_attr(owner, "hidden", false)?;
         }
         let indent = self.shown_indent(owner);

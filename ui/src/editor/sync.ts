@@ -222,7 +222,12 @@ export class PageSync {
     await this.flush();
     this.queue = [];
     this.alias.clear();
-    const fresh = view ?? (await this.client.openPage(this.page as never));
+    let fresh = view;
+    if (!fresh) {
+      // Opening is counted, so this read is matched by a close; the editor's own open remains.
+      fresh = await this.client.openPage(this.page as never);
+      await this.client.closePage(this.page as never);
+    }
     this.replace(fresh.blocks);
   }
 

@@ -11,6 +11,7 @@ import type { PageView } from "../core/types";
 import { blockView, displayPlugin } from "./blocks";
 import { baseKeys, editorKeymap, markdownShortcuts } from "./commands";
 import { docNode } from "./convert";
+import { clipboardParser } from "./schema";
 import { PageSync, idPlugin } from "./sync";
 
 export interface Editor {
@@ -34,6 +35,7 @@ export function createEditor(
   const view = new EditorView(mount, {
     state,
     nodeViews: { block: blockView },
+    clipboardParser,
     dispatchTransaction: (tr) => sync.dispatch(tr),
     attributes: { class: "editor", spellcheck: "true", "aria-label": "Page content" },
   });

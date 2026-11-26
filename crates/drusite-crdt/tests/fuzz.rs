@@ -84,9 +84,12 @@ fn random_edit(page: &mut Page, rng: &mut fastrand::Rng) {
         _ => match sub {
             0 => page.set_indent(id, rng.u8(..4)).map(drop),
             1 => page.delete_block(id).map(drop),
-            _ => page
-                .insert_block_after(Some(id), BlockKind::Paragraph)
-                .map(drop),
+            _ => {
+                // Now and then at the top of the page, as a paste over the first block does.
+                let after = if rng.u8(..4) == 0 { None } else { Some(id) };
+                page.insert_block_after(after, BlockKind::Paragraph)
+                    .map(drop)
+            }
         },
     };
     match &result {

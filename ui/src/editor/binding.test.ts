@@ -13,6 +13,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { CoreClient } from "../core/client";
 import { MemoryCore } from "../core/memory";
 import type { Block, Edit } from "../core/types";
+import { toggleFold } from "./blocks";
 import { attrsOf, docNode, marksFromCore, unitsOfNode } from "./convert";
 import { type Editor, createEditor } from "./editor";
 import { schema } from "./schema";
@@ -22,6 +23,10 @@ beforeAll(() => {
   Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
   Range.prototype.getBoundingClientRect = () => new DOMRect();
   HTMLElement.prototype.getClientRects = () => [] as unknown as DOMRectList;
+  // jsdom has no ClipboardEvent; ProseMirror's pasteHTML makes one.
+  globalThis.ClipboardEvent ??= class extends Event {
+    clipboardData = null;
+  } as unknown as typeof ClipboardEvent;
 });
 
 async function setup(texts: string[] = ["hello world"]) {
@@ -282,6 +287,120 @@ describe("the binding", () => {
       expect(checked()).toBe(want);
       expect(box().checked).toBe(want);
     }
+  });
+
+  it("keeps line breaks when the browser edits a block's DOM itself", async () => {
+    const t = await setup(["ab"]);
+    const { view } = t.editor;
+    view.dispatch(view.state.tr.setNodeAttribute(0, "kind", { type: "code", language: "" }));
+    cursorAt(t.editor, 0, 1);
+    key(t.editor, "Enter");
+    expect(view.state.doc.textContent).toBe("a\nb");
+    // Typing after a line break, as a browser does it: straight into the DOM, read back later.
+    const code = view.dom.querySelector("code")!;
+    const text = [...code.childNodes].find((n) => n.nodeType === Node.TEXT_NODE && n.textContent!.includes("b"))!;
+    text.textContent += "c";
+    (view as unknown as { domObserver: { flush(): void } }).domObserver.flush();
+    expect(view.state.doc.textContent).toBe("a\nbc");
+    await agree(t);
+  });
+
+  it("leaves a code block with Mod-Enter", async () => {
+    const t = await setup(["let x"]);
+    const { view } = t.editor;
+    view.dispatch(view.state.tr.setNodeAttribute(0, "kind", { type: "code", language: "" }));
+    cursorAt(t.editor, 0, 5);
+    key(t.editor, "Mod-Enter");
+    type(t.editor, "after");
+    await agree(t);
+    expect(norm(shown(t.editor)).map((b) => [b.kind.type, b.text])).toEqual([
+      ["code", "let x"],
+      ["paragraph", "after"],
+    ]);
+  });
+
+  it("makes a divider from --- and carries on below it; Backspace there removes it", async () => {
+    const t = await setup(["above", ""]);
+    cursorAt(t.editor, 1, 0);
+    for (const c of "---") type(t.editor, c);
+    type(t.editor, "below");
+    await agree(t);
+    const kinds = () => norm(shown(t.editor)).map((b) => [b.kind.type, b.text]);
+    expect(kinds()).toEqual([
+      ["paragraph", "above"],
+      ["divider", ""],
+      ["paragraph", "below"],
+    ]);
+    // Typing with the cursor on the divider itself also starts a new line.
+    cursorAt(t.editor, 1, 0);
+    type(t.editor, "x");
+    await agree(t);
+    expect(kinds()[2]).toEqual(["paragraph", "x"]);
+    cursorAt(t.editor, 2, 0);
+    key(t.editor, "Backspace");
+    await agree(t);
+    expect(kinds()).toEqual([
+      ["paragraph", "above"],
+      ["paragraph", "x"],
+      ["paragraph", "below"],
+    ]);
+  });
+
+  it("puts a new line after a folded toggle's hidden blocks, and moves the cursor out when folding", async () => {
+    const t = await setup(["toggle", "child", "after"]);
+    const { view } = t.editor;
+    view.dispatch(view.state.tr.setNodeAttribute(0, "kind", { type: "toggle" }));
+    cursorAt(t.editor, 1, 0);
+    key(t.editor, "Tab");
+    await agree(t);
+    cursorAt(t.editor, 1, 2);
+    toggleFold(view, attrsOf(view.state.doc.child(0)).id!);
+    expect(view.state.selection.from).toBe(view.state.doc.child(0).nodeSize - 1);
+    key(t.editor, "Enter");
+    type(t.editor, "new");
+    await agree(t);
+    expect(norm(shown(t.editor)).map((b) => [b.kind.type, b.indent, b.text])).toEqual([
+      ["toggle", 0, "toggle"],
+      ["paragraph", 1, "child"],
+      ["paragraph", 0, "new"],
+      ["paragraph", 0, "after"],
+    ]);
+  });
+
+  it("turns inline code off with Mod-e at its end", async () => {
+    const t = await setup([""]);
+    cursorAt(t.editor, 0, 0);
+    key(t.editor, "Mod-e");
+    type(t.editor, "code");
+    key(t.editor, "Mod-e");
+    type(t.editor, " plain");
+    await agree(t);
+    const [block] = t.memory.blocks(t.page);
+    expect(block!.spans.map((s) => [s.text, s.marks.code])).toEqual([
+      ["code", true],
+      [" plain", false],
+    ]);
+  });
+
+  it("pastes HTML from other apps as the right kinds of block", async () => {
+    const t = await setup([""]);
+    cursorAt(t.editor, 0, 0);
+    t.editor.view.pasteHTML(
+      "<h5>Small   heading</h5>\n<p>Some\n   wrapped text</p><ol><li>one<ul><li>nested</li></ul></li></ol>" +
+        "<blockquote><p>q1</p><p>q2</p></blockquote><ul><li><input type=checkbox checked> done</li></ul><hr><pre>a\n  b</pre>",
+    );
+    await agree(t);
+    expect(norm(shown(t.editor)).map((b) => [b.kind, b.indent, b.text])).toEqual([
+      [{ type: "heading", level: "h3" }, 0, "Small heading"],
+      [{ type: "paragraph" }, 0, "Some wrapped text"],
+      [{ type: "numbered" }, 0, "one"],
+      [{ type: "bulleted" }, 1, "nested"],
+      [{ type: "quote" }, 0, "q1"],
+      [{ type: "quote" }, 0, "q2"],
+      [{ type: "todo", checked: true }, 0, "done"],
+      [{ type: "divider" }, 0, ""],
+      [{ type: "code", language: "" }, 0, "a\n  b"],
+    ]);
   });
 
   it("stays in step through 1,000 random edits", async () => {

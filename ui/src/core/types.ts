@@ -43,7 +43,10 @@ export type Command =
 { type: "createPage"; parent: PageId | null; title: string } | { type: "renamePage"; page: PageId; title: string } | 
 /**  Moves a page to position `index` among `parent`'s children (or the top-level pages). */
 { type: "movePage"; page: PageId; parent: PageId | null; index: number } | { type: "deletePage"; page: PageId } | 
-/**  Loads a page for editing. Answered with [`Response::Opened`]. */
+/**
+ *  Loads a page for editing. Answered with [`Response::Opened`]. Each open is matched by a
+ *  [`Command::ClosePage`]; the page stays open until every view that opened it has closed it.
+ */
 { type: "openPage"; page: PageId } | { type: "closePage"; page: PageId } | 
 /**
  *  Applies edits to an open page, in order, and saves them. Answered with

@@ -58,11 +58,14 @@
 
   async function deletePage(id: PageId) {
     try {
+      const parent = pages.find((p) => p.id === id)?.parent ?? null;
       await client.deletePage(id);
-      if (current === id) {
-        const rest = await client.listPages();
-        current = rest[0]?.id ?? null;
-        if (current === null) await createPage(null);
+      // Deleting a page deletes the pages inside it, which may include the open one.
+      const rest = await client.listPages();
+      if (current === null || !rest.some((p) => p.id === current)) {
+        const next = rest.find((p) => p.id === parent)?.id ?? rest[0]?.id;
+        if (next) select(next);
+        else await createPage(null);
       }
     } catch (e) {
       show(e);

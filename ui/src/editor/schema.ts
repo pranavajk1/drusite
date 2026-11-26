@@ -4,7 +4,7 @@
 // block is the same node type; what kind of block it is (paragraph, heading, to-do, …) is an
 // attribute, as in the core, so changing it never replaces the node.
 
-import { type DOMOutputSpec, type Mark, type Node, Schema } from "prosemirror-model";
+import { type DOMOutputSpec, DOMParser, type Mark, type Node, type ParseRule, Schema, type TagParseRule } from "prosemirror-model";
 
 import type { BlockKind } from "../core/types";
 
@@ -33,6 +33,24 @@ function blockAttrs(kind: BlockKind) {
     kind: kindFromDom(el) ?? kind,
     indent: Number(el.getAttribute("data-indent") ?? 0) || 0,
   });
+}
+
+function hasParagraphs(el: HTMLElement): boolean {
+  return [...el.children].some((c) => c.tagName === "P");
+}
+
+/** A pasted list item: numbered inside `<ol>`, a to-do with a checkbox, indented by how deeply it's nested. */
+function listItemAttrs(li: HTMLElement): BlockAttrs {
+  if (li.hasAttribute("data-kind")) return blockAttrs({ type: "bulleted" })(li);
+  const box = li.querySelector<HTMLInputElement>(":scope > input[type=checkbox], :scope > p > input[type=checkbox]");
+  let depth = -1;
+  for (let p: HTMLElement | null = li; p; p = p.parentElement) if (p.tagName === "UL" || p.tagName === "OL") depth++;
+  const kind: BlockKind = box
+    ? { type: "todo", checked: box.checked || box.hasAttribute("checked") }
+    : li.parentElement?.tagName === "OL"
+      ? { type: "numbered" }
+      : { type: "bulleted" };
+  return { id: null, kind, indent: Math.max(0, Math.min(depth, MAX_INDENT)) };
 }
 
 export function blockDom(node: Node): DOMOutputSpec {
@@ -67,6 +85,9 @@ export const schema = new Schema({
         indent: { default: 0 },
       },
       defining: true,
+      // Line breaks (Shift-Enter, and every line of a code block) are text. Without this, when the
+      // browser edits a block's DOM directly and ProseMirror reads it back, they turn into spaces.
+      whitespace: "pre",
       toDOM: blockDom,
       parseDOM: [
         { tag: "[data-kind]", getAttrs: blockAttrs({ type: "paragraph" }) },
@@ -74,9 +95,16 @@ export const schema = new Schema({
         { tag: "h2", getAttrs: blockAttrs({ type: "heading", level: "h2" }) },
         { tag: "h3", getAttrs: blockAttrs({ type: "heading", level: "h3" }) },
         { tag: "h4", getAttrs: blockAttrs({ type: "heading", level: "h3" }) },
-        { tag: "blockquote", getAttrs: blockAttrs({ type: "quote" }) },
+        { tag: "h5", getAttrs: blockAttrs({ type: "heading", level: "h3" }) },
+        { tag: "h6", getAttrs: blockAttrs({ type: "heading", level: "h3" }) },
+        // A quote or list item holding paragraphs (as many apps paste them) becomes one block per
+        // paragraph, each keeping the quote's or the item's kind.
+        { tag: "blockquote", getAttrs: (el: HTMLElement) => (hasParagraphs(el) ? false : blockAttrs({ type: "quote" })(el)) },
+        { tag: "blockquote > p", getAttrs: blockAttrs({ type: "quote" }) },
         { tag: "pre", getAttrs: blockAttrs({ type: "code", language: "" }), preserveWhitespace: "full" },
-        { tag: "li", getAttrs: blockAttrs({ type: "bulleted" }) },
+        { tag: "li", getAttrs: (el: HTMLElement) => (hasParagraphs(el) ? false : listItemAttrs(el)) },
+        { tag: "li > p", getAttrs: (el: HTMLElement) => listItemAttrs(el.parentElement!) },
+        { tag: "hr", getAttrs: blockAttrs({ type: "divider" }) },
         { tag: "p", getAttrs: blockAttrs({ type: "paragraph" }) },
       ],
     },
@@ -116,6 +144,20 @@ export const schema = new Schema({
 });
 
 export const blockType = schema.nodes.block!;
+
+/**
+ * For pasted HTML. Blocks keep their line breaks, but HTML from elsewhere wraps its source lines
+ * wherever it likes, so outside a `<pre>` or Drusite's own blocks its whitespace collapses as a
+ * browser would show it.
+ */
+const isTag = (rule: ParseRule): rule is TagParseRule => "tag" in rule && typeof rule.tag === "string";
+export const clipboardParser = new DOMParser(
+  schema,
+  DOMParser.fromSchema(schema).rules.map((rule): ParseRule => {
+    if (!isTag(rule) || rule.node !== "block" || rule.tag === "pre") return rule;
+    return { ...rule, preserveWhitespace: rule.tag === "[data-kind]" ? ("full" as const) : false };
+  }),
+);
 
 /** The mark keys the core knows, in the order the core reports them. */
 export const MARK_KEYS = ["bold", "italic", "underline", "strikethrough", "code", "link"] as const;

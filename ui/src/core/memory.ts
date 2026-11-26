@@ -86,6 +86,8 @@ function checkPos(b: MemBlock, pos: number): void {
 
 export class MemoryCore {
   private pages: MemPage[] = [];
+  /** How many views have each page open, as the core counts them. */
+  private readonly open = new Map<PageId, number>();
   private readonly listeners = new Set<(e: Event) => void>();
 
   readonly transport: Transport = {
@@ -182,17 +184,26 @@ export class MemoryCore {
         const p = this.page(command.page);
         if (p.parent !== null) this.page(p.parent).children = this.page(p.parent).children.filter((c) => c !== p.id);
         this.pages = this.pages.filter((x) => !gone.has(x.id));
+        this.open.delete(command.page);
         this.emit({ type: "pagesChanged", pages: this.info() });
         return { type: "done" };
       }
       case "openPage": {
         const p = this.page(command.page);
+        this.open.set(p.id, (this.open.get(p.id) ?? 0) + 1);
         return { type: "opened", view: { id: p.id, title: p.title, blocks: this.blocks(p.id) } };
       }
-      case "closePage":
+      case "closePage": {
+        const views = (this.open.get(command.page) ?? 0) - 1;
+        if (views > 0) this.open.set(command.page, views);
+        else this.open.delete(command.page);
+        return { type: "done" };
+      }
       case "ready":
         return { type: "done" };
       case "edit":
+        // As in the core, only an open page takes edits.
+        if (!this.open.has(command.page)) fail("pageNotOpen", `page ${command.page} isn't open`);
         return { type: "edited", outcome: this.edit(command.page, command.edits) };
     }
   }
@@ -277,18 +288,11 @@ export class MemoryCore {
           touched.add(prev.id);
           break;
         }
-        case "deleteBlock": {
-          const i = find(e.block);
-          if (p.blocks.length === 1) {
-            const b = p.blocks[0]!;
-            b.text = "";
-            b.marks = [];
-            touched.add(b.id);
-          } else {
-            p.blocks.splice(i, 1);
-          }
+        case "deleteBlock":
+          // As in the core, even the last block goes; the editor always sends what replaces it
+          // in the same batch.
+          p.blocks.splice(find(e.block), 1);
           break;
-        }
         case "setKind":
           p.blocks[find(e.block)]!.kind = e.kind;
           touched.add(e.block);
