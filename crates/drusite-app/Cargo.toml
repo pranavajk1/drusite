@@ -1,0 +1,13 @@
+[package]
+name = "drusite-app"
+description = "The Tauri 2 shell: an adapter from the Core API to Tauri."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,3 @@
+[alias]
+# Build and run the repo's own tooling (budgets, fixtures) in release mode, so timings mean something.
+xtask = "run --release --locked --package xtask --"

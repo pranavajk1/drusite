@@ -1,0 +1,13 @@
+[package]
+name = "drusite-core"
+description = "The client engine and the Core API the UI talks to."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

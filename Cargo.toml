@@ -1,0 +1,36 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "xtask"]
+default-members = ["crates/*"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.100"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/pranavajk1/drusite"
+authors = ["Pranava"]
+publish = false
+
+[workspace.dependencies]
+# Third-party. Each is the newest stable release when added; bump them together.
+anyhow = "1.0.105"
+fastrand = "2.5.0"
+libc = "0.2.191"
+loro = "1.19.1"
+sysinfo = { version = "0.40.4", default-features = false, features = ["system"] }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "warn"
+
+[profile.release]
+debug = "line-tables-only"

@@ -1,0 +1,10 @@
+node_modules/
+dist/
+target/
+.DS_Store
+gen/
+*.keystore
+*.jks
+
+# Phase 0 spikes: local verification only, never committed
+spikes/
