@@ -19,11 +19,12 @@ pub(crate) const RAM_FIXTURE_PAGES: usize = 1_000;
 /// Blocks in the page the keystroke check types into.
 pub(crate) const KEYSTROKE_BLOCKS: usize = 10_000;
 
-/// The 95th-percentile cost of one keystroke in the core: apply it to the page's Loro document,
-/// commit, and export the update the store will append. Spike 1 measured ProseMirror alone at
+/// The 95th-percentile cost of one key in the core, for each of typing a character, Enter (a
+/// split) and Backspace at the start of a block (a join): the edit through `drusite-crdt`, its
+/// commit, and exporting the update the store appends. Spike 1 measured ProseMirror alone at
 /// 4.7 ms a keystroke at 10,000 blocks on a phone, against an 8.3 ms frame at 120 Hz, so the
-/// core's share has to stay a small part of the rest. Loro alone costs a few µs on a Mac; the
-/// headroom is for what later steps add to the same path (the store append, the block patch).
+/// core's share has to stay a small part of the rest. The core costs about 4–12 µs on a Mac; the
+/// headroom is for slower CI runners and what later steps add to the same path.
 pub(crate) const KEYSTROKE_P95_NANOS: u64 = 500_000;
 
 /// The median keystroke at [`KEYSTROKE_BLOCKS`] may cost at most this many times the median

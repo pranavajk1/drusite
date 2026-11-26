@@ -45,8 +45,8 @@ A new or updated dependency needs a `cargo vet` audit or exemption (`cargo vet c
 
 - **Idle RAM**: 250 MiB for the desktop app, every process counted (the webview's too), with a
   1,000-page workspace and one page open.
-- **Keystroke**: the core's cost of one typed character in a 10,000-block page, and how much that
-  cost grows from a 100-block page.
+- **Keystroke**: the core's cost of typing a character, Enter and Backspace in a 10,000-block page,
+  and how much each grows from a 100-block page.
 
 The numbers and the reasons for them are in [`xtask/src/budgets.rs`](xtask/src/budgets.rs).
 Changing one is a reviewed change to that file.

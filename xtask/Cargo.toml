@@ -11,8 +11,9 @@ publish.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+drusite-crdt.workspace = true
+drusite-model.workspace = true
 fastrand.workspace = true
-loro.workspace = true
 sysinfo.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]

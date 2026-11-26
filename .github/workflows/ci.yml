@@ -60,9 +60,9 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
       # The browser version needs everything outside the platform crates to build as WebAssembly.
-      - name: Build drusite-wasm for wasm32
+      - name: Build the portable crates for wasm32
         if: matrix.os == 'ubuntu-latest'
-        run: cargo build --package drusite-wasm --target wasm32-unknown-unknown --locked
+        run: cargo build --package drusite-model --package drusite-crdt --package drusite-wasm --target wasm32-unknown-unknown --locked
 
   budgets:
     name: performance budgets (${{ matrix.os }})
