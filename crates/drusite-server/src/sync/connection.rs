@@ -26,6 +26,9 @@ use crate::auth::tokens::{self, GrantId};
 
 /// How often a connection checks its device is still signed in.
 const RECHECK: Duration = Duration::from_secs(60);
+/// Devices ping every 30 seconds; one silent for this long is gone (a phone that lost its
+/// network without closing), so its connection is closed rather than kept forever.
+const SILENT_FOR: Duration = Duration::from_secs(150);
 /// Close codes (4000–4999 are the application's).
 const CLOSE_SIGNED_OUT: u16 = 4001;
 
@@ -92,6 +95,7 @@ fn error(code: ErrorCode, message: impl Into<String>, doc: &[u8], push_id: u64) 
         message: message.into(),
         doc: doc.to_vec(),
         push_id,
+        version: Vec::new(),
     }))
 }
 
@@ -101,6 +105,15 @@ fn doc_error(e: &DocError, doc: &[u8], push_id: u64) -> ServerMessage {
         DocError::NotFound => ErrorCode::NotFound,
         DocError::Invalid(_) => ErrorCode::InvalidUpdate,
         DocError::TooLarge => ErrorCode::TooLarge,
+        DocError::Gap(version) => {
+            return ServerMessage::new(Body::Error(drusite_proto::Error {
+                code: ErrorCode::MissingDependencies as i32,
+                message: e.to_string(),
+                doc: doc.to_vec(),
+                push_id,
+                version: version.clone(),
+            }));
+        }
         DocError::Server(cause) => {
             tracing::error!(error = format!("{cause:#}"), "sync request failed");
             return error(
@@ -136,9 +149,11 @@ impl Connection {
         let mut announcements = self.state.hub().subscribe();
         let mut recheck = tokio::time::interval(RECHECK);
         recheck.tick().await;
+        let mut heard = tokio::time::Instant::now();
         loop {
             tokio::select! {
                 incoming = self.socket.recv() => {
+                    heard = tokio::time::Instant::now();
                     match incoming {
                         Some(Ok(Message::Binary(frame))) => self.handle_frame(&frame).await?,
                         Some(Ok(Message::Close(_))) | None => return Ok(()),
@@ -160,6 +175,9 @@ impl Connection {
                     }
                 }
                 _ = recheck.tick() => {
+                    if heard.elapsed() > SILENT_FOR {
+                        return Ok(());
+                    }
                     if !tokens::grant_is_live(&self.state, self.grant).await.unwrap_or(true) {
                         let _ = self.socket.send(Message::Close(Some(CloseFrame {
                             code: CLOSE_SIGNED_OUT,
@@ -249,6 +267,7 @@ impl Connection {
             head_seq: u64::try_from(head).unwrap_or_default(),
             created: opened.created,
             writable: opened.writable && self.can_write,
+            version: opened.version,
         })))
         .await
     }

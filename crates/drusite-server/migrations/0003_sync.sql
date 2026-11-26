@@ -12,6 +12,10 @@ CREATE TABLE documents (
     head_seq bigint NOT NULL DEFAULT 0,
     -- The snapshot covers every entry up to here; older updates are gone.
     snapshot_seq bigint NOT NULL DEFAULT 0,
+    -- Every version the log holds (an encoded Loro version vector). A push that starts beyond
+    -- it would leave a hole in the log, so it's refused, and devices are told this on every
+    -- subscription so they push exactly what's missing.
+    known_version bytea NOT NULL DEFAULT '',
     created_by uuid NOT NULL REFERENCES users,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),

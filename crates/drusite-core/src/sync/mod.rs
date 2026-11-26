@@ -47,6 +47,8 @@ pub struct Session {
     dirty: HashSet<Uuid>,
     /// Joining this workspace from the server in place of this blank device's own.
     joining: Option<Uuid>,
+    /// Documents whose push failed on the server, to push again on the next retry tick.
+    retry: HashSet<Uuid>,
 }
 
 #[derive(Debug)]
@@ -59,6 +61,20 @@ struct Subscription {
     pushed: VersionVector,
     /// The version of the first snapshot this subscription offered to create the document with.
     create_version: Option<VersionVector>,
+}
+
+/// How one document stands with the server.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DocSyncStatus {
+    pub doc: String,
+    /// The last server log entry imported.
+    pub server_seq: u64,
+    pub on_server: bool,
+    /// Subscribed on the current connection.
+    pub subscribed: bool,
+    /// The server has answered the subscription.
+    pub ready: bool,
+    pub writable: bool,
 }
 
 /// The server refused something that sync can't get past by itself.
@@ -126,6 +142,29 @@ impl Core {
             pages: self.pages().map_err(|e| Error::Corrupt(e.message))?,
         });
         Ok(())
+    }
+
+    /// How each document stands with the server, for a sync indicator (and for tests).
+    pub fn sync_status(&self) -> Result<Vec<DocSyncStatus>> {
+        let mut docs = vec![self.workspace.id().to_string()];
+        docs.extend(self.store.docs(DocKind::Page)?);
+        let mut out = Vec::new();
+        for id in docs {
+            let state = self.store.sync_state(&id)?;
+            let sub = id
+                .parse::<Uuid>()
+                .ok()
+                .and_then(|u| self.sync.as_ref().and_then(|s| s.subscribed.get(&u)));
+            out.push(DocSyncStatus {
+                doc: id,
+                server_seq: state.server_seq,
+                on_server: state.on_server,
+                subscribed: sub.is_some(),
+                ready: sub.is_some_and(|s| s.ready),
+                writable: sub.is_some_and(|s| s.writable),
+            });
+        }
+        Ok(out)
     }
 
     /// Lets a sync driver know when something changes locally, so it can push.
@@ -292,6 +331,16 @@ impl Core {
         Ok(Some((page.version(), page.export_updates(since)?)))
     }
 
+    /// Pushes again what failed on the server. Drivers call this now and then (with their ping),
+    /// so a push that met a passing server error goes through without waiting for the next edit.
+    pub fn sync_retry(&mut self) -> Result<Vec<ClientMessage>> {
+        if let Some(session) = self.sync.as_mut() {
+            let retry: Vec<Uuid> = session.retry.drain().collect();
+            session.dirty.extend(retry);
+        }
+        self.sync_outgoing()
+    }
+
     /// Pushes for every subscribed, writable document that has changed beyond what the
     /// server has or has been sent, and subscriptions for any new documents.
     pub fn sync_outgoing(&mut self) -> Result<Vec<ClientMessage>> {
@@ -374,22 +423,23 @@ impl Core {
                     });
                 if self.store.load(&key)?.is_some() {
                     let mut state = self.store.sync_state(&key)?;
-                    if !state.on_server || s.created {
-                        state.on_server = true;
-                        // The server made the document from this device's snapshot, so it holds
-                        // that version.
-                        if s.created
-                            && let Some(version) = &create_version
-                        {
-                            state.server_vv.merge(version);
-                            if let Some(sub) =
-                                self.sync.as_mut().and_then(|x| x.subscribed.get_mut(&doc))
-                            {
-                                sub.pushed.merge(version);
-                            }
-                        }
-                        self.store.set_sync_state(&key, &state)?;
+                    state.on_server = true;
+                    if !s.version.is_empty() {
+                        // The server says exactly what its log holds: that, not this device's
+                        // own bookkeeping, is what the next push starts from.
+                        state.server_vv = VersionVector::decode(&s.version)
+                            .map_err(|e| Error::Corrupt(format!("the server's version: {e}")))?;
+                    } else if s.created
+                        && let Some(version) = &create_version
+                    {
+                        // An older server that doesn't say: it made the document from this
+                        // device's snapshot, so it holds that version.
+                        state.server_vv.merge(version);
                     }
+                    if let Some(sub) = self.sync.as_mut().and_then(|x| x.subscribed.get_mut(&doc)) {
+                        sub.pushed = state.server_vv.clone();
+                    }
+                    self.store.set_sync_state(&key, &state)?;
                 }
                 // Push whatever the server lacks.
                 self.mark_changed(doc);
@@ -428,20 +478,69 @@ impl Core {
                 if is_workspace && matches!(code, ErrorCode::Forbidden | ErrorCode::NotFound) {
                     return Err(SyncError::Forbidden(e.message));
                 }
-                // Anything about one push or one page: drop it from the session, so the rest
-                // keeps syncing; the next connection tries again.
-                if let Some(session) = self.sync.as_mut() {
-                    session.in_flight.remove(&e.push_id);
-                    if let Some(doc) = doc
-                        && code != ErrorCode::Internal
-                        && let Some(sub) = session.subscribed.get_mut(&doc)
-                    {
-                        sub.writable = false;
-                    }
+                let Some(doc) = doc else {
+                    return Ok(Vec::new());
+                };
+                if e.push_id != 0 {
+                    return Ok(self.push_failed(doc, code, &e.version)?);
+                }
+                if matches!(code, ErrorCode::Forbidden)
+                    && let Some(sub) = self.sync.as_mut().and_then(|s| s.subscribed.get_mut(&doc))
+                {
+                    sub.writable = false;
                 }
                 Ok(Vec::new())
             }
             Some(Body::Welcome(_) | Body::Pong(_)) | None => Ok(Vec::new()),
+        }
+    }
+
+    /// A push was refused. Every push for the document sent after it built on it, so none of
+    /// them count: start again from what the server is known to have.
+    fn push_failed(
+        &mut self,
+        doc: Uuid,
+        code: ErrorCode,
+        version: &[u8],
+    ) -> Result<Vec<ClientMessage>> {
+        let key = doc.to_string();
+        let mut state = self.store.sync_state(&key)?;
+        if code == ErrorCode::MissingDependencies && !version.is_empty() {
+            state.server_vv = VersionVector::decode(version)
+                .map_err(|e| Error::Corrupt(format!("the server's version: {e}")))?;
+            if self.store.load(&key)?.is_some() {
+                self.store.set_sync_state(&key, &state)?;
+            }
+        }
+        let Some(session) = self.sync.as_mut() else {
+            return Ok(Vec::new());
+        };
+        session.in_flight.retain(|_, (d, _)| *d != doc);
+        if let Some(sub) = session.subscribed.get_mut(&doc) {
+            sub.pushed = state.server_vv.clone();
+            match code {
+                // Pushing again won't help.
+                ErrorCode::Forbidden | ErrorCode::InvalidUpdate | ErrorCode::TooLarge => {
+                    sub.writable = false;
+                }
+                _ => {}
+            }
+        }
+        match code {
+            // Push what the server lacks, now.
+            ErrorCode::MissingDependencies => {
+                self.mark_changed(doc);
+                self.sync_outgoing()
+            }
+            // Try again on the driver's next retry tick (see [`Self::sync_retry`]), so a failing
+            // server isn't hammered.
+            ErrorCode::Internal | ErrorCode::NotSubscribed | ErrorCode::Unspecified => {
+                if let Some(session) = self.sync.as_mut() {
+                    session.retry.insert(doc);
+                }
+                Ok(Vec::new())
+            }
+            _ => Ok(Vec::new()),
         }
     }
 
@@ -503,7 +602,11 @@ impl Core {
                 self.store.save_page(&page, &mut at)?;
             } else {
                 // New to this device: made from the server's copy.
-                let page = Page::load_all(&parts)?;
+                let page = Page::load_all(&parts).map_err(|e| {
+                    let seqs: Vec<(u64, bool)> =
+                        entries.iter().map(|e| (e.seq, e.snapshot)).collect();
+                    Error::Corrupt(format!("page {id} from the server's entries {seqs:?}: {e}"))
+                })?;
                 if page.id() != id {
                     return Err(Error::Corrupt(format!(
                         "the server sent page {} as {id}",
@@ -561,6 +664,7 @@ mod tests {
                 head_seq: 0,
                 created: false,
                 writable: true,
+                version: Vec::new(),
             })))
             .unwrap();
         assert_eq!(pushes(&replies), 0);
@@ -579,8 +683,86 @@ mod tests {
             message: "no".into(),
             doc: account.as_uuid().as_bytes().to_vec(),
             push_id: 0,
+            version: Vec::new(),
         })));
         assert!(matches!(refused, Err(SyncError::Forbidden(_))));
+    }
+
+    fn push_ids(messages: &[ClientMessage]) -> Vec<u64> {
+        messages
+            .iter()
+            .filter_map(|m| match &m.body {
+                Some(client_message::Body::Push(p)) => Some(p.push_id),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A refused push takes every later in-flight push of the same document with it: they
+    /// built on it, so an `Ack` for one of them mustn't mark the refused changes as stored.
+    #[test]
+    fn a_refused_push_voids_the_pushes_built_on_it() {
+        let (mut mac, _d) = core();
+        let ws = mac.workspace_id();
+        let doc = ws.as_uuid().as_bytes().to_vec();
+        mac.sync_start().unwrap();
+        let subscribed = |version: Vec<u8>| {
+            ServerMessage::new(Body::Subscribed(Subscribed {
+                doc: doc.clone(),
+                head_seq: 1,
+                created: true,
+                writable: true,
+                version,
+            }))
+        };
+        mac.sync_receive(subscribed(VersionVector::default().encode()))
+            .unwrap();
+        mac.handle(Command::CreatePage {
+            parent: None,
+            title: "one".into(),
+        })
+        .unwrap();
+        let first = push_ids(&mac.sync_outgoing().unwrap());
+        mac.handle(Command::CreatePage {
+            parent: None,
+            title: "two".into(),
+        })
+        .unwrap();
+        let second = push_ids(&mac.sync_outgoing().unwrap());
+        assert_eq!((first.len(), second.len()), (1, 1));
+
+        // The first fails on the server; the second, built on it, is stored and acknowledged.
+        mac.sync_receive(ServerMessage::new(Body::Error(drusite_proto::Error {
+            code: ErrorCode::Internal as i32,
+            message: "database hiccup".into(),
+            doc: doc.clone(),
+            push_id: first[0],
+            version: Vec::new(),
+        })))
+        .unwrap();
+        mac.sync_receive(ServerMessage::new(Body::Ack(drusite_proto::Ack {
+            doc: doc.clone(),
+            push_id: second[0],
+            seq: 2,
+        })))
+        .unwrap();
+        // So the server isn't known to have either page yet: the next push carries both.
+        let state = mac.store.sync_state(&ws.to_string()).unwrap();
+        assert!(!state.server_vv.includes_vv(&mac.workspace.version()));
+        mac.mark_changed(*ws.as_uuid());
+        assert_eq!(push_ids(&mac.sync_outgoing().unwrap()).len(), 1);
+
+        // "Missing dependencies" says what the server has, and pushes again from there at once.
+        let again = mac
+            .sync_receive(ServerMessage::new(Body::Error(drusite_proto::Error {
+                code: ErrorCode::MissingDependencies as i32,
+                message: "gap".into(),
+                doc: doc.clone(),
+                push_id: 99,
+                version: VersionVector::default().encode(),
+            })))
+            .unwrap();
+        assert_eq!(push_ids(&again).len(), 1);
     }
 
     /// A device with notes of its own can't take another workspace.

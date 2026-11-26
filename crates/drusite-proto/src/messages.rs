@@ -156,6 +156,10 @@ pub struct Subscribed {
     /// The device may push; otherwise it can only read.
     #[prost(bool, tag = "4")]
     pub writable: bool,
+    /// Every version the server's log of the document holds (a Loro version vector). The
+    /// device pushes whatever goes beyond it. Empty for a page that doesn't exist yet.
+    #[prost(bytes = "vec", tag = "5")]
+    pub version: Vec<u8>,
 }
 
 /// A [`Push`] is stored.
@@ -177,7 +181,8 @@ pub enum ErrorCode {
     BadRequest = 1,
     /// Not allowed to read, write or create the document.
     Forbidden = 2,
-    /// The document doesn't exist, and the subscription didn't create it.
+    /// The workspace doesn't exist, and the subscription didn't create it. (A subscription to
+    /// a page that doesn't exist yet waits for it instead.)
     NotFound = 3,
     /// The update isn't a valid Loro update.
     InvalidUpdate = 4,
@@ -187,6 +192,9 @@ pub enum ErrorCode {
     NotSubscribed = 6,
     /// Something went wrong on the server; try again later.
     Internal = 7,
+    /// The update builds on changes the server doesn't have. [`Error::version`] says what it
+    /// has; push again from there.
+    MissingDependencies = 8,
 }
 
 #[derive(Clone, PartialEq, prost::Message)]
@@ -201,6 +209,9 @@ pub struct Error {
     /// The push it's about, if any.
     #[prost(uint64, tag = "4")]
     pub push_id: u64,
+    /// For [`ErrorCode::MissingDependencies`]: every version the server's log holds.
+    #[prost(bytes = "vec", tag = "5")]
+    pub version: Vec<u8>,
 }
 
 impl ClientMessage {

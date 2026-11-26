@@ -30,6 +30,9 @@ pub enum DocError {
     Invalid(String),
     #[error("too large")]
     TooLarge,
+    /// The update builds on changes the log doesn't have. Carries what the log does have.
+    #[error("the update builds on changes the server doesn't have")]
+    Gap(Vec<u8>),
     #[error(transparent)]
     Server(#[from] anyhow::Error),
 }
@@ -90,18 +93,25 @@ fn allowed(
 
 /// Checks a Loro blob is well-formed before it's stored, so nobody can poison a document for
 /// everyone else.
-pub fn check_blob(bytes: &[u8]) -> Result<(), DocError> {
+pub fn check_blob(bytes: &[u8]) -> Result<loro::ImportBlobMetadata, DocError> {
     if bytes.len() > MAX_UPDATE_BYTES {
         return Err(DocError::TooLarge);
     }
     loro::LoroDoc::decode_import_blob_meta(bytes, true)
-        .map(|_| ())
         .map_err(|e| DocError::Invalid(format!("not a valid Loro update: {e}")))
+}
+
+fn decode_version(bytes: &[u8]) -> Result<loro::VersionVector, DocError> {
+    if bytes.is_empty() {
+        return Ok(loro::VersionVector::default());
+    }
+    loro::VersionVector::decode(bytes)
+        .map_err(|e| DocError::Server(anyhow::anyhow!("a stored version doesn't decode: {e}")))
 }
 
 /// Checks a new document's first snapshot really is that document.
 fn check_first_snapshot(doc: Uuid, kind: DocKind, snapshot: &[u8]) -> Result<(), DocError> {
-    check_blob(snapshot)?;
+    let _ = check_blob(snapshot)?;
     let id = match kind {
         DocKind::Page => drusite_crdt::Page::load(snapshot)
             .map(|p| *p.id().as_uuid())
@@ -120,11 +130,13 @@ fn check_first_snapshot(doc: Uuid, kind: DocKind, snapshot: &[u8]) -> Result<(),
 }
 
 /// A subscription the server has accepted.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Opened {
     pub workspace: Uuid,
     pub writable: bool,
     pub created: bool,
+    /// Every version the server's log holds; empty for a page that doesn't exist yet.
+    pub version: Vec<u8>,
 }
 
 /// Opens a document for `user`, creating it (and, for a workspace document, the workspace) from
@@ -164,6 +176,10 @@ pub async fn open(
             }
             false
         }
+        // A page this device has seen in the tree before its creator has put it here: the
+        // subscription waits for it, and the page arrives when it's created. A workspace that
+        // doesn't exist is something to join, so that's an error.
+        None if create.is_empty() && kind == DocKind::Page && role.is_some() => false,
         None if create.is_empty() => {
             return Err(if role.is_some() {
                 DocError::NotFound
@@ -216,11 +232,17 @@ pub async fn open(
         return Err(DocError::Forbidden);
     }
     let writable = allowed(state, user, role, Action::WriteDocument, resource);
+    let version: Option<Vec<u8>> =
+        sqlx::query_scalar("SELECT known_version FROM documents WHERE id = $1")
+            .bind(doc)
+            .fetch_optional(&mut *tx)
+            .await?;
     tx.commit().await?;
     Ok(Opened {
         workspace,
         writable,
         created,
+        version: version.unwrap_or_default(),
     })
 }
 
@@ -267,15 +289,23 @@ async fn append_in(
     update: &[u8],
     origin: Option<Uuid>,
 ) -> Result<(i64, bool), DocError> {
-    let row: Option<(i64, i64)> = sqlx::query_as(
-        "SELECT head_seq, snapshot_seq FROM documents WHERE id = $1 AND workspace_id = $2
-         FOR UPDATE",
+    let meta = check_blob(update)?;
+    let row: Option<(i64, i64, Vec<u8>)> = sqlx::query_as(
+        "SELECT head_seq, snapshot_seq, known_version FROM documents
+         WHERE id = $1 AND workspace_id = $2 FOR UPDATE",
     )
     .bind(doc)
     .bind(workspace)
     .fetch_optional(&mut *tx)
     .await?;
-    let (head, snapshot) = row.ok_or(DocError::NotFound)?;
+    let (head, snapshot, known) = row.ok_or(DocError::NotFound)?;
+    // A log with a hole can't be compacted without losing what's after the hole, and nobody
+    // could import it whole. Refuse, and say what the log has.
+    let mut known = decode_version(&known)?;
+    if !known.includes_vv(&meta.partial_start_vv) {
+        return Err(DocError::Gap(known.encode()));
+    }
+    known.merge(&meta.partial_end_vv);
     let seq = head + 1;
     let key = state
         .keys()
@@ -294,11 +324,14 @@ async fn append_in(
     .bind(user.as_uuid())
     .execute(&mut *tx)
     .await?;
-    sqlx::query("UPDATE documents SET head_seq = $2, updated_at = now() WHERE id = $1")
-        .bind(doc)
-        .bind(seq)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query(
+        "UPDATE documents SET head_seq = $2, known_version = $3, updated_at = now() WHERE id = $1",
+    )
+    .bind(doc)
+    .bind(seq)
+    .bind(known.encode())
+    .execute(&mut *tx)
+    .await?;
     // Delivered to every node's listener when the transaction commits.
     sqlx::query("SELECT pg_notify($1, $2)")
         .bind(super::CHANNEL)
@@ -317,7 +350,6 @@ pub async fn append(
     update: &[u8],
     origin: Uuid,
 ) -> Result<(i64, bool), DocError> {
-    check_blob(update)?;
     let mut tx = state.db().as_user(user).await?;
     let result = append_in(state, &mut tx, user, doc, workspace, update, Some(origin)).await?;
     tx.commit().await?;
@@ -452,8 +484,16 @@ pub async fn compact(state: &AppState, doc: Uuid) -> Result<(), DocError> {
     for (seq, sealed) in rows {
         batch.push(open_sealed(state, &mut tx, workspace, doc, seq, false, &sealed).await?);
     }
-    loro.import_batch(&batch)
+    let status = loro
+        .import_batch(&batch)
         .map_err(|e| DocError::Invalid(format!("stored update: {e}")))?;
+    if let Some(pending) = status.pending {
+        // Never: pushes that would leave a hole are refused. If it happens anyway, keep the
+        // log as it is rather than lose what the snapshot can't hold.
+        return Err(DocError::Server(anyhow::anyhow!(
+            "document {doc} has updates missing their dependencies ({pending:?}); not compacting"
+        )));
+    }
     let snapshot = loro
         .export(loro::ExportMode::Snapshot)
         .map_err(|e| DocError::Server(anyhow::anyhow!("exporting a snapshot: {e}")))?;

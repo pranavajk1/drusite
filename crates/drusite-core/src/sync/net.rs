@@ -23,6 +23,13 @@ use crate::engine::Core;
 
 /// How often an idle connection pings, so proxies keep it open.
 const PING_EVERY: Duration = Duration::from_secs(30);
+/// A connection that has heard nothing from the server for this long is dead (a half-open
+/// TCP connection after the network changed, say), even though nothing has failed: drop it, so
+/// the caller reconnects.
+const SILENT_FOR: Duration = Duration::from_secs(75);
+/// How long one send may take. A write to a dead connection can block for as long as the OS
+/// keeps retrying (many minutes), and nothing else in the loop runs meanwhile.
+const SEND_WITHIN: Duration = Duration::from_secs(20);
 
 #[derive(Debug, thiserror::Error)]
 pub enum NetError {
@@ -123,14 +130,35 @@ pub async fn run(
         .map_err(SyncError::from)?
     };
 
+    // Reading never waits on writing: outgoing messages go through a queue to a writer task.
+    // Otherwise both ends can block writing to each other (a device sending many subscriptions
+    // while the server sends catch-ups), and neither ever reads again.
+    let (mut sink, mut stream) = socket.split();
+    let (outgoing, mut queue) = tokio::sync::mpsc::unbounded_channel::<ClientMessage>();
+    let mut writer = tokio::spawn(async move {
+        while let Some(message) = queue.recv().await {
+            send_one(&mut sink, &message).await?;
+        }
+        let _ = sink.close().await;
+        Ok::<(), NetError>(())
+    });
+    let queue_all = |messages: Vec<ClientMessage>| {
+        for m in messages {
+            // The writer only stops after an error, which the loop below picks up.
+            let _ = outgoing.send(m);
+        }
+    };
+
     let result = async {
-        send_all(&mut socket, first).await?;
+        queue_all(first);
         let mut ping = tokio::time::interval(PING_EVERY);
         ping.tick().await;
         let mut nonce = 0;
+        let mut heard = tokio::time::Instant::now();
         loop {
             tokio::select! {
-                incoming = socket.next() => {
+                incoming = stream.next() => {
+                    heard = tokio::time::Instant::now();
                     let frame = match incoming {
                         Some(Ok(Message::Binary(frame))) => frame,
                         Some(Ok(Message::Close(frame))) => {
@@ -145,39 +173,48 @@ pub async fn run(
                     };
                     let message: ServerMessage = drusite_proto::decode(&frame)
                         .map_err(|e| NetError::Protocol(e.to_string()))?;
-                    let replies = lock(&core)?.sync_receive(message)?;
-                    send_all(&mut socket, replies).await?;
+                    queue_all(lock(&core)?.sync_receive(message)?);
                 }
                 () = changed.notified() => {
-                    let out = lock(&core)?.sync_outgoing().map_err(SyncError::from)?;
-                    send_all(&mut socket, out).await?;
+                    queue_all(lock(&core)?.sync_outgoing().map_err(SyncError::from)?);
                 }
                 _ = ping.tick() => {
+                    if heard.elapsed() > SILENT_FOR {
+                        return Err(NetError::Connect("the server stopped answering".to_owned()));
+                    }
                     nonce += 1;
-                    send_all(&mut socket, vec![ClientMessage::new(client_message::Body::Ping(Ping { nonce }))]).await?;
+                    queue_all(vec![ClientMessage::new(client_message::Body::Ping(Ping { nonce }))]);
+                    queue_all(lock(&core)?.sync_retry().map_err(SyncError::from)?);
+                }
+                ended = &mut writer => {
+                    return match ended {
+                        Ok(Ok(())) => Ok(()),
+                        Ok(Err(e)) => Err(e),
+                        Err(e) => Err(NetError::Connect(e.to_string())),
+                    };
                 }
             }
         }
     }
     .await;
+    writer.abort();
 
     if let Ok(mut core) = core.lock() {
         core.sync_stop();
         core.set_change_listener(None);
     }
-    let _ = socket.close(None).await;
     result
 }
 
-async fn send_all<S>(socket: &mut S, messages: Vec<ClientMessage>) -> Result<(), NetError>
+async fn send_one<S>(sink: &mut S, message: &ClientMessage) -> Result<(), NetError>
 where
     S: futures_util::Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
 {
-    for message in messages {
-        socket
-            .send(Message::Binary(drusite_proto::encode(&message).into()))
-            .await
-            .map_err(|e| NetError::Connect(e.to_string()))?;
-    }
-    Ok(())
+    tokio::time::timeout(
+        SEND_WITHIN,
+        sink.send(Message::Binary(drusite_proto::encode(message).into())),
+    )
+    .await
+    .map_err(|_| NetError::Connect("the connection stopped taking data".to_owned()))?
+    .map_err(|e| NetError::Connect(e.to_string()))
 }

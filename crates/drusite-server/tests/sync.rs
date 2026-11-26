@@ -447,3 +447,86 @@ async fn devices_on_different_server_nodes_see_each_other() {
     })
     .await;
 }
+
+/// What the simulation found, on the real server and Postgres: a device may see a page in the
+/// tree before the page's creator has put it on the server, and a push may build on one that
+/// failed.
+#[tokio::test(flavor = "multi_thread")]
+async fn early_subscriptions_wait_and_pushes_with_gaps_are_refused() {
+    use drusite_proto::DocKind;
+    use drusite_server::sync::store::{self, DocError};
+
+    let Some(server) = common::serve(&password_server()).await else {
+        return;
+    };
+    let user = account(&server.state, "ada@example.com").await;
+    let mut mac = Device::new(&server.state, user, "read write").await;
+    mac.connect(&server.url, None);
+    let ws = *mac.workspace().as_uuid();
+    eventually("the workspace is on the server", || {
+        server_has_doc(&server, ws)
+    })
+    .await;
+
+    // The phone subscribes to a page the Mac hasn't created on the server yet: it waits.
+    let mut page = drusite_crdt::Page::create().unwrap();
+    let id = *page.id().as_uuid();
+    let phone = uuid::Uuid::now_v7();
+    let waiting = store::open(&server.state, user, id, ws, DocKind::Page, &[], phone)
+        .await
+        .unwrap();
+    assert!(!waiting.created && waiting.version.is_empty());
+    let (entries, _) = store::entries_after(&server.state, user, id, ws, 0, Some(phone))
+        .await
+        .unwrap();
+    assert!(entries.is_empty());
+
+    // Then the Mac creates it, and the waiting phone gets it.
+    let made = store::open(
+        &server.state,
+        user,
+        id,
+        ws,
+        DocKind::Page,
+        &page.export_snapshot().unwrap(),
+        uuid::Uuid::now_v7(),
+    )
+    .await
+    .unwrap();
+    assert!(made.created && !made.version.is_empty());
+    let (entries, _) = store::entries_after(&server.state, user, id, ws, 0, Some(phone))
+        .await
+        .unwrap();
+    assert_eq!(entries.len(), 1);
+
+    // Two edits; the first never reaches the server. Pushing only the second would leave a hole
+    // the log couldn't be compacted past: refused, with what the server has.
+    let block = page.order()[0];
+    let before = page.version();
+    page.insert_text(block, 0, "first").unwrap();
+    let middle = page.version();
+    page.insert_text(block, 5, " second").unwrap();
+    let refused = store::append(
+        &server.state,
+        user,
+        id,
+        ws,
+        &page.export_updates(&middle).unwrap(),
+        phone,
+    )
+    .await;
+    let Err(DocError::Gap(version)) = refused else {
+        panic!("{refused:?}")
+    };
+    assert_eq!(loro::VersionVector::decode(&version).unwrap(), before);
+    store::append(
+        &server.state,
+        user,
+        id,
+        ws,
+        &page.export_updates(&before).unwrap(),
+        phone,
+    )
+    .await
+    .unwrap();
+}
