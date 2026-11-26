@@ -298,6 +298,12 @@ impl Workspace {
             .run(|| Ok(self.doc.export(ExportMode::Snapshot)?))
     }
 
+    /// Imported updates still waiting for changes from another writer (see
+    /// [`crate::Page::export_pending`]).
+    pub fn export_pending(&self) -> Result<Option<Vec<u8>>> {
+        self.guard.run(|| Ok(self.doc.export_pending_updates()?))
+    }
+
     pub fn export_updates(&self, since: &VersionVector) -> Result<Vec<u8>> {
         self.guard
             .run(|| Ok(self.doc.export(ExportMode::updates(since))?))

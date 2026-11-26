@@ -131,6 +131,7 @@ impl Core {
         self.store.clear()?;
         self.open.clear();
         self.workspace_at = self.store.create_workspace(&workspace)?;
+        self.keep_waiting(&id.to_string(), entries, &workspace.version())?;
         let state = SyncState {
             server_seq: entries.last().map_or(0, |e| e.seq),
             server_vv: workspace.version(),
@@ -495,6 +496,20 @@ impl Core {
         }
     }
 
+    /// Stores, as they came, the entries `local` doesn't include: updates waiting for another
+    /// writer's changes that haven't arrived. Loro holds those in memory only, and saving a
+    /// document saves what's applied, so without this a restart (or closing the page) would
+    /// lose them. Loading the document imports them again, and they apply once what they wait
+    /// for is here.
+    fn keep_waiting(&mut self, key: &str, entries: &[Entry], local: &VersionVector) -> Result<()> {
+        for entry in entries {
+            if !local.includes_vv(&drusite_crdt::blob_version(&entry.data)?) {
+                self.store.append(key, &entry.data)?;
+            }
+        }
+        Ok(())
+    }
+
     /// A push was refused. Every push for the document sent after it built on it, so none of
     /// them count: start again from what the server is known to have.
     fn push_failed(
@@ -569,10 +584,14 @@ impl Core {
             reached.merge(&drusite_crdt::blob_version(part)?);
         }
 
+        // The version this device holds once the entries are in. An update that needs another
+        // writer's changes not here yet waits in memory, unapplied: see `keep_waiting`.
+        let local: VersionVector;
         if doc == *self.workspace.id().as_uuid() {
             for part in &parts {
                 self.workspace.import(part)?;
             }
+            local = self.workspace.version();
             self.store
                 .save_workspace(&self.workspace, &mut self.workspace_at)?;
             (self.events)(Event::PagesChanged {
@@ -588,6 +607,7 @@ impl Core {
                     updated.extend(patch.updated);
                     removed.extend(patch.removed);
                 }
+                local = open.page.version();
                 self.store.save_page(&open.page, &mut open.at)?;
                 let patch = patch_for(&open.page, &updated, &removed)
                     .map_err(|e| Error::Corrupt(e.message))?;
@@ -599,6 +619,7 @@ impl Core {
                 for part in &parts {
                     page.import(part)?;
                 }
+                local = page.version();
                 self.store.save_page(&page, &mut at)?;
             } else {
                 // New to this device: made from the server's copy.
@@ -613,10 +634,13 @@ impl Core {
                         page.id()
                     )));
                 }
+                local = page.version();
                 self.store.create_page(&page)?;
                 state.on_server = true;
             }
         }
+        self.keep_waiting(&key, entries, &local)?;
+        // What the server has, it has, applied here or not.
         state.server_vv.merge(&reached);
         state.server_seq = state
             .server_seq
@@ -763,6 +787,75 @@ mod tests {
             })))
             .unwrap();
         assert_eq!(push_ids(&again).len(), 1);
+    }
+
+    /// An update that needs another writer's change this device hasn't got yet is kept on disk
+    /// until that change arrives, page closed or not.
+    #[test]
+    fn an_update_waiting_for_its_dependencies_is_kept_until_it_applies() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = StoreKey::generate().unwrap();
+        let open =
+            |dir: &tempfile::TempDir| Core::open(dir.path(), &key, Box::new(|_| {})).unwrap();
+        let mut device = open(&dir);
+        let crate::api::Response::PageCreated { page: info } = device
+            .handle(Command::CreatePage {
+                parent: None,
+                title: "p".into(),
+            })
+            .unwrap()
+        else {
+            panic!()
+        };
+        let id = info.id;
+        let snapshot = device.page_snapshot(id).unwrap().unwrap().0;
+        // Two other writers: B's edit builds on A's.
+        let mut a = Page::load(&snapshot).unwrap();
+        let mut b = Page::load(&snapshot).unwrap();
+        let block = a.order()[0];
+        let start = a.version();
+        a.insert_text(block, 0, "alpha").unwrap();
+        let from_a = a.export_updates(&start).unwrap();
+        b.import(&from_a).unwrap();
+        let before_b = b.version();
+        b.insert_text(block, 0, "beta ").unwrap();
+        let from_b = b.export_updates(&before_b).unwrap();
+
+        let doc = id.as_uuid().as_bytes().to_vec();
+        let deliver = |device: &mut Core, seq: u64, data: Vec<u8>| {
+            device
+                .sync_receive(ServerMessage::new(Body::Updates(drusite_proto::Updates {
+                    doc: doc.clone(),
+                    entries: vec![Entry {
+                        seq,
+                        data,
+                        snapshot: false,
+                    }],
+                })))
+                .unwrap();
+        };
+        let seq = |device: &Core| {
+            device
+                .sync_status()
+                .unwrap()
+                .into_iter()
+                .find(|d| d.doc == id.to_string())
+                .unwrap()
+                .server_seq
+        };
+        device.sync_start().unwrap();
+        // B's arrives first: it can't apply yet, but it's kept on disk.
+        deliver(&mut device, 3, from_b.clone());
+        assert_eq!(seq(&device), 3);
+        let text =
+            |device: &Core| device.store.load_page(id).unwrap().0.blocks().unwrap()[0].text();
+        assert_eq!(text(&device), "");
+        // The device restarts while it waits; then A's arrives, and both apply.
+        drop(device);
+        let mut device = open(&dir);
+        device.sync_start().unwrap();
+        deliver(&mut device, 2, from_a);
+        assert_eq!(text(&device), "beta alpha");
     }
 
     /// A device with notes of its own can't take another workspace.

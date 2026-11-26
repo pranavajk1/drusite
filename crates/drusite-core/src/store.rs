@@ -363,7 +363,7 @@ impl Store {
             at,
             page.version(),
             |since| page.export_updates(since),
-            || page.export_snapshot(),
+            || Ok((page.export_snapshot()?, page.export_pending()?)),
         )
     }
 
@@ -398,7 +398,7 @@ impl Store {
             at,
             ws.version(),
             |since| ws.export_updates(since),
-            || ws.export_snapshot(),
+            || Ok((ws.export_snapshot()?, ws.export_pending()?)),
         )
     }
 
@@ -423,7 +423,9 @@ impl Store {
         at: &mut SavePoint,
         now: VersionVector,
         updates: impl FnOnce(&VersionVector) -> drusite_crdt::Result<Vec<u8>>,
-        snapshot: impl FnOnce() -> drusite_crdt::Result<Vec<u8>>,
+        // The snapshot, and any updates still waiting for another writer's changes, which a
+        // snapshot can't hold.
+        snapshot: impl FnOnce() -> drusite_crdt::Result<(Vec<u8>, Option<Vec<u8>>)>,
     ) -> Result<()> {
         if now == at.version {
             return Ok(());
@@ -436,9 +438,16 @@ impl Store {
         if at.since_compaction >= COMPACT_AFTER_UPDATES
             || at.bytes_since_compaction >= COMPACT_AFTER_BYTES
         {
-            self.compact(id, &snapshot()?, at.seq)?;
+            let (snapshot, waiting) = snapshot()?;
+            self.compact(id, &snapshot, at.seq)?;
             at.since_compaction = 0;
             at.bytes_since_compaction = 0;
+            // Kept after the snapshot, so they apply once what they wait for arrives.
+            if let Some(waiting) = waiting {
+                at.seq = self.append(id, &waiting)?;
+                at.since_compaction = 1;
+                at.bytes_since_compaction = waiting.len() as u64;
+            }
         }
         Ok(())
     }
