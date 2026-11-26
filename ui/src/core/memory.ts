@@ -123,6 +123,11 @@ export class MemoryCore {
     return p.blocks.map((b, i) => ({ id: b.id, kind: b.kind, indent: shown[i]!, spans: spans(b) }));
   }
 
+  /** The pages some view has open. */
+  openPages(): PageId[] {
+    return [...this.open.keys()];
+  }
+
   private shownIndents(p: MemPage): number[] {
     const out: number[] = [];
     p.blocks.forEach((b, i) => out.push(i === 0 ? 0 : Math.min(b.indent, out[i - 1]! + 1)));

@@ -9,7 +9,8 @@
     "build": "vite build",
     "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "test": "vitest run",
-    "tauri": "TAURI_APP_PATH=../crates/drusite-app TAURI_FRONTEND_PATH=. tauri"
+    "tauri": "TAURI_APP_PATH=../crates/drusite-app TAURI_FRONTEND_PATH=. tauri",
+    "test:browser": "playwright test"
   },
   "dependencies": {
     "@tauri-apps/api": "2.12.5",
@@ -23,6 +24,7 @@
     "prosemirror-view": "1.44.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.65.1",
     "@sveltejs/vite-plugin-svelte": "7.3.2",
     "@tauri-apps/cli": "2.12.6",
     "jsdom": "31.0.1",
