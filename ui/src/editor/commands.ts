@@ -125,6 +125,23 @@ export function setKind(kind: BlockKind): PmCommand {
   };
 }
 
+/** Mod-Enter: ticks or unticks the selected to-dos. All end up ticked unless all already are. */
+const toggleTodo: PmCommand = (state, dispatch) => {
+  const { from, to } = state.selection;
+  const todos: { pos: number; checked: boolean }[] = [];
+  state.doc.nodesBetween(from, to, (node, pos) => {
+    const k = attrsOf(node).kind;
+    if (node.type === blockType && k.type === "todo") todos.push({ pos, checked: k.checked });
+    return false;
+  });
+  if (todos.length === 0) return false;
+  const checked = !todos.every((t) => t.checked);
+  const tr = state.tr;
+  for (const t of todos) tr.setNodeAttribute(t.pos, "kind", { type: "todo", checked });
+  dispatch?.(tr);
+  return true;
+};
+
 const insertNewline: PmCommand = (state, dispatch) => {
   dispatch?.(state.tr.insertText("\n").scrollIntoView());
   return true;
@@ -136,6 +153,7 @@ export function editorKeymap(): Plugin {
   return keymap({
     Enter: enter,
     "Shift-Enter": insertNewline,
+    "Mod-Enter": toggleTodo,
     Backspace: chainCommands(deleteSelection, backspaceAtStart, joinBackward, selectNodeBackward),
     Delete: chainCommands(deleteSelection, joinForward),
     Tab: indentBy(1),

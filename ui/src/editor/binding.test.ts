@@ -259,6 +259,31 @@ describe("the binding", () => {
     expect(t.sent.at(-1)).toEqual([{ type: "moveBlock", block: attrsOf(b).id, after: expect.any(String) }]);
   });
 
+  it("ticks and unticks a to-do, by clicking its box and with Mod-Enter", async () => {
+    const t = await setup(["buy milk"]);
+    cursorAt(t.editor, 0, 0);
+    type(t.editor, "[");
+    type(t.editor, "]");
+    type(t.editor, " ");
+    await agree(t);
+    const box = () => t.editor.view.dom.querySelector<HTMLInputElement>(".todo-box")!;
+    const checked = () => (t.memory.blocks(t.page)[0]!.kind as { checked?: boolean }).checked;
+    expect(box().checked).toBe(false);
+    // A real click, so the browser's own checkbox handling runs too.
+    for (const want of [true, false, true, false]) {
+      box().dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      await agree(t);
+      expect(checked()).toBe(want);
+      expect(box().checked).toBe(want);
+    }
+    for (const want of [true, false]) {
+      key(t.editor, "Mod-Enter");
+      await agree(t);
+      expect(checked()).toBe(want);
+      expect(box().checked).toBe(want);
+    }
+  });
+
   it("stays in step through 1,000 random edits", async () => {
     const t = await setup(["The quick brown fox", "jumps over", "the lazy dog"]);
     const { view } = t.editor;

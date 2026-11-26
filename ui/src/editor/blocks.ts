@@ -144,8 +144,9 @@ export function blockView(node: Node, view: EditorView, getPos: () => number | u
     box.type = "checkbox";
     box.checked = kind.checked;
     box.addEventListener("mousedown", (e) => e.preventDefault());
-    box.addEventListener("click", (e) => {
-      e.preventDefault();
+    // No preventDefault on click: for a checkbox it makes the browser restore the old state after
+    // the handler runs, undoing what update() just showed. The model sets the state either way.
+    box.addEventListener("click", () => {
       const pos = getPos();
       if (pos === undefined) return;
       const current = attrsOf(view.state.doc.nodeAt(pos)!).kind;
