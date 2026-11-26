@@ -32,6 +32,10 @@ const SAMPLE_INTERVAL: Duration = Duration::from_secs(1);
 pub(crate) struct Options {
     pub(crate) app: Option<PathBuf>,
     pub(crate) settle_secs: u64,
+    /// Extra environment for the app, for experiments.
+    pub(crate) envs: Vec<(String, String)>,
+    /// Report the figure without enforcing the budget.
+    pub(crate) report_only: bool,
 }
 
 impl Default for Options {
@@ -39,6 +43,8 @@ impl Default for Options {
         Self {
             app: None,
             settle_secs: 10,
+            envs: Vec::new(),
+            report_only: false,
         }
     }
 }
@@ -60,14 +66,15 @@ pub(crate) fn check(report: &mut Report, opts: &Options) -> Result<()> {
     let _ = std::fs::remove_file(&ready_file);
 
     println!("ram: starting {}", app.display());
-    let mut child = App::spawn(
-        &app,
-        &[
-            ("DRUSITE_DATA_DIR", data_dir.as_os_str()),
-            ("DRUSITE_BENCH_READY_FILE", ready_file.as_os_str()),
-            ("DRUSITE_BENCH_KEY_FILE", key_file.as_os_str()),
-        ],
-    )?;
+    let mut envs: Vec<(&str, &std::ffi::OsStr)> = vec![
+        ("DRUSITE_DATA_DIR", data_dir.as_os_str()),
+        ("DRUSITE_BENCH_READY_FILE", ready_file.as_os_str()),
+        ("DRUSITE_BENCH_KEY_FILE", key_file.as_os_str()),
+    ];
+    for (k, v) in &opts.envs {
+        envs.push((k.as_str(), std::ffi::OsStr::new(v.as_str())));
+    }
+    let mut child = App::spawn(&app, &envs)?;
 
     wait_ready(&mut child, &ready_file)?;
     std::thread::sleep(Duration::from_secs(opts.settle_secs));
@@ -102,15 +109,23 @@ pub(crate) fn check(report: &mut Report, opts: &Options) -> Result<()> {
             p.name
         );
     }
-    report.record(
-        format!(
-            "idle RAM, {} process(es), {RAM_FIXTURE_PAGES}-page workspace",
-            last.len()
-        ),
-        fmt_bytes(median),
-        format!("≤ {}", fmt_bytes(RAM_IDLE_TOTAL_BYTES)),
-        median <= RAM_IDLE_TOTAL_BYTES,
+    let with: Vec<String> = opts.envs.iter().map(|(k, v)| format!(" {k}={v}")).collect();
+    let name = format!(
+        "idle RAM{}{}, {} process(es), {RAM_FIXTURE_PAGES}-page workspace",
+        if with.is_empty() { "" } else { " with" },
+        with.concat(),
+        last.len()
     );
+    if opts.report_only {
+        report.note(format!("{name}: {} (not enforced)", fmt_bytes(median)));
+    } else {
+        report.record(
+            name,
+            fmt_bytes(median),
+            format!("≤ {}", fmt_bytes(RAM_IDLE_TOTAL_BYTES)),
+            median <= RAM_IDLE_TOTAL_BYTES,
+        );
+    }
     if opts.app.is_none() {
         report.note(
             "ram: measures the app with the page tree and the first page open in the editor.",

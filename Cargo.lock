@@ -5924,6 +5924,7 @@ dependencies = [
  "specta-serde",
  "specta-typescript",
  "sysinfo",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

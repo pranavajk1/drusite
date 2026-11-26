@@ -6,8 +6,9 @@
 //! full in every process, so a multi-process webview looks several times its size.
 //! - macOS: the physical footprint, the number Activity Monitor shows.
 //! - Linux: PSS, which splits shared pages between the processes that share them.
-//! - Windows: the working set (from `sysinfo`), which overcounts shared DLLs a little; that only
-//!   makes the budget stricter.
+//! - Windows: the private working set, the number Task Manager shows. (The plain working set
+//!   counts shared DLLs in full in every process; with a handful of WebView2 processes that
+//!   counts the same pages several times over.)
 //!
 //! On macOS a WKWebView's WebContent and Networking processes are children of `launchd`, not of
 //! the app. They are found through the kernel's "responsible process", which is how Activity
@@ -108,7 +109,38 @@ fn footprint(pid: u32) -> Option<u64> {
     Some(kib * 1024)
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn footprint(pid: u32) -> Option<u64> {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::ProcessStatus::{
+        K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS, PROCESS_MEMORY_COUNTERS_EX2,
+    };
+    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+
+    // SAFETY: OpenProcess takes plain values; a null handle means failure.
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if handle.is_null() {
+        return None;
+    }
+    let mut counters = std::mem::MaybeUninit::<PROCESS_MEMORY_COUNTERS_EX2>::zeroed();
+    let size = u32::try_from(std::mem::size_of::<PROCESS_MEMORY_COUNTERS_EX2>()).ok()?;
+    // SAFETY: `counters` is a zeroed, writable PROCESS_MEMORY_COUNTERS_EX2 of `size` bytes, the
+    // extended layout the call fills when given that size; the handle is ours and closed after.
+    let ok = unsafe {
+        let ok = K32GetProcessMemoryInfo(
+            handle,
+            counters.as_mut_ptr().cast::<PROCESS_MEMORY_COUNTERS>(),
+            size,
+        );
+        CloseHandle(handle);
+        ok
+    };
+    // SAFETY: the call succeeded, so the struct is filled in.
+    (ok != 0).then(|| unsafe { counters.assume_init() }.PrivateWorkingSetSize as u64)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
 fn footprint(_pid: u32) -> Option<u64> {
     None
 }
@@ -160,7 +192,8 @@ mod tests {
             .expect("own process listed");
         assert!(this.bytes > 0, "own process measured at 0 bytes");
         assert!(
-            footprint(me).is_some() || cfg!(not(any(target_os = "macos", target_os = "linux")))
+            footprint(me).is_some()
+                || cfg!(not(any(target_os = "macos", target_os = "linux", windows)))
         );
     }
 }

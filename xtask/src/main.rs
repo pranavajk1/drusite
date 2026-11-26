@@ -30,7 +30,9 @@ bindings       writes the UI's TypeScript types for the Core API (--check: fail 
 
 options for ram:
   --app <path>       the app binary to measure (default: builds and runs drusite-app)
-  --settle <secs>    how long to let the app go idle after it reports ready (default: 10)";
+  --settle <secs>    how long to let the app go idle after it reports ready (default: 10)
+  --env KEY=VALUE    an environment variable for the app (repeatable), for experiments
+  --report-only      report the RAM figure without enforcing the budget";
 
 fn main() -> ExitCode {
     match run() {
@@ -79,6 +81,12 @@ fn run() -> Result<bool> {
                 ram_opts.settle_secs =
                     secs.parse().context("--settle needs a number of seconds")?;
             }
+            "--env" => {
+                let pair = args.next().context("--env needs KEY=VALUE")?;
+                let (k, v) = pair.split_once('=').context("--env needs KEY=VALUE")?;
+                ram_opts.envs.push((k.to_owned(), v.to_owned()));
+            }
+            "--report-only" => ram_opts.report_only = true,
             other => bail!("unknown argument `{other}`\n\n{USAGE}"),
         }
     }
