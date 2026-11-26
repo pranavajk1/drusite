@@ -130,6 +130,13 @@ jobs:
           npm ci --no-fund
           npm run check
           npm test
+      # The editor in real WebKit (the Mac app's engine) and Chromium, on the in-memory core.
+      - name: Install the test browsers
+        working-directory: ui
+        run: npx playwright install --with-deps chromium webkit
+      - name: Browser tests
+        working-directory: ui
+        run: npm run test:browser
       - name: npm audit
         working-directory: ui
         run: npm audit --audit-level=low

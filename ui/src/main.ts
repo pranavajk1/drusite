@@ -12,7 +12,10 @@ import { CoreClient, type Transport } from "./core/client";
 async function transport(): Promise<Transport> {
   if ("__TAURI_INTERNALS__" in window) return (await import("./core/tauri")).tauriTransport;
   const { MemoryCore } = await import("./core/memory");
-  return new MemoryCore().transport;
+  const core = new MemoryCore();
+  // The browser tests (`e2e/`) compare what the page shows with what the core holds.
+  if (import.meta.env.DEV) (window as { drusiteMemoryCore?: unknown }).drusiteMemoryCore = core;
+  return core.transport;
 }
 
 const target = document.getElementById("app");
