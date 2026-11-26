@@ -488,11 +488,11 @@ pub async fn compact(state: &AppState, doc: Uuid) -> Result<(), DocError> {
         .import_batch(&batch)
         .map_err(|e| DocError::Invalid(format!("stored update: {e}")))?;
     if let Some(pending) = status.pending {
-        // Never: pushes that would leave a hole are refused. If it happens anyway, keep the
-        // log as it is rather than lose what the snapshot can't hold.
-        return Err(DocError::Server(anyhow::anyhow!(
-            "document {doc} has updates missing their dependencies ({pending:?}); not compacting"
-        )));
+        // An update can depend on another writer's changes that haven't arrived yet: a device
+        // pushes them again after a push failed. Keep the whole log until they do; a snapshot
+        // now would drop the waiting update. The next push asks for compaction again.
+        tracing::warn!(%doc, ?pending, "not compacting yet: some updates wait for changes still to come");
+        return Ok(());
     }
     let snapshot = loro
         .export(loro::ExportMode::Snapshot)
