@@ -2,7 +2,8 @@ node_modules/
 dist/
 target/
 .DS_Store
-gen/
+# Tauri's generated schemas; the Android and iOS projects are kept (they are edited by hand)
+crates/drusite-app/gen/schemas/
 *.keystore
 *.jks
 

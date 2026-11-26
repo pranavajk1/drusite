@@ -14,7 +14,7 @@ default = ["sqlite"]
 # The encrypted SQLite store. Off for the browser build, which stores documents in OPFS.
 sqlite = ["dep:rusqlite"]
 # The WebSocket sync driver, for native apps and tests.
-net = ["sqlite", "drusite-proto/zstd", "dep:tokio", "dep:tokio-tungstenite", "dep:futures-util", "dep:http"]
+net = ["sqlite", "drusite-proto/zstd", "dep:tokio", "dep:tokio-tungstenite", "dep:futures-util", "dep:http", "dep:ureq", "dep:rustls"]
 
 [dependencies]
 base64.workspace = true
@@ -30,6 +30,10 @@ futures-util = { workspace = true, optional = true, features = ["sink"] }
 http = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true, features = ["sync", "time", "macros", "rt"] }
 tokio-tungstenite = { workspace = true, optional = true, features = ["connect", "rustls-tls-webpki-roots"] }
+# HTTP for signing in and refreshing, and the TLS provider both it and the WebSocket use: ring,
+# with Mozilla's roots, because it cross-compiles to phones without extra tooling.
+ureq = { workspace = true, optional = true, features = ["rustls", "json"] }
+rustls = { workspace = true, optional = true, features = ["ring", "std"] }
 uuid.workspace = true
 getrandom.workspace = true
 serde.workspace = true

@@ -3,10 +3,11 @@
   import { onMount } from "svelte";
   import { TextSelection } from "prosemirror-state";
 
-  import type { CoreClient } from "../core/client";
+  import { CoreError, type CoreClient } from "../core/client";
   import type { PageId } from "../core/types";
   import { focusEnd } from "../editor/commands";
   import { type Editor, createEditor } from "../editor/editor";
+  import PhoneToolbar from "./PhoneToolbar.svelte";
 
   let {
     client,
@@ -29,6 +30,12 @@
 
   let mount: HTMLDivElement;
   let editor: Editor | null = null;
+  // The phone toolbar shows while the editor has the focus, on touch screens only.
+  const touch = window.matchMedia?.("(pointer: coarse)").matches ?? false;
+  let editorView = $state<Editor["view"] | null>(null);
+  let focused = $state(false);
+  /** The page's document hasn't come from the server yet. */
+  let arriving = $state(false);
   let draft = $state("");
   let renaming: ReturnType<typeof setTimeout> | undefined;
 
@@ -88,15 +95,33 @@
       if (event.type === "pageChanged" && event.page === id) void editor.sync.reload();
     });
     (async () => {
-      try {
-        const view = await client.openPage(id);
-        if (closed) return;
-        editor = createEditor(mount, client, view, onerror);
-        if (view.title === "") titleInput.focus();
-        else editor.view.focus();
-        onopened();
-      } catch (e) {
-        onerror(e);
+      // A page another device just made can be in the page list before its own document
+      // arrives; wait for it rather than fail.
+      const deadline = Date.now() + 60_000;
+      for (;;) {
+        try {
+          const view = await client.openPage(id);
+          if (closed) {
+            await client.closePage(id).catch(() => {});
+            return;
+          }
+          arriving = false;
+          editor = createEditor(mount, client, view, onerror);
+          editorView = editor.view;
+          if (view.title === "") titleInput.focus();
+          else editor.view.focus();
+          onopened();
+          return;
+        } catch (e) {
+          if (closed) return;
+          if (!(e instanceof CoreError && e.code === "unknownPage") || Date.now() > deadline) {
+            arriving = false;
+            onerror(e);
+            return;
+          }
+          arriving = true;
+          await new Promise((r) => setTimeout(r, 500));
+        }
       }
     })();
     return () => {
@@ -104,13 +129,20 @@
       stop();
       const e = editor;
       editor = null;
+      editorView = null;
       void (async () => {
         if (renaming !== undefined) {
           clearTimeout(renaming);
-          await client.renamePage(id, draft).catch(onerror);
+          await client.renamePage(id, draft).catch((err) => {
+            if (!(err instanceof CoreError && err.code === "unknownPage")) onerror(err);
+          });
         }
-        await e?.close();
-        await client.closePage(id).catch(onerror);
+        if (!e) return;
+        await e.close();
+        // Gone already (deleted, or given up for the account's notes) is fine.
+        await client.closePage(id).catch((err) => {
+          if (!(err instanceof CoreError && err.code === "unknownPage")) onerror(err);
+        });
       })();
     };
   });
@@ -126,8 +158,20 @@
     oninput={rename}
     onkeydown={titleKey}
   />
+  {#if arriving}
+    <p class="page-arriving">This page is still on its way from the server…</p>
+  {/if}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="page-body" bind:this={mount} onkeydown={bodyKey}></div>
+  <div
+    class="page-body"
+    bind:this={mount}
+    onkeydown={bodyKey}
+    onfocusin={() => (focused = true)}
+    onfocusout={() => (focused = false)}
+  ></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="page-tail" onmousedown={tailDown}></div>
 </article>
+{#if touch && focused && editorView}
+  <PhoneToolbar view={editorView} />
+{/if}

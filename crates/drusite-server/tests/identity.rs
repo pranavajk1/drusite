@@ -7,6 +7,8 @@
 
 mod common;
 
+use common::browser::{Browser, location};
+
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -15,106 +17,12 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use drusite_core::auth::{self as client, Authorization, DeviceKey};
 use drusite_dpop::SoftwareKey;
 use reqwest::StatusCode;
-use reqwest::header::{HeaderMap, LOCATION, SET_COOKIE};
+use reqwest::header::LOCATION;
 use serde_json::{Value, json};
 use url::Url;
 
 fn now() -> i64 {
     time::OffsetDateTime::now_utc().unix_timestamp()
-}
-
-/// A browser: follows nothing by itself, keeps cookies, sends Origin like a real one.
-struct Browser {
-    http: reqwest::Client,
-    base: Url,
-    cookies: HashMap<String, String>,
-}
-
-impl Browser {
-    fn new(base: &Url) -> Self {
-        Self {
-            http: reqwest::Client::builder()
-                .redirect(reqwest::redirect::Policy::none())
-                .build()
-                .unwrap(),
-            base: base.clone(),
-            cookies: HashMap::new(),
-        }
-    }
-
-    fn url(&self, path: &str) -> Url {
-        self.base.join(path).unwrap()
-    }
-
-    fn cookie_header(&self) -> String {
-        self.cookies
-            .iter()
-            .map(|(k, v)| format!("{k}={v}"))
-            .collect::<Vec<_>>()
-            .join("; ")
-    }
-
-    fn absorb(&mut self, headers: &HeaderMap) {
-        for value in headers.get_all(SET_COOKIE) {
-            let text = value.to_str().unwrap();
-            let (pair, attrs) = text.split_once(';').unwrap_or((text, ""));
-            let (name, value) = pair.split_once('=').unwrap();
-            if attrs.contains("Max-Age=0") {
-                self.cookies.remove(name);
-            } else {
-                self.cookies.insert(name.to_owned(), value.to_owned());
-            }
-        }
-    }
-
-    async fn get(&mut self, url: &Url) -> reqwest::Response {
-        let response = self
-            .http
-            .get(url.clone())
-            .header("cookie", self.cookie_header())
-            .send()
-            .await
-            .unwrap();
-        self.absorb(response.headers());
-        response
-    }
-
-    async fn post(&mut self, path: &str, body: Value) -> (StatusCode, Value) {
-        let origin = self.base.origin().ascii_serialization();
-        self.post_from(path, body, &origin).await
-    }
-
-    async fn post_from(&mut self, path: &str, body: Value, origin: &str) -> (StatusCode, Value) {
-        let response = self
-            .http
-            .post(self.url(path))
-            .header("cookie", self.cookie_header())
-            .header("origin", origin)
-            .json(&body)
-            .send()
-            .await
-            .unwrap();
-        self.absorb(response.headers());
-        let status = response.status();
-        (status, response.json().await.unwrap_or(Value::Null))
-    }
-
-    async fn delete(&mut self, path: &str) -> StatusCode {
-        let response = self
-            .http
-            .delete(self.url(path))
-            .header("cookie", self.cookie_header())
-            .header("origin", self.base.origin().ascii_serialization())
-            .send()
-            .await
-            .unwrap();
-        response.status()
-    }
-}
-
-fn location(response: &reqwest::Response, base: &Url) -> Url {
-    base.join(response.headers()[LOCATION].to_str().unwrap())
-        .unwrap()
 }
 
 /// The app's half: a device key, and the OAuth client from drusite-core.

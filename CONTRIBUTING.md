@@ -59,6 +59,40 @@ there; CI runs 3 seeds in its own job. Run many more before changing sync:
 DRUSITE_SIM_SEEDS=50 cargo test -p drusite-core --test simulation --release -- --ignored --nocapture
 ```
 
+## Phones
+
+The same app runs on Android and iOS; the generated projects are committed under
+`crates/drusite-app/gen/` and edited by hand in a few places (the sign-in redirect in the Android
+manifest, release signing in `app/build.gradle.kts`, and npm running from `ui/`), so don't
+regenerate them with `tauri android init` or `tauri ios init`. The platform code (device keys in
+StrongBox or the Secure Enclave, the store key, signing in through the system browser) is
+`crates/tauri-plugin-drusite`.
+
+Android needs the SDK, NDK 30 and a JDK (`JAVA_HOME`, `ANDROID_HOME`, `NDK_HOME`), and the Rust
+target `aarch64-linux-android`. Build through `ui/android.sh`, which sets what the vendored OpenSSL
+needs from the NDK:
+
+```bash
+ui/android.sh build --debug --apk --target aarch64
+adb install -r crates/drusite-app/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
+```
+
+iOS, in the Simulator (Xcode, and the Rust target `aarch64-apple-ios-sim`):
+
+```bash
+(cd ui && npm run tauri ios build -- --debug --target aarch64-sim)
+xcrun simctl install booted crates/drusite-app/gen/apple/build/arm64-sim/Drusite.app
+```
+
+To sign in from the emulator to a server on your Mac, run the server with
+`public_url = "http://localhost:<port>"` and forward the port (`adb reverse tcp:<port> tcp:<port>`);
+the Simulator reaches `localhost` directly.
+
+Android releases: pushing a tag `v<version>`, matching `version` in
+`crates/drusite-app/tauri.conf.json`, builds a signed APK and attaches it to a GitHub release
+(`.github/workflows/android.yml`). The signing key is fetched from Doppler with a read-only token,
+the repository's one secret (`DOPPLER_TOKEN`); a fork without it builds unsigned APKs.
+
 After changing the Core API (`crates/drusite-core/src/api.rs`), regenerate the UI's types with
 `cargo xtask bindings` and commit them.
 

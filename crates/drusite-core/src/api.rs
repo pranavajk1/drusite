@@ -58,6 +58,18 @@ pub enum Command {
     },
     /// The UI has loaded and is showing what it opened. Benchmarks wait for this.
     Ready,
+    /// How this device stands with its server: signed in or not, and how sync is going.
+    AccountStatus,
+    /// Signs in to the Drusite server at `server` (its address, as the person typed it), in the
+    /// system browser. Answers at once; how it goes arrives as [`Event::AccountChanged`].
+    /// Only the apps can sign in; elsewhere this is [`ErrorCode::Unsupported`].
+    SignIn {
+        server: String,
+    },
+    /// Gives up a sign-in still waiting in the browser.
+    CancelSignIn,
+    /// Signs this device out of its server. Its notes stay on the device.
+    SignOut,
 }
 
 /// One change to a page, as the editor makes it.
@@ -130,6 +142,7 @@ pub enum Response {
     PageCreated { page: PageInfo },
     Opened { view: PageView },
     Edited { outcome: EditOutcome },
+    Account { status: AccountStatus },
     Done,
 }
 
@@ -150,6 +163,8 @@ pub enum Event {
     /// An open page had to be reloaded from its last saved state (after an internal error).
     /// The editor should replace what it shows with `view`.
     PageReloaded { view: PageView, reason: String },
+    /// The account or sync status changed.
+    AccountChanged { status: AccountStatus },
 }
 
 /// A page's place in the tree.
@@ -206,6 +221,47 @@ pub struct PlacedBlock {
     pub after: Option<BlockId>,
 }
 
+/// How this device stands with its server.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountStatus {
+    /// The server this device is signed in to (or signing in to), as its public URL.
+    pub server: Option<String>,
+    /// The account's email address, once known.
+    pub email: Option<String>,
+    pub phase: SyncPhase,
+    /// What went wrong, in words for the person, when something did.
+    pub message: Option<String>,
+}
+
+impl AccountStatus {
+    pub fn signed_out(message: Option<String>) -> Self {
+        Self {
+            server: None,
+            email: None,
+            phase: SyncPhase::SignedOut,
+            message,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum SyncPhase {
+    /// Not signed in: the notes live on this device only.
+    SignedOut,
+    /// Waiting for the person to finish signing in, in the browser.
+    SigningIn,
+    /// Connecting to the server.
+    Connecting,
+    /// Connected; changes go both ways as they happen.
+    Online,
+    /// Can't reach the server; trying again. Changes wait on the device.
+    Offline,
+    /// Stopped by something a retry won't fix (see the message).
+    Failed,
+}
+
 /// Why a command failed.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, thiserror::Error)]
 #[serde(rename_all = "camelCase")]
@@ -230,6 +286,10 @@ pub enum ErrorCode {
     Reloaded,
     /// Reading or writing the local store failed.
     Storage,
+    /// This build can't do that (signing in, in the browser build).
+    Unsupported,
+    /// Signing in or out failed.
+    Account,
     Internal,
 }
 

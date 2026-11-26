@@ -362,6 +362,10 @@ criteria = "safe-to-deploy"
 version = "0.18.3"
 criteria = "safe-to-deploy"
 
+[[exemptions.cookie_store]]
+version = "0.22.1"
+criteria = "safe-to-deploy"
+
 [[exemptions.core-foundation]]
 version = "0.10.1"
 criteria = "safe-to-deploy"
@@ -1156,6 +1160,10 @@ criteria = "safe-to-run"
 
 [[exemptions.litemap]]
 version = "0.8.3"
+criteria = "safe-to-deploy"
+
+[[exemptions.litrs]]
+version = "1.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.lock_api]]
@@ -2194,6 +2202,10 @@ criteria = "safe-to-deploy"
 version = "2.7.6"
 criteria = "safe-to-deploy"
 
+[[exemptions.tauri-plugin]]
+version = "2.7.4"
+criteria = "safe-to-deploy"
+
 [[exemptions.tauri-runtime]]
 version = "2.12.4"
 criteria = "safe-to-deploy"
@@ -2394,8 +2406,20 @@ criteria = "safe-to-deploy"
 version = "0.6.1"
 criteria = "safe-to-deploy"
 
+[[exemptions.ureq]]
+version = "3.5.2"
+criteria = "safe-to-deploy"
+
+[[exemptions.ureq-proto]]
+version = "0.7.1"
+criteria = "safe-to-deploy"
+
 [[exemptions.url]]
 version = "2.5.9"
+criteria = "safe-to-deploy"
+
+[[exemptions.utf8-zero]]
+version = "0.8.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.uuid]]

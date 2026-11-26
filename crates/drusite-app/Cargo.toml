@@ -9,15 +9,24 @@ repository.workspace = true
 authors.workspace = true
 publish.workspace = true
 
+[lib]
+# Phones load the app as a library; desktops run the binary, which calls into it.
+name = "drusite_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
 [features]
 # Serve the bundled UI instead of the Vite dev server. The Tauri CLI turns this on for release
 # builds; the RAM benchmark turns it on too.
 custom-protocol = ["tauri/custom-protocol"]
 
 [dependencies]
-drusite-core.workspace = true
+drusite-core = { workspace = true, features = ["net"] }
+drusite-dpop.workspace = true
 serde_json.workspace = true
 tauri.workspace = true
+tauri-plugin-drusite.workspace = true
+tokio = { workspace = true, features = ["sync"] }
+url.workspace = true
 
 [build-dependencies]
 tauri-build.workspace = true

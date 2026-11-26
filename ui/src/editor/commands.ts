@@ -233,6 +233,40 @@ export function editorKeymap(): Plugin {
   });
 }
 
+/** What the phone toolbar does: the same commands the keyboard shortcuts run. */
+export const toolbar = {
+  indent: indentBy(1),
+  outdent: indentBy(-1),
+  bold: toggleMark(marks.bold!),
+  italic: toggleMark(marks.italic!),
+  undo,
+  redo,
+  /** Paragraph → H1 → H2 → H3 → paragraph, by the kind of the block the cursor is in. */
+  heading: ((state, dispatch) => {
+    const block = currentBlock(state);
+    const kind = block?.attrs.kind;
+    const order = ["h1", "h2", "h3"] as const;
+    const next: BlockKind =
+      kind?.type !== "heading"
+        ? { type: "heading", level: "h1" }
+        : kind.level === "h3"
+          ? { type: "paragraph" }
+          : { type: "heading", level: order[order.indexOf(kind.level) + 1]! };
+    return setKind(next)(state, dispatch);
+  }) as PmCommand,
+  /** Turns the selected blocks into `kind`, or back into paragraphs if they all are already. */
+  toggleKind(type: "bulleted" | "todo"): PmCommand {
+    return (state, dispatch) => {
+      const kind = currentBlock(state)?.attrs.kind;
+      if (kind?.type === type) return setKind({ type: "paragraph" })(state, dispatch);
+      return setKind(type === "todo" ? { type: "todo", checked: false } : { type: "bulleted" })(
+        state,
+        dispatch,
+      );
+    };
+  },
+};
+
 export function baseKeys(): Plugin {
   return keymap(baseKeymap);
 }

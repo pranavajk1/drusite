@@ -29,7 +29,7 @@ use crate::{Error, Result};
 pub const STORE_FILE: &str = "workspace.drusite";
 
 /// The layout of the database itself (not of the documents in it).
-const STORE_SCHEMA: i32 = 2;
+const STORE_SCHEMA: i32 = 3;
 
 /// Compact a document after this many logged updates…
 pub const COMPACT_AFTER_UPDATES: u64 = 500;
@@ -157,6 +157,22 @@ impl Store {
                      on_server  INTEGER NOT NULL DEFAULT 0
                  ) STRICT;
                  PRAGMA user_version = 2;",
+            )?;
+            tx.commit()?;
+        }
+        if version < 3 {
+            // The server this device syncs with, and its refresh token while signed in. The
+            // server stays after signing out, so signing in to another one later knows to forget
+            // what the old one had.
+            let tx = self.conn.transaction()?;
+            tx.execute_batch(
+                "CREATE TABLE account (
+                     id            INTEGER PRIMARY KEY CHECK (id = 1),
+                     server        TEXT NOT NULL,
+                     refresh_token TEXT,
+                     email         TEXT
+                 ) STRICT;
+                 PRAGMA user_version = 3;",
             )?;
             tx.commit()?;
         }
@@ -319,6 +335,69 @@ impl Store {
         Ok(())
     }
 
+    // ---- Account ----
+
+    /// The server this device syncs with, if it ever signed in.
+    pub fn account(&self) -> Result<Option<StoredAccount>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT server, refresh_token, email FROM account WHERE id = 1",
+                [],
+                |r| {
+                    Ok(StoredAccount {
+                        server: r.get(0)?,
+                        refresh_token: r.get(1)?,
+                        email: r.get(2)?,
+                    })
+                },
+            )
+            .optional()?)
+    }
+
+    /// Records a sign-in to `server`. Signing in to another server than the last one forgets
+    /// what the last one had, so everything is offered to the new one.
+    pub fn sign_in(&mut self, server: &str, refresh_token: &str) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        let previous: Option<String> = tx
+            .query_row("SELECT server FROM account WHERE id = 1", [], |r| r.get(0))
+            .optional()?;
+        if previous.as_deref().is_some_and(|p| p != server) {
+            tx.execute("DELETE FROM sync_state", [])?;
+        }
+        tx.execute(
+            "INSERT INTO account (id, server, refresh_token) VALUES (1, ?1, ?2)
+             ON CONFLICT (id) DO UPDATE SET server = excluded.server,
+                 refresh_token = excluded.refresh_token,
+                 email = CASE WHEN account.server = excluded.server THEN account.email END",
+            params![server, refresh_token],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Replaces the refresh token after a refresh (each one is good once).
+    pub fn set_refresh_token(&mut self, refresh_token: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE account SET refresh_token = ?1 WHERE id = 1",
+            params![refresh_token],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_account_email(&mut self, email: &str) -> Result<()> {
+        self.conn
+            .execute("UPDATE account SET email = ?1 WHERE id = 1", params![email])?;
+        Ok(())
+    }
+
+    /// Forgets the refresh token: signed out. The server is kept (see [`Self::sign_in`]).
+    pub fn sign_out(&mut self) -> Result<()> {
+        self.conn
+            .execute("UPDATE account SET refresh_token = NULL WHERE id = 1", [])?;
+        Ok(())
+    }
+
     /// Removes every document: for a device that hasn't synced yet giving up its own empty
     /// workspace for its account's.
     pub fn clear(&mut self) -> Result<()> {
@@ -450,6 +529,24 @@ impl Store {
             }
         }
         Ok(())
+    }
+}
+
+/// The account row: the server, and the refresh token while signed in.
+#[derive(Clone, PartialEq, Eq)]
+pub struct StoredAccount {
+    pub server: String,
+    pub refresh_token: Option<String>,
+    pub email: Option<String>,
+}
+
+impl std::fmt::Debug for StoredAccount {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StoredAccount")
+            .field("server", &self.server)
+            .field("signed_in", &self.refresh_token.is_some())
+            .field("email", &self.email)
+            .finish()
     }
 }
 

@@ -88,6 +88,11 @@ impl Authorization {
         })
     }
 
+    /// The server this sign-in is for.
+    pub fn server(&self) -> &Url {
+        &self.server
+    }
+
     /// The page to open in the system browser.
     pub fn url(&self) -> &Url {
         &self.url
@@ -161,7 +166,7 @@ impl DeviceKey for drusite_dpop::SoftwareKey {
 
 /// A DPoP proof for one request: `method` on `url`, carrying `access_token` if there is one.
 pub fn proof(
-    key: &impl DeviceKey,
+    key: &(impl DeviceKey + ?Sized),
     method: &str,
     url: &Url,
     access_token: Option<&str>,

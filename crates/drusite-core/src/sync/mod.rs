@@ -112,7 +112,22 @@ impl Core {
     /// account's existing workspace instead of its own empty one.
     pub fn is_blank(&self) -> Result<bool> {
         let id = self.workspace.id().to_string();
-        Ok(self.workspace.roots().is_empty() && !self.store.sync_state(&id)?.on_server)
+        if self.store.sync_state(&id)?.on_server {
+            return Ok(false);
+        }
+        // Nothing worth keeping: no pages, or only untitled, empty ones (a new install opens on
+        // one, so there is somewhere to type).
+        for node in self.workspace.pages()? {
+            if !node.title.is_empty() {
+                return Ok(false);
+            }
+            let (page, _) = self.store.load_page(node.id)?;
+            let blocks = page.blocks()?;
+            if blocks.len() > 1 || blocks.iter().any(|b| !b.text().is_empty()) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     /// Replaces this blank device's workspace with the account's, from the server's entries for
@@ -869,5 +884,37 @@ mod tests {
         .unwrap();
         assert!(!mac.is_blank().unwrap());
         assert!(mac.sync_start_join(WorkspaceId::new()).is_err());
+    }
+
+    /// The empty, untitled page a new install opens on isn't notes of its own; typing in it is.
+    #[test]
+    fn an_empty_first_page_is_still_blank() {
+        let (mut phone, _d) = core();
+        let crate::api::Response::PageCreated { page } = phone
+            .handle(Command::CreatePage {
+                parent: None,
+                title: String::new(),
+            })
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert!(phone.is_blank().unwrap());
+        let crate::api::Response::Opened { view } =
+            phone.handle(Command::OpenPage { page: page.id }).unwrap()
+        else {
+            panic!()
+        };
+        phone
+            .handle(Command::Edit {
+                page: page.id,
+                edits: vec![crate::api::Edit::InsertText {
+                    block: view.blocks[0].id,
+                    pos: 0,
+                    text: "x".into(),
+                }],
+            })
+            .unwrap();
+        assert!(!phone.is_blank().unwrap());
     }
 }

@@ -4,6 +4,8 @@
 
 #![allow(dead_code, unreachable_pub, clippy::unwrap_used)]
 
+pub mod browser;
+
 use std::sync::{Arc, Mutex};
 
 use drusite_server::app::{AppState, router};

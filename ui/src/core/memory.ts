@@ -204,6 +204,15 @@ export class MemoryCore {
         else this.open.delete(command.page);
         return { type: "done" };
       }
+      case "accountStatus":
+        return {
+          type: "account",
+          status: { server: null, email: null, phase: "signedOut", message: null },
+        };
+      case "signIn":
+      case "cancelSignIn":
+      case "signOut":
+        fail("unsupported", "Signing in needs the Drusite app; in a browser, notes aren't saved.");
       case "ready":
         return { type: "done" };
       case "edit":
