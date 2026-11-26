@@ -90,7 +90,8 @@ the Simulator reaches `localhost` directly.
 
 Android releases: pushing a tag `v<version>`, matching `version` in
 `crates/drusite-app/tauri.conf.json`, builds a signed APK and attaches it to a GitHub release
-(`.github/workflows/android.yml`, which lists the secrets it needs).
+(`.github/workflows/android.yml`). The signing key is fetched from Doppler with a read-only token,
+the repository's one secret (`DOPPLER_TOKEN`); a fork without it builds unsigned APKs.
 
 After changing the Core API (`crates/drusite-core/src/api.rs`), regenerate the UI's types with
 `cargo xtask bindings` and commit them.

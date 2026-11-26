@@ -1,12 +1,14 @@
 name: Android
 
 # Builds the Android app (arm64, which every phone Drusite targets is). On a version tag (`v1.2.3`,
-# matching the version in crates/drusite-app/tauri.conf.json), it signs the APK and attaches it to
-# a GitHub release, where Obtainium and other installers pick it up.
+# matching the version in crates/drusite-app/tauri.conf.json), it attaches the APK to a GitHub
+# release, where Obtainium and other installers pick it up.
 #
-# Signing needs four repository secrets: ANDROID_KEYSTORE (the keystore, base64),
-# ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD. Every release must be
-# signed with the same key, or phones refuse the update.
+# The signing key lives in Doppler, not here: the one repository secret, DOPPLER_TOKEN, is a
+# read-only service token for the config holding ANDROID_KEYSTORE (the keystore, base64),
+# ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD. Wherever the token is
+# available (this repository's pushes and pull requests, not forks) the APK is signed; releases
+# must be, since phones refuse an update signed with another key.
 
 on:
   push:
@@ -66,27 +68,40 @@ jobs:
       - name: Install the UI's dependencies
         working-directory: ui
         run: npm ci --no-fund
-      - name: Unpack the signing key
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Fetch the signing key from Doppler
         env:
-          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
         run: |
-          [ -n "$KEYSTORE" ] || { echo "the ANDROID_KEYSTORE secret is missing" >&2; exit 1; }
-          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          if [ -z "$DOPPLER_TOKEN" ]; then
+            if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+              echo "a release needs the DOPPLER_TOKEN secret" >&2
+              exit 1
+            fi
+            echo "no DOPPLER_TOKEN: building unsigned"
+            exit 0
+          fi
+          secrets=$(curl -fsS -H "Authorization: Bearer $DOPPLER_TOKEN" \
+            "https://api.doppler.com/v3/configs/config/secrets/download?format=json")
+          get() { jq -r --arg k "$1" '.[$k] // empty' <<<"$secrets"; }
+          for name in ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            value=$(get "$name")
+            [ -n "$value" ] || { echo "$name is missing in Doppler" >&2; exit 1; }
+            echo "::add-mask::$value"
+            echo "DRUSITE_${name}=$value" >> "$GITHUB_ENV"
+          done
+          get ANDROID_KEYSTORE | base64 -d > "$RUNNER_TEMP/release.keystore"
+          [ -s "$RUNNER_TEMP/release.keystore" ] || { echo "ANDROID_KEYSTORE is missing in Doppler" >&2; exit 1; }
           echo "DRUSITE_ANDROID_KEYSTORE=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
       - name: Build
         working-directory: ui
-        env:
-          DRUSITE_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          DRUSITE_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          DRUSITE_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: ./android.sh build --apk --target aarch64 --ci
       - name: Name the APK
         run: |
           out=crates/drusite-app/gen/android/app/build/outputs/apk/universal/release
           apk=$(ls "$out"/*.apk)
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+          if [ -n "${DRUSITE_ANDROID_KEYSTORE:-}" ]; then
             "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$apk"
+            rm -f "$DRUSITE_ANDROID_KEYSTORE"
           fi
           mkdir dist
           cp "$apk" "dist/drusite-${{ steps.version.outputs.version }}-arm64.apk"
