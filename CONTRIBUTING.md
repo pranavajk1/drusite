@@ -27,7 +27,7 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 cargo xtask budgets
 cargo xtask bindings --check
-(cd ui && npm ci && npm run check)
+(cd ui && npm ci && npm run build && npm run check && npm test)
 ```
 
 After changing the Core API (`crates/drusite-core/src/api.rs`), regenerate the UI's types with

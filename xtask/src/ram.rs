@@ -82,7 +82,14 @@ pub(crate) fn check(report: &mut Report, opts: &Options) -> Result<()> {
             bail!("the app exited while being measured ({status})");
         }
         last = mem::app_processes(child.id())?;
-        totals.push(last.iter().map(|p| p.bytes).sum::<u64>());
+        let total = last.iter().map(|p| p.bytes).sum::<u64>();
+        println!(
+            "ram: sample {}: {} in {} process(es)",
+            i + 1,
+            fmt_bytes(total),
+            last.len()
+        );
+        totals.push(total);
     }
     totals.sort_unstable();
     let median = totals[totals.len() / 2];
@@ -106,8 +113,7 @@ pub(crate) fn check(report: &mut Report, opts: &Options) -> Result<()> {
     );
     if opts.app.is_none() {
         report.note(
-            "ram: measures the Tauri app opening the workspace, with a placeholder page in place \
-             of the editor until Phase 1 step 5.",
+            "ram: measures the app with the page tree and the first page open in the editor.",
         );
     }
     Ok(())
@@ -167,6 +173,27 @@ fn write_fixture(dir: &Path) -> Result<PathBuf> {
 }
 
 fn build_app() -> Result<PathBuf> {
+    // The app embeds the built UI.
+    let ui = Path::new(env!("CARGO_MANIFEST_DIR")).join("../ui");
+    let npm = if cfg!(windows) { "npm.cmd" } else { "npm" };
+    if !ui.join("node_modules").exists() {
+        let status = Command::new(npm)
+            .args(["ci", "--no-fund", "--no-audit"])
+            .current_dir(&ui)
+            .status()
+            .context("cannot run npm")?;
+        if !status.success() {
+            bail!("npm ci failed");
+        }
+    }
+    let status = Command::new(npm)
+        .args(["run", "build"])
+        .current_dir(&ui)
+        .status()
+        .context("cannot run npm")?;
+    if !status.success() {
+        bail!("building the UI failed");
+    }
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
     let status = Command::new(cargo)
         .args([

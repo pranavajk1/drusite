@@ -20,7 +20,6 @@ use std::sync::Mutex;
 
 use drusite_core::api::{ApiError, Command, ErrorCode, Response};
 use drusite_core::{Core, StoreKey};
-use tauri::webview::PageLoadEvent;
 use tauri::{Emitter, Manager};
 
 /// The Tauri event the core's events are sent on.
@@ -103,15 +102,6 @@ fn main() {
                 ready_file: std::env::var_os("DRUSITE_BENCH_READY_FILE").map(PathBuf::from),
             });
             Ok(())
-        })
-        .on_page_load(|webview, payload| {
-            // Until the editor (Phase 1 step 5) reports `Ready` itself, the placeholder page
-            // having loaded counts as ready.
-            if payload.event() == PageLoadEvent::Finished
-                && let Some(state) = webview.try_state::<AppState>()
-            {
-                state.mark_ready();
-            }
         })
         .run(tauri::generate_context!());
     if let Err(err) = result {

@@ -57,6 +57,14 @@ jobs:
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+      # The app embeds the built UI, so it has to exist before anything compiles drusite-app.
+      - name: Build the UI
+        working-directory: ui
+        shell: bash
+        run: npm ci --no-fund && npm run build
       - name: Install Tauri's Linux dependencies
         if: runner.os == 'Linux'
         run: |
@@ -81,6 +89,14 @@ jobs:
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+      # The app embeds the built UI, so it has to exist before anything compiles drusite-app.
+      - name: Build the UI
+        working-directory: ui
+        shell: bash
+        run: npm ci --no-fund && npm run build
       - name: Install Tauri's Linux dependencies
         if: runner.os == 'Linux'
         run: |
@@ -93,7 +109,7 @@ jobs:
           if [ "$RUNNER_OS" = Linux ]; then xvfb-run -a cargo xtask budgets; else cargo xtask budgets; fi
 
   ui:
-    name: UI types
+    name: UI types and tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -105,11 +121,12 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26
-      - name: Type-check the UI
+      - name: Type-check and test the UI
         working-directory: ui
         run: |
           npm ci --no-fund
           npm run check
+          npm test
       - name: npm audit
         working-directory: ui
         run: npm audit --audit-level=low

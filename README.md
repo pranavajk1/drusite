@@ -22,12 +22,24 @@ Rust sync server. Notion's block model, real-time sync, and notes that AI tools 
 
 ## Building
 
-The Rust toolchain is pinned in `rust-toolchain.toml`; `rustup` installs it on first use.
+The Rust toolchain is pinned in `rust-toolchain.toml`; `rustup` installs it on first use. The app
+embeds the built UI, so build the UI once before building the workspace:
 
 ```bash
+(cd ui && npm ci && npm run build)
 cargo test --workspace
 cargo xtask budgets
 ```
+
+Run the desktop app (macOS for now), with the UI reloading as you edit it:
+
+```bash
+(cd ui && npm run tauri dev)
+```
+
+It keeps its workspace in `~/Library/Application Support/dev.drusite.app/` and the key that
+encrypts it in the login Keychain (`dev.drusite.store`). `cd ui && npm run dev` runs the UI alone
+in a browser, against an in-memory core.
 
 [`CONTRIBUTING.md`](CONTRIBUTING.md) lists every check CI runs.
 

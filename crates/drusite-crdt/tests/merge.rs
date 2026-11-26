@@ -402,3 +402,37 @@ fn long_page_5000_blocks() {
         snapshot.len() / 1024
     );
 }
+
+#[test]
+fn text_typed_at_the_start_of_a_block_split_from_bold_text_is_plain() {
+    let (mut page, first) = page_with("boldtext");
+    page.format(first, 0, 8, &Mark::Bold, true).unwrap();
+    let (second, _) = page.split(first, 4, BlockKind::Paragraph).unwrap();
+    page.insert_text(second, 0, "x").unwrap();
+    let spans = page.block(second).unwrap().spans;
+    assert_eq!(spans[0].text, "x");
+    assert!(!spans[0].marks.bold, "{spans:?}");
+    assert!(spans[1].marks.bold);
+    // Typing at the end of bold text continues it.
+    page.insert_text(first, 4, "y").unwrap();
+    assert!(
+        page.block(first)
+            .unwrap()
+            .spans
+            .iter()
+            .all(|s| s.marks.bold)
+    );
+}
+
+#[test]
+fn a_copied_join_keeps_the_copied_texts_own_formatting() {
+    let (mut page, ids) = page_with_blocks(&["bold", "middle", "plain"]);
+    page.format(ids[0], 0, 4, &Mark::Bold, true).unwrap();
+    page.move_block(ids[2], Some(ids[0])).unwrap(); // bold | plain | middle
+    let (outcome, _) = page.join(ids[2]).unwrap();
+    assert_eq!(outcome, JoinOutcome::Copied);
+    let spans = page.block(ids[0]).unwrap().spans;
+    assert_eq!(spans.len(), 2, "{spans:?}");
+    assert!(spans[0].marks.bold && spans[0].text == "bold");
+    assert!(!spans[1].marks.bold && spans[1].text == "plain");
+}

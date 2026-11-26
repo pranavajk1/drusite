@@ -4,7 +4,10 @@
   "version": "0.0.0",
   "identifier": "dev.drusite.app",
   "build": {
-    "frontendDist": "placeholder"
+    "frontendDist": "../../ui/dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": { "script": "npm run dev", "cwd": "../../ui", "wait": false },
+    "beforeBuildCommand": { "script": "npm run build", "cwd": "../../ui" }
   },
   "app": {
     "withGlobalTauri": false,

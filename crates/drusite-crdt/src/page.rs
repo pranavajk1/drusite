@@ -362,10 +362,18 @@ impl Page {
             for span in spans {
                 let n = span.text.chars().count();
                 inner.body().insert(at, &span.text)?;
-                for mark in marks_of(&span.marks) {
-                    inner
-                        .body()
-                        .mark(at..at + n, mark.key(), attrs::mark_value(&mark))?;
+                // Copied text keeps its own formatting, not what it would inherit from the text
+                // it lands after.
+                let marks = marks_of(&span.marks);
+                for key in INLINE_KEYS {
+                    match marks.iter().find(|m| m.key() == key) {
+                        Some(mark) => {
+                            inner
+                                .body()
+                                .mark(at..at + n, key, attrs::mark_value(mark))?
+                        }
+                        None => inner.body().unmark(at..at + n, key)?,
+                    }
                 }
                 at += n;
             }
@@ -657,9 +665,21 @@ impl Inner {
         let id = BlockId::new();
         let body = self.body();
         body.insert(at, &MARKER.to_string())?;
-        // A marker inside formatted text picks up its formatting; that's harmless (marker
-        // formatting is never shown), but the block ID must be the only style that matters.
         body.mark(at..at + 1, BLOCK_STYLE, id.to_string())?;
+        // A marker inserted inside formatted text picks up its formatting. Take it off, so text
+        // typed at the start of the new block never inherits formatting through the marker.
+        if let Some(TextDelta::Insert {
+            attributes: Some(found),
+            ..
+        }) = body
+            .slice_delta(at, at + 1, PosType::Unicode)?
+            .into_iter()
+            .next()
+        {
+            for key in found.keys().filter(|k| k.as_str() != BLOCK_STYLE) {
+                body.unmark(at..at + 1, key)?;
+            }
+        }
         let map = self
             .doc
             .get_map("blocks")
@@ -751,6 +771,16 @@ impl Inner {
         })
     }
 }
+
+/// Every inline formatting key.
+const INLINE_KEYS: [&str; 6] = [
+    "bold",
+    "italic",
+    "underline",
+    "strikethrough",
+    "code",
+    "link",
+];
 
 fn stored_indent(doc: &LoroDoc, id: BlockId) -> u8 {
     let map = doc
