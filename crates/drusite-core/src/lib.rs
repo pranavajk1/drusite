@@ -3,6 +3,8 @@
 //! The client engine: the encrypted local store, and the Core API the UI talks to. Search, the sync client, the Markdown bridge and the local MCP server join it in
 //! later phases.
 
+#[cfg(feature = "net")]
+pub mod account;
 pub mod api;
 pub mod auth;
 #[cfg(feature = "sqlite")]

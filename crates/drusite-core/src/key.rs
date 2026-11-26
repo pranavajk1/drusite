@@ -71,12 +71,14 @@ impl fmt::Debug for StoreKey {
     }
 }
 
-/// The macOS Keychain, as a home for store keys.
-#[cfg(target_os = "macos")]
+/// The Keychain (macOS and iOS), as a home for store keys and other 32-byte secrets.
+#[cfg(target_vendor = "apple")]
 pub mod keychain {
     use security_framework::passwords::{
         PasswordOptions, delete_generic_password, generic_password, set_generic_password_options,
     };
+
+    use zeroize::Zeroizing;
 
     use super::StoreKey;
     use crate::{Error, Result};
@@ -89,16 +91,25 @@ pub mod keychain {
 
     /// The key for `account` (one per store), created and saved on first use.
     pub fn load_or_create(service: &str, account: &str) -> Result<StoreKey> {
+        Ok(StoreKey::from_bytes(*secret(
+            service,
+            account,
+            "Drusite local store key",
+        )?))
+    }
+
+    /// 32 random bytes kept under `service` and `account`, made and saved on first use.
+    pub fn secret(service: &str, account: &str, label: &str) -> Result<Zeroizing<[u8; 32]>> {
         if let Some(key) = load(service, account)? {
-            return Ok(key);
+            return Ok(key.0);
         }
         let key = StoreKey::generate()?;
         let mut options = PasswordOptions::new_generic_password(service, account);
-        // Only on this device (not in backups or iCloud Keychain), once unlocked after boot.
+        // Only on this device: not in iCloud Keychain.
         options.set_access_synchronized(Some(false));
-        options.set_label("Drusite local store key");
+        options.set_label(label);
         set_generic_password_options(key.to_hex().as_bytes(), options).map_err(keychain_error)?;
-        Ok(key)
+        Ok(key.0)
     }
 
     pub fn load(service: &str, account: &str) -> Result<Option<StoreKey>> {

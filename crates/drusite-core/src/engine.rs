@@ -144,6 +144,13 @@ impl Core {
                 outcome: self.edit(page, edits)?,
             }),
             Command::Ready => Ok(Response::Done),
+            // The app handles these, since they need the browser and the device's key store.
+            Command::AccountStatus => Ok(Response::Account {
+                status: crate::api::AccountStatus::signed_out(None),
+            }),
+            Command::SignIn { .. } | Command::CancelSignIn | Command::SignOut => Err(
+                ApiError::new(ErrorCode::Unsupported, "signing in needs the Drusite app"),
+            ),
         }
     }
 

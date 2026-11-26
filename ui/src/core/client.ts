@@ -5,6 +5,7 @@
 // browser) is a `Transport`, chosen once at startup. Nothing else in the UI knows which.
 
 import type {
+  AccountStatus,
   ApiError,
   Command,
   Edit,
@@ -93,6 +94,23 @@ export class CoreClient {
 
   async edit(page: PageId, edits: Edit[]): Promise<EditOutcome> {
     return (await this.call({ type: "edit", page, edits }, "edited")).outcome;
+  }
+
+  async accountStatus(): Promise<AccountStatus> {
+    return (await this.call({ type: "accountStatus" }, "account")).status;
+  }
+
+  /** Starts signing in to `server` in the system browser; progress arrives as `accountChanged`. */
+  async signIn(server: string): Promise<void> {
+    await this.call({ type: "signIn", server }, "done");
+  }
+
+  async cancelSignIn(): Promise<void> {
+    await this.call({ type: "cancelSignIn" }, "done");
+  }
+
+  async signOut(): Promise<void> {
+    await this.call({ type: "signOut" }, "done");
   }
 
   /** Tells the core the UI is showing what it opened (benchmarks wait for this). */

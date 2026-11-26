@@ -77,9 +77,22 @@ pub async fn run(
     core: Arc<Mutex<Core>>,
     server: &Url,
     access_token: &str,
-    key: &impl DeviceKey,
+    key: &(impl DeviceKey + ?Sized),
     join: Option<WorkspaceId>,
     now: i64,
+) -> Result<(), NetError> {
+    run_observed(core, server, access_token, key, join, now, || {}).await
+}
+
+/// [`run`], calling `on_open` once the server has welcomed the connection.
+pub async fn run_observed(
+    core: Arc<Mutex<Core>>,
+    server: &Url,
+    access_token: &str,
+    key: &(impl DeviceKey + ?Sized),
+    join: Option<WorkspaceId>,
+    now: i64,
+    on_open: impl FnOnce(),
 ) -> Result<(), NetError> {
     let (http, ws_url) = endpoints(server)?;
     let mut request = ws_url
@@ -117,6 +130,7 @@ pub async fn run(
         }
         other => return Err(NetError::Protocol(format!("no welcome: {other:?}"))),
     }
+    on_open();
 
     let changed = Arc::new(Notify::new());
     let first = {

@@ -1,0 +1,27 @@
+[package]
+name = "tauri-plugin-drusite"
+description = "The platform side of the Drusite app: device keys, the store key, and signing in through the system browser."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+links = "tauri-plugin-drusite"
+
+[dependencies]
+base64.workspace = true
+drusite-core = { workspace = true, features = ["net"] }
+drusite-dpop.workspace = true
+serde.workspace = true
+tauri.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["net", "io-util", "rt"] }
+url.workspace = true
+
+[build-dependencies]
+tauri-plugin = { workspace = true, features = ["build"] }
+
+[lints]
+workspace = true
