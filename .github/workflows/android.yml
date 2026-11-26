@@ -94,7 +94,13 @@ jobs:
           echo "DRUSITE_ANDROID_KEYSTORE=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
       - name: Build
         working-directory: ui
-        run: ./android.sh build --apk --target aarch64 --ci
+        # Every CI build gets a higher versionCode than the last, which is all Android needs to
+        # accept an update; the one Tauri derives from the version ignores pre-release parts, so
+        # 0.1.0-alpha.2 couldn't replace 0.1.0-alpha.1.
+        run: |
+          code=$((1000 + GITHUB_RUN_NUMBER))
+          ./android.sh build --apk --target aarch64 --ci \
+            --config "{\"bundle\":{\"android\":{\"versionCode\":$code}}}"
       - name: Name the APK
         run: |
           out=crates/drusite-app/gen/android/app/build/outputs/apk/universal/release
@@ -129,5 +135,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag \
+          # A tag with a pre-release part (v0.1.0-alpha.1) makes a GitHub pre-release.
+          prerelease=()
+          [[ "$TAG" == *-* ]] && prerelease=(--prerelease)
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag "${prerelease[@]}" \
             --title "Drusite $TAG" --notes "Android (arm64). Check the APK against SHA256SUMS."
