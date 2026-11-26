@@ -1,7 +1,7 @@
 name: Android
 
 # Builds the Android app (arm64, which every phone Drusite targets is). On a version tag (`v1.2.3`,
-# matching the version in crates/drusite-app/tauri.conf.json), it attaches the APK to a GitHub
+# matching the version in Cargo.toml and crates/drusite-app/tauri.conf.json), it attaches the APK to a GitHub
 # release, where Obtainium and other installers pick it up.
 #
 # The signing key lives in Doppler, not here: the one repository secret, DOPPLER_TOKEN, is a
@@ -47,12 +47,8 @@ jobs:
       - name: Read the version
         id: version
         run: |
-          version=$(jq -r .version crates/drusite-app/tauri.conf.json)
+          version=$(.github/scripts/version.sh "$GITHUB_REF")
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          if [[ "$GITHUB_REF" == refs/tags/v* && "${GITHUB_REF#refs/tags/v}" != "$version" ]]; then
-            echo "the tag is ${GITHUB_REF#refs/tags/}, but tauri.conf.json says $version" >&2
-            exit 1
-          fi
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
