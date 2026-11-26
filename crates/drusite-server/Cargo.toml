@@ -21,8 +21,11 @@ sha1.workspace = true
 sha2.workspace = true
 webauthn-rs = { workspace = true, features = ["conditional-ui", "danger-allow-state-serialisation"] }
 drusite-model.workspace = true
+drusite-crdt.workspace = true
+drusite-proto.workspace = true
+loro.workspace = true
 anyhow.workspace = true
-axum.workspace = true
+axum = { workspace = true, features = ["ws"] }
 base64.workspace = true
 blake3.workspace = true
 bytes.workspace = true
@@ -53,7 +56,7 @@ uuid = { workspace = true, features = ["serde"] }
 zeroize.workspace = true
 
 [dev-dependencies]
-drusite-core = { workspace = true, default-features = false }
+drusite-core = { workspace = true, features = ["net"] }
 fastrand.workspace = true
 p256 = { workspace = true, features = ["ecdsa"] }
 reqwest = { workspace = true, features = ["json", "form", "rustls"] }

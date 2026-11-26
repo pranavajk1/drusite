@@ -53,3 +53,9 @@ pub const MARKER: char = '\u{E000}';
 
 /// Loro's version vector, re-exported for saving and syncing changes since a known state.
 pub use loro::VersionVector;
+
+/// The versions a Loro update or snapshot reaches, without importing it: what a device can mark
+/// as known to whoever sent it.
+pub fn blob_version(bytes: &[u8]) -> Result<VersionVector> {
+    Ok(loro::LoroDoc::decode_import_blob_meta(bytes, true)?.partial_end_vv)
+}

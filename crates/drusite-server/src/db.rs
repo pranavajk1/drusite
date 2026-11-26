@@ -153,6 +153,20 @@ impl Db {
         Ok(tx)
     }
 
+    /// Like [`Self::as_user`], with one consistent view of the database for the whole
+    /// transaction (repeatable read), for reads that must not see a compaction halfway.
+    pub async fn as_user_consistent(&self, user: UserId) -> Result<UserTx<'static>, DbError> {
+        let mut tx = self
+            .pool
+            .begin_with("BEGIN ISOLATION LEVEL REPEATABLE READ")
+            .await?;
+        sqlx::query("SELECT set_config('drusite.user_id', $1, true)")
+            .bind(user.to_string())
+            .execute(&mut *tx)
+            .await?;
+        Ok(tx)
+    }
+
     /// A transaction for work that serves no single user, which row-level security lets
     /// through. Only for jobs and admin commands, after their own checks.
     pub async fn as_system(&self) -> Result<UserTx<'static>, DbError> {

@@ -25,16 +25,20 @@ pub type EventSink = Box<dyn Fn(Event) + Send>;
 
 /// The engine. One per workspace.
 pub struct Core {
-    store: Store,
-    workspace: Workspace,
-    workspace_at: SavePoint,
-    open: HashMap<PageId, OpenPage>,
-    events: EventSink,
+    pub(crate) store: Store,
+    pub(crate) workspace: Workspace,
+    pub(crate) workspace_at: SavePoint,
+    pub(crate) open: HashMap<PageId, OpenPage>,
+    pub(crate) events: EventSink,
+    /// The connection to the server, while there is one.
+    pub(crate) sync: Option<crate::sync::Session>,
+    /// Called after every local change, so a sync driver knows to push.
+    pub(crate) on_change: Option<Box<dyn Fn() + Send>>,
 }
 
-struct OpenPage {
-    page: Page,
-    at: SavePoint,
+pub(crate) struct OpenPage {
+    pub(crate) page: Page,
+    pub(crate) at: SavePoint,
     /// How many views have it open. A view that closes after another opened the same page (a
     /// quick switch away and back) mustn't close it under the newer one.
     views: u32,
@@ -70,7 +74,17 @@ impl Core {
             workspace_at,
             open: HashMap::new(),
             events,
+            sync: None,
+            on_change: None,
         })
+    }
+
+    /// Tells the sync driver, if any, that `doc` changed locally.
+    pub(crate) fn changed(&mut self, doc: uuid::Uuid) {
+        self.mark_changed(doc);
+        if let Some(notify) = &self.on_change {
+            notify();
+        }
     }
 
     /// Runs one command.
@@ -133,7 +147,7 @@ impl Core {
         }
     }
 
-    fn pages(&self) -> Result<Vec<PageInfo>, ApiError> {
+    pub(crate) fn pages(&self) -> Result<Vec<PageInfo>, ApiError> {
         Ok(self
             .workspace
             .pages()?
@@ -147,9 +161,10 @@ impl Core {
             .collect())
     }
 
-    fn save_workspace(&mut self) -> Result<(), ApiError> {
+    pub(crate) fn save_workspace(&mut self) -> Result<(), ApiError> {
         self.store
             .save_workspace(&self.workspace, &mut self.workspace_at)?;
+        self.changed(*self.workspace.id().as_uuid());
         (self.events)(Event::PagesChanged {
             pages: self.pages()?,
         });
@@ -214,6 +229,7 @@ impl Core {
         let open = self.open.get_mut(&id).ok_or_else(not_open(id))?;
         self.store.save_page(&open.page, &mut open.at)?;
         let patch = patch_for(&open.page, &touched, &removed)?;
+        self.changed(*id.as_uuid());
         match failure {
             None => Ok(EditOutcome { created, patch }),
             Some(err) => {
@@ -270,7 +286,11 @@ fn apply(
 }
 
 /// The final state of every block a batch touched, in display order, and the ones it removed.
-fn patch_for(page: &Page, touched: &[BlockId], removed: &[BlockId]) -> Result<PagePatch, ApiError> {
+pub(crate) fn patch_for(
+    page: &Page,
+    touched: &[BlockId],
+    removed: &[BlockId],
+) -> Result<PagePatch, ApiError> {
     let mut seen = HashSet::new();
     let mut shown: Vec<(usize, BlockId)> = touched
         .iter()

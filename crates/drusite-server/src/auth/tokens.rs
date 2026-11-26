@@ -248,6 +248,19 @@ pub async fn lookup_access(
     }))
 }
 
+/// Whether a device's sign-in still stands: not revoked or expired, its account not disabled.
+/// Long-lived connections check this now and then.
+pub async fn grant_is_live(state: &AppState, grant: GrantId) -> Result<bool, AuthError> {
+    Ok(sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM oauth_grants g JOIN users u ON u.id = g.user_id
+         WHERE g.id = $1 AND g.revoked_at IS NULL AND g.idle_expires_at > now()
+           AND g.absolute_expires_at > now() AND u.disabled_at IS NULL)",
+    )
+    .bind(grant.0)
+    .fetch_one(state.db().pool())
+    .await?)
+}
+
 /// Revokes the grant a refresh or access token belongs to (RFC 7009). Unknown tokens are
 /// ignored, as the RFC asks.
 pub async fn revoke_by_token(state: &AppState, token: &str) -> Result<(), AuthError> {

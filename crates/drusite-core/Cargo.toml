@@ -13,6 +13,8 @@ publish.workspace = true
 default = ["sqlite"]
 # The encrypted SQLite store. Off for the browser build, which stores documents in OPFS.
 sqlite = ["dep:rusqlite"]
+# The WebSocket sync driver, for native apps and tests.
+net = ["sqlite", "drusite-proto/zstd", "dep:tokio", "dep:tokio-tungstenite", "dep:futures-util", "dep:http"]
 
 [dependencies]
 base64.workspace = true
@@ -21,6 +23,14 @@ sha2.workspace = true
 url.workspace = true
 drusite-crdt.workspace = true
 drusite-model.workspace = true
+# Compressed frames only where there is a network driver: zstd is C, and the browser build
+# reads and writes plain frames.
+drusite-proto = { workspace = true, default-features = false }
+futures-util = { workspace = true, optional = true, features = ["sink"] }
+http = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true, features = ["sync", "time", "macros", "rt"] }
+tokio-tungstenite = { workspace = true, optional = true, features = ["connect", "rustls-tls-webpki-roots"] }
+uuid.workspace = true
 getrandom.workspace = true
 serde.workspace = true
 specta.workspace = true

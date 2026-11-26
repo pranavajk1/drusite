@@ -29,7 +29,7 @@ use crate::{Error, Result};
 pub const STORE_FILE: &str = "workspace.drusite";
 
 /// The layout of the database itself (not of the documents in it).
-const STORE_SCHEMA: i32 = 1;
+const STORE_SCHEMA: i32 = 2;
 
 /// Compact a document after this many logged updates…
 pub const COMPACT_AFTER_UPDATES: u64 = 500;
@@ -142,6 +142,21 @@ impl Store {
                      PRIMARY KEY (doc, seq)
                  ) STRICT;
                  PRAGMA user_version = 1;",
+            )?;
+            tx.commit()?;
+        }
+        if version < 2 {
+            // What each document's server has: the last log entry imported from it, and every
+            // version it is known to hold (imported from it, or pushed and acknowledged).
+            let tx = self.conn.transaction()?;
+            tx.execute_batch(
+                "CREATE TABLE sync_state (
+                     doc        TEXT PRIMARY KEY REFERENCES docs(id) ON DELETE CASCADE,
+                     server_seq INTEGER NOT NULL DEFAULT 0,
+                     server_vv  BLOB,
+                     on_server  INTEGER NOT NULL DEFAULT 0
+                 ) STRICT;
+                 PRAGMA user_version = 2;",
             )?;
             tx.commit()?;
         }
@@ -262,6 +277,55 @@ impl Store {
         Ok(ids)
     }
 
+    // ---- Sync state ----
+
+    /// What a document's server is known to have.
+    pub fn sync_state(&self, id: &str) -> Result<SyncState> {
+        let row: Option<(i64, Option<Vec<u8>>, i64)> = self
+            .conn
+            .query_row(
+                "SELECT server_seq, server_vv, on_server FROM sync_state WHERE doc = ?1",
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?;
+        let Some((seq, vv, on_server)) = row else {
+            return Ok(SyncState::default());
+        };
+        let server_vv = match vv {
+            Some(bytes) => VersionVector::decode(&bytes)
+                .map_err(|e| Error::Corrupt(format!("sync state of {id}: {e}")))?,
+            None => VersionVector::default(),
+        };
+        Ok(SyncState {
+            server_seq: seq_from_sql(seq),
+            server_vv,
+            on_server: on_server != 0,
+        })
+    }
+
+    pub fn set_sync_state(&mut self, id: &str, state: &SyncState) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO sync_state (doc, server_seq, server_vv, on_server) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT (doc) DO UPDATE SET server_seq = excluded.server_seq,
+                 server_vv = excluded.server_vv, on_server = excluded.on_server",
+            params![
+                id,
+                seq_sql(state.server_seq),
+                state.server_vv.encode(),
+                i64::from(state.on_server)
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Removes every document: for a device that hasn't synced yet giving up its own empty
+    /// workspace for its account's.
+    pub fn clear(&mut self) -> Result<()> {
+        self.conn.execute("DELETE FROM docs", [])?;
+        Ok(())
+    }
+
     // ---- Drusite documents on top of the raw log ----
 
     /// Saves a newly created page.
@@ -378,6 +442,17 @@ impl Store {
         }
         Ok(())
     }
+}
+
+/// What a document's server is known to have.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SyncState {
+    /// The last server log entry imported.
+    pub server_seq: u64,
+    /// Every version the server is known to hold.
+    pub server_vv: VersionVector,
+    /// The server has the document (it was created there, or came from there).
+    pub on_server: bool,
 }
 
 /// How far a document has been saved: its version and the last sequence number logged.

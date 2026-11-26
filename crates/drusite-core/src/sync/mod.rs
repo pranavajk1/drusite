@@ -1,0 +1,598 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+//! Keeping this device's documents in step with the server: the client side of
+//! `drusite-proto`.
+//!
+//! This is only the logic. It turns server messages into imports and local changes into
+//! messages, and never touches a network itself, so the app's driver ([`net`] on native
+//! platforms) and the simulation tests can both run it.
+//!
+//! What it keeps per document, in the store, survives restarts:
+//! - the last server log entry imported, so a reconnect asks only for what's new;
+//! - every version the server is known to hold (imported from it, or pushed and acknowledged),
+//!   so a reconnect pushes exactly what the server may lack. Pushing something twice is
+//!   harmless: Loro ignores what it already has.
+//!
+//! A document is created on the server once, by the subscription that carries its first
+//! snapshot; every other copy comes from there.
+
+#[cfg(feature = "net")]
+pub mod net;
+
+use std::collections::{HashMap, HashSet};
+
+use drusite_crdt::{Page, VersionVector};
+use drusite_model::{PageId, WorkspaceId};
+use drusite_proto::{
+    ClientMessage, DocKind as WireKind, Entry, ErrorCode, Push, ServerMessage, Subscribe,
+    client_message, server_message,
+};
+use uuid::Uuid;
+
+use crate::api::Event;
+use crate::engine::{Core, patch_for};
+use crate::store::{DocKind, SyncState};
+use crate::{Error, Result};
+
+/// One connection's worth of sync state; a new connection starts a new session.
+#[derive(Debug, Default)]
+pub struct Session {
+    /// Documents subscribed on this connection, and whether this device may write them.
+    subscribed: HashMap<Uuid, Subscription>,
+    /// Pushes waiting for their `Ack`: the version each one brings the server to.
+    in_flight: HashMap<u64, (Uuid, VersionVector)>,
+    next_push: u64,
+    /// Documents that may have changed beyond what was pushed: changed locally, or just
+    /// subscribed. Only these are looked at for pushing.
+    dirty: HashSet<Uuid>,
+    /// Joining this workspace from the server in place of this blank device's own.
+    joining: Option<Uuid>,
+}
+
+#[derive(Debug)]
+struct Subscription {
+    kind: WireKind,
+    /// The server has answered `Subscribed`.
+    ready: bool,
+    writable: bool,
+    /// Pushed on this connection, acknowledged or not: the next push starts from here.
+    pushed: VersionVector,
+    /// The version of the first snapshot this subscription offered to create the document with.
+    create_version: Option<VersionVector>,
+}
+
+/// The server refused something that sync can't get past by itself.
+#[derive(Debug, thiserror::Error)]
+pub enum SyncError {
+    #[error("the server refused access to this workspace: {0}")]
+    Forbidden(String),
+    #[error(transparent)]
+    Core(#[from] Error),
+}
+
+fn subscribe(
+    doc: Uuid,
+    workspace: WorkspaceId,
+    kind: WireKind,
+    after: u64,
+    create: Vec<u8>,
+) -> ClientMessage {
+    ClientMessage::new(client_message::Body::Subscribe(Subscribe {
+        doc: doc.as_bytes().to_vec(),
+        workspace: workspace.as_uuid().as_bytes().to_vec(),
+        kind: kind as i32,
+        after_seq: after,
+        create,
+    }))
+}
+
+impl Core {
+    /// The workspace this device holds.
+    pub fn workspace_id(&self) -> WorkspaceId {
+        self.workspace.id()
+    }
+
+    /// Whether this device has never synced and holds nothing of its own: it can take its
+    /// account's existing workspace instead of its own empty one.
+    pub fn is_blank(&self) -> Result<bool> {
+        let id = self.workspace.id().to_string();
+        Ok(self.workspace.roots().is_empty() && !self.store.sync_state(&id)?.on_server)
+    }
+
+    /// Replaces this blank device's workspace with the account's, from the server's entries for
+    /// it. See [`Self::is_blank`].
+    pub fn adopt_workspace(&mut self, id: WorkspaceId, entries: &[Entry]) -> Result<()> {
+        if !self.is_blank()? {
+            return Err(Error::Corrupt(
+                "this device already has notes of its own; it can't take another workspace".into(),
+            ));
+        }
+        let parts: Vec<&[u8]> = entries.iter().map(|e| e.data.as_slice()).collect();
+        let workspace = drusite_crdt::Workspace::load_all(&parts)?;
+        if workspace.id() != id {
+            return Err(Error::Corrupt("the server sent another workspace".into()));
+        }
+        self.store.clear()?;
+        self.open.clear();
+        self.workspace_at = self.store.create_workspace(&workspace)?;
+        let state = SyncState {
+            server_seq: entries.last().map_or(0, |e| e.seq),
+            server_vv: workspace.version(),
+            on_server: true,
+        };
+        self.store.set_sync_state(&id.to_string(), &state)?;
+        self.workspace = workspace;
+        (self.events)(Event::PagesChanged {
+            pages: self.pages().map_err(|e| Error::Corrupt(e.message))?,
+        });
+        Ok(())
+    }
+
+    /// Lets a sync driver know when something changes locally, so it can push.
+    pub fn set_change_listener(&mut self, listener: Option<Box<dyn Fn() + Send>>) {
+        self.on_change = listener;
+    }
+
+    /// Starts a session on a new connection: subscribes to the workspace and every page.
+    pub fn sync_start(&mut self) -> Result<Vec<ClientMessage>> {
+        self.sync = Some(Session::default());
+        self.sync_subscribe_missing()
+    }
+
+    /// Starts a session that takes the account's workspace `id` from the server in place of this
+    /// blank device's own (see [`Self::is_blank`]), then syncs it as usual.
+    pub fn sync_start_join(&mut self, id: WorkspaceId) -> Result<Vec<ClientMessage>> {
+        if id == self.workspace.id() {
+            return self.sync_start();
+        }
+        if !self.is_blank()? {
+            return Err(Error::Corrupt(
+                "this device already has notes of its own; it can't take another workspace".into(),
+            ));
+        }
+        let doc = *id.as_uuid();
+        let mut session = Session {
+            joining: Some(doc),
+            ..Session::default()
+        };
+        session.subscribed.insert(
+            doc,
+            Subscription {
+                kind: WireKind::Workspace,
+                ready: false,
+                writable: false,
+                pushed: VersionVector::default(),
+                create_version: None,
+            },
+        );
+        self.sync = Some(session);
+        Ok(vec![subscribe(doc, id, WireKind::Workspace, 0, Vec::new())])
+    }
+
+    /// The connection is gone. Unacknowledged pushes are pushed again next time.
+    pub fn sync_stop(&mut self) {
+        self.sync = None;
+    }
+
+    /// Subscriptions for documents this device has, or the workspace lists, that the session
+    /// hasn't subscribed to yet.
+    fn sync_subscribe_missing(&mut self) -> Result<Vec<ClientMessage>> {
+        let Some(session) = &self.sync else {
+            return Ok(Vec::new());
+        };
+        if session.joining.is_some() {
+            // Nothing else until the account's workspace is here.
+            return Ok(Vec::new());
+        }
+        let ws = self.workspace.id();
+        let mut wanted: Vec<(Uuid, WireKind)> = vec![(*ws.as_uuid(), WireKind::Workspace)];
+        let mut pages: HashSet<Uuid> = HashSet::new();
+        for id in self.store.docs(DocKind::Page)? {
+            if let Ok(uuid) = id.parse::<Uuid>() {
+                pages.insert(uuid);
+            }
+        }
+        // Pages another device made: in the tree, not here yet.
+        for node in self.workspace.pages()? {
+            pages.insert(*node.id.as_uuid());
+        }
+        wanted.extend(pages.into_iter().map(|p| (p, WireKind::Page)));
+
+        let mut out = Vec::new();
+        let mut new_subs = Vec::new();
+        for (doc, kind) in wanted {
+            if session.subscribed.contains_key(&doc) {
+                continue;
+            }
+            let key = doc.to_string();
+            let state = self.store.sync_state(&key)?;
+            let created = if state.on_server {
+                None
+            } else {
+                match kind {
+                    WireKind::Workspace => {
+                        Some((self.workspace.export_snapshot()?, self.workspace.version()))
+                    }
+                    // `None` for a page that isn't here yet: it comes from the server.
+                    _ => self.page_snapshot(PageId::from_uuid(doc))?,
+                }
+            };
+            let (create, create_version) = match created {
+                Some((bytes, version)) => (bytes, Some(version)),
+                None => (Vec::new(), None),
+            };
+            out.push(subscribe(doc, ws, kind, state.server_seq, create));
+            new_subs.push((doc, kind, state.server_vv, create_version));
+        }
+        let session = self
+            .sync
+            .as_mut()
+            .ok_or_else(|| Error::Corrupt("no session".into()))?;
+        for (doc, kind, vv, create_version) in new_subs {
+            session.subscribed.insert(
+                doc,
+                Subscription {
+                    kind,
+                    ready: false,
+                    writable: false,
+                    pushed: vv,
+                    create_version,
+                },
+            );
+        }
+        Ok(out)
+    }
+
+    /// A page's snapshot and the version it holds, if this device has the page.
+    fn page_snapshot(&self, id: PageId) -> Result<Option<(Vec<u8>, VersionVector)>> {
+        if let Some(open) = self.open.get(&id) {
+            return Ok(Some((open.page.export_snapshot()?, open.page.version())));
+        }
+        if self.store.load(&id.to_string())?.is_none() {
+            return Ok(None);
+        }
+        let (page, _) = self.store.load_page(id)?;
+        Ok(Some((page.export_snapshot()?, page.version())))
+    }
+
+    /// Notes that a document changed here, so the next [`Self::sync_outgoing`] looks at it.
+    pub(crate) fn mark_changed(&mut self, doc: Uuid) {
+        if let Some(session) = self.sync.as_mut() {
+            session.dirty.insert(doc);
+        }
+    }
+
+    /// The version of a document this device has and the updates since `since`, without
+    /// keeping it open. `None` if the device doesn't have it.
+    fn local_changes(
+        &self,
+        doc: Uuid,
+        kind: WireKind,
+        since: &VersionVector,
+    ) -> Result<Option<(VersionVector, Vec<u8>)>> {
+        if kind == WireKind::Workspace {
+            // Only this device's own workspace: never another one's document under its ID.
+            if doc != *self.workspace.id().as_uuid() {
+                return Ok(None);
+            }
+            let v = self.workspace.version();
+            return Ok(Some((v, self.workspace.export_updates(since)?)));
+        }
+        let id = PageId::from_uuid(doc);
+        if let Some(open) = self.open.get(&id) {
+            return Ok(Some((
+                open.page.version(),
+                open.page.export_updates(since)?,
+            )));
+        }
+        if self.store.load(&doc.to_string())?.is_none() {
+            return Ok(None);
+        }
+        let (page, _) = self.store.load_page(id)?;
+        Ok(Some((page.version(), page.export_updates(since)?)))
+    }
+
+    /// Pushes for every subscribed, writable document that has changed beyond what the
+    /// server has or has been sent, and subscriptions for any new documents.
+    pub fn sync_outgoing(&mut self) -> Result<Vec<ClientMessage>> {
+        let mut out = self.sync_subscribe_missing()?;
+        let Some(session) = &self.sync else {
+            return Ok(out);
+        };
+        // While joining, this device's documents aren't the account's yet: push nothing.
+        if session.joining.is_some() {
+            return Ok(out);
+        }
+        let ready: Vec<(Uuid, WireKind, VersionVector)> = session
+            .dirty
+            .iter()
+            .filter_map(|d| session.subscribed.get(d).map(|s| (d, s)))
+            .filter(|(_, s)| s.ready && s.writable)
+            .map(|(d, s)| (*d, s.kind, s.pushed.clone()))
+            .collect();
+        let mut pushes = Vec::new();
+        for (doc, kind, pushed) in ready {
+            let Some((version, updates)) = self.local_changes(doc, kind, &pushed)? else {
+                continue;
+            };
+            if !pushed.includes_vv(&version) {
+                pushes.push((doc, version, updates));
+            }
+        }
+        let session = self
+            .sync
+            .as_mut()
+            .ok_or_else(|| Error::Corrupt("no session".into()))?;
+        // Ready documents have been looked at; ones still waiting for `Subscribed` stay dirty.
+        session
+            .dirty
+            .retain(|d| session.subscribed.get(d).is_some_and(|s| !s.ready));
+        for (doc, version, update) in pushes {
+            session.next_push += 1;
+            let push_id = session.next_push;
+            if let Some(sub) = session.subscribed.get_mut(&doc) {
+                sub.pushed.merge(&version);
+            }
+            session.in_flight.insert(push_id, (doc, version));
+            out.push(ClientMessage::new(client_message::Body::Push(Push {
+                doc: doc.as_bytes().to_vec(),
+                push_id,
+                update,
+            })));
+        }
+        Ok(out)
+    }
+
+    /// Handles one message from the server; returns what to send back.
+    pub fn sync_receive(
+        &mut self,
+        message: ServerMessage,
+    ) -> Result<Vec<ClientMessage>, SyncError> {
+        use server_message::Body;
+        match message.body {
+            Some(Body::Updates(u)) => {
+                let Ok(doc) = Uuid::from_slice(&u.doc) else {
+                    return Ok(Vec::new());
+                };
+                self.import_entries(doc, &u.entries)?;
+                // Pages another device made appear in the workspace: subscribe to them.
+                Ok(self.sync_subscribe_missing()?)
+            }
+            Some(Body::Subscribed(s)) => {
+                let Ok(doc) = Uuid::from_slice(&s.doc) else {
+                    return Ok(Vec::new());
+                };
+                let key = doc.to_string();
+                let create_version = self
+                    .sync
+                    .as_mut()
+                    .and_then(|x| x.subscribed.get_mut(&doc))
+                    .and_then(|sub| {
+                        sub.ready = true;
+                        sub.writable = s.writable;
+                        sub.create_version.take()
+                    });
+                if self.store.load(&key)?.is_some() {
+                    let mut state = self.store.sync_state(&key)?;
+                    if !state.on_server || s.created {
+                        state.on_server = true;
+                        // The server made the document from this device's snapshot, so it holds
+                        // that version.
+                        if s.created
+                            && let Some(version) = &create_version
+                        {
+                            state.server_vv.merge(version);
+                            if let Some(sub) =
+                                self.sync.as_mut().and_then(|x| x.subscribed.get_mut(&doc))
+                            {
+                                sub.pushed.merge(version);
+                            }
+                        }
+                        self.store.set_sync_state(&key, &state)?;
+                    }
+                }
+                // Push whatever the server lacks.
+                self.mark_changed(doc);
+                Ok(self.sync_outgoing()?)
+            }
+            Some(Body::Ack(a)) => {
+                let Some((doc, version)) = self
+                    .sync
+                    .as_mut()
+                    .and_then(|s| s.in_flight.remove(&a.push_id))
+                else {
+                    return Ok(Vec::new());
+                };
+                let key = doc.to_string();
+                if self.store.load(&key)?.is_none() {
+                    return Ok(Vec::new());
+                }
+                let mut state = self.store.sync_state(&key)?;
+                state.server_vv.merge(&version);
+                // The server's sequence number for our own push needn't come back to us. Only
+                // move forward over it if nothing from others is in between, which the next
+                // `Updates` would otherwise fill in.
+                if a.seq == state.server_seq + 1 {
+                    state.server_seq = a.seq;
+                }
+                self.store.set_sync_state(&key, &state)?;
+                Ok(Vec::new())
+            }
+            Some(Body::Error(e)) => {
+                let code = ErrorCode::try_from(e.code).unwrap_or(ErrorCode::Unspecified);
+                let doc = Uuid::from_slice(&e.doc).ok();
+                let joining = self.sync.as_ref().and_then(|s| s.joining);
+                let is_workspace = doc == Some(*self.workspace.id().as_uuid())
+                    || (doc.is_some() && doc == joining);
+                // Without the workspace there is nothing to sync: end, and say why.
+                if is_workspace && matches!(code, ErrorCode::Forbidden | ErrorCode::NotFound) {
+                    return Err(SyncError::Forbidden(e.message));
+                }
+                // Anything about one push or one page: drop it from the session, so the rest
+                // keeps syncing; the next connection tries again.
+                if let Some(session) = self.sync.as_mut() {
+                    session.in_flight.remove(&e.push_id);
+                    if let Some(doc) = doc
+                        && code != ErrorCode::Internal
+                        && let Some(sub) = session.subscribed.get_mut(&doc)
+                    {
+                        sub.writable = false;
+                    }
+                }
+                Ok(Vec::new())
+            }
+            Some(Body::Welcome(_) | Body::Pong(_)) | None => Ok(Vec::new()),
+        }
+    }
+
+    /// Imports a server's entries for one document, creating it here if it's new to this
+    /// device, and records how far the server is known to be.
+    fn import_entries(&mut self, doc: Uuid, entries: &[Entry]) -> Result<()> {
+        if entries.is_empty() {
+            return Ok(());
+        }
+        let joining = self.sync.as_ref().and_then(|s| s.joining);
+        if joining == Some(doc) {
+            self.adopt_workspace(WorkspaceId::from_uuid(doc), entries)?;
+            if let Some(session) = self.sync.as_mut() {
+                session.joining = None;
+                if let Some(sub) = session.subscribed.get_mut(&doc) {
+                    sub.pushed = self.workspace.version();
+                }
+            }
+            return Ok(());
+        }
+        let key = doc.to_string();
+        let mut state = self.store.sync_state(&key)?;
+        let parts: Vec<&[u8]> = entries.iter().map(|e| e.data.as_slice()).collect();
+        let mut reached = VersionVector::default();
+        for part in &parts {
+            reached.merge(&drusite_crdt::blob_version(part)?);
+        }
+
+        if doc == *self.workspace.id().as_uuid() {
+            for part in &parts {
+                self.workspace.import(part)?;
+            }
+            self.store
+                .save_workspace(&self.workspace, &mut self.workspace_at)?;
+            (self.events)(Event::PagesChanged {
+                pages: self.pages().map_err(|e| Error::Corrupt(e.message))?,
+            });
+        } else {
+            let id = PageId::from_uuid(doc);
+            if let Some(open) = self.open.get_mut(&id) {
+                let mut updated = Vec::new();
+                let mut removed = Vec::new();
+                for part in &parts {
+                    let patch = open.page.import(part)?;
+                    updated.extend(patch.updated);
+                    removed.extend(patch.removed);
+                }
+                self.store.save_page(&open.page, &mut open.at)?;
+                let patch = patch_for(&open.page, &updated, &removed)
+                    .map_err(|e| Error::Corrupt(e.message))?;
+                if !patch.is_empty() {
+                    (self.events)(Event::PageChanged { page: id, patch });
+                }
+            } else if self.store.load(&key)?.is_some() {
+                let (mut page, mut at) = self.store.load_page(id)?;
+                for part in &parts {
+                    page.import(part)?;
+                }
+                self.store.save_page(&page, &mut at)?;
+            } else {
+                // New to this device: made from the server's copy.
+                let page = Page::load_all(&parts)?;
+                if page.id() != id {
+                    return Err(Error::Corrupt(format!(
+                        "the server sent page {} as {id}",
+                        page.id()
+                    )));
+                }
+                self.store.create_page(&page)?;
+                state.on_server = true;
+            }
+        }
+        state.server_vv.merge(&reached);
+        state.server_seq = state
+            .server_seq
+            .max(entries.iter().map(|e| e.seq).max().unwrap_or(0));
+        self.store.set_sync_state(&key, &state)?;
+        if let Some(sub) = self.sync.as_mut().and_then(|s| s.subscribed.get_mut(&doc)) {
+            sub.pushed.merge(&reached);
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+    use crate::StoreKey;
+    use crate::api::Command;
+    use drusite_proto::{Subscribed, server_message::Body};
+
+    fn core() -> (Core, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let core =
+            Core::open(dir.path(), &StoreKey::generate().unwrap(), Box::new(|_| {})).unwrap();
+        (core, dir)
+    }
+
+    fn pushes(messages: &[ClientMessage]) -> usize {
+        messages
+            .iter()
+            .filter(|m| matches!(m.body, Some(client_message::Body::Push(_))))
+            .count()
+    }
+
+    /// A device joining its account's workspace must never push its own workspace's history
+    /// into the account's, even if the server answers `Subscribed` without sending anything.
+    #[test]
+    fn a_joining_device_never_pushes_its_own_workspace_as_the_accounts() {
+        let (mut phone, _d) = core();
+        let account = WorkspaceId::new();
+        phone.sync_start_join(account).unwrap();
+        let replies = phone
+            .sync_receive(ServerMessage::new(Body::Subscribed(Subscribed {
+                doc: account.as_uuid().as_bytes().to_vec(),
+                head_seq: 0,
+                created: false,
+                writable: true,
+            })))
+            .unwrap();
+        assert_eq!(pushes(&replies), 0);
+        phone.mark_changed(*account.as_uuid());
+        assert_eq!(pushes(&phone.sync_outgoing().unwrap()), 0);
+    }
+
+    /// The server refusing the workspace ends sync, rather than leaving a dead connection.
+    #[test]
+    fn a_refused_workspace_ends_sync() {
+        let (mut phone, _d) = core();
+        let account = WorkspaceId::new();
+        phone.sync_start_join(account).unwrap();
+        let refused = phone.sync_receive(ServerMessage::new(Body::Error(drusite_proto::Error {
+            code: ErrorCode::Forbidden as i32,
+            message: "no".into(),
+            doc: account.as_uuid().as_bytes().to_vec(),
+            push_id: 0,
+        })));
+        assert!(matches!(refused, Err(SyncError::Forbidden(_))));
+    }
+
+    /// A device with notes of its own can't take another workspace.
+    #[test]
+    fn only_a_blank_device_joins() {
+        let (mut mac, _d) = core();
+        mac.handle(Command::CreatePage {
+            parent: None,
+            title: "Mine".into(),
+        })
+        .unwrap();
+        assert!(!mac.is_blank().unwrap());
+        assert!(mac.sync_start_join(WorkspaceId::new()).is_err());
+    }
+}
