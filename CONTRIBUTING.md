@@ -26,7 +26,12 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 cargo xtask budgets
+cargo xtask bindings --check
+(cd ui && npm ci && npm run check)
 ```
+
+After changing the Core API (`crates/drusite-core/src/api.rs`), regenerate the UI's types with
+`cargo xtask bindings` and commit them.
 
 Supply chain (Linux in CI):
 

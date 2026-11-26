@@ -41,7 +41,9 @@ fn notes_survive_closing_and_reopening_the_store() {
             .split(
                 first,
                 5,
-                BlockKind::Heading(drusite_model::HeadingLevel::H2),
+                BlockKind::Heading {
+                    level: drusite_model::HeadingLevel::H2,
+                },
             )
             .unwrap();
         store.save_page(&page, &mut at).unwrap();

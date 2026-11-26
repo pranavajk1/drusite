@@ -37,7 +37,12 @@ fn offline_structural_edits_on_both_sides_merge() {
         last = id;
     }
     let (title, _) = a
-        .insert_block_after(None, BlockKind::Heading(HeadingLevel::H1))
+        .insert_block_after(
+            None,
+            BlockKind::Heading {
+                level: HeadingLevel::H1,
+            },
+        )
         .unwrap();
     a.insert_text(title, 0, "A's title").unwrap();
     // b, offline: edits the shared paragraph and adds a bullet.
@@ -124,8 +129,13 @@ fn known_loss_concurrent_splits_of_one_paragraph() {
 fn known_loss_typing_into_a_block_while_it_becomes_a_heading() {
     let (mut a, first) = page_with("abcdef");
     let mut b = fork(&a);
-    a.set_kind(first, &BlockKind::Heading(HeadingLevel::H2))
-        .unwrap();
+    a.set_kind(
+        first,
+        &BlockKind::Heading {
+            level: HeadingLevel::H2,
+        },
+    )
+    .unwrap();
     b.insert_text(first, 2, "XX").unwrap();
     sync(&mut a, &mut b);
     assert_eq!(shape(&a), shape(&b));
@@ -308,9 +318,15 @@ fn indents_never_skip_a_level() {
 fn every_block_kind_survives_a_reload() {
     let kinds = [
         BlockKind::Paragraph,
-        BlockKind::Heading(HeadingLevel::H1),
-        BlockKind::Heading(HeadingLevel::H2),
-        BlockKind::Heading(HeadingLevel::H3),
+        BlockKind::Heading {
+            level: HeadingLevel::H1,
+        },
+        BlockKind::Heading {
+            level: HeadingLevel::H2,
+        },
+        BlockKind::Heading {
+            level: HeadingLevel::H3,
+        },
         BlockKind::Bulleted,
         BlockKind::Numbered,
         BlockKind::Todo { checked: true },

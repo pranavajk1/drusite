@@ -52,7 +52,9 @@ fn random_edit(page: &mut Page, rng: &mut fastrand::Rng) {
         6 => {
             let kind = match rng.u8(..4) {
                 0 => BlockKind::Paragraph,
-                1 => BlockKind::Heading(HeadingLevel::H2),
+                1 => BlockKind::Heading {
+                    level: HeadingLevel::H2,
+                },
                 2 => BlockKind::Todo {
                     checked: rng.bool(),
                 },

@@ -80,7 +80,9 @@ fn apply(page: &mut Page, step: &Step, tally: &mut Tally) {
         4 => {
             let kinds = [
                 BlockKind::Paragraph,
-                BlockKind::Heading(HeadingLevel::H1),
+                BlockKind::Heading {
+                    level: HeadingLevel::H1,
+                },
                 BlockKind::Quote,
                 BlockKind::Toggle,
             ];

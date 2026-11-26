@@ -153,6 +153,16 @@ impl Page {
         self.inner.layout.display.clone()
     }
 
+    /// Where block `id` is shown, counting from 0, if it is shown.
+    pub fn position(&self, id: BlockId) -> Option<usize> {
+        self.inner.layout.display_at(id)
+    }
+
+    /// The block shown just before `id` (`None` for the first block, or one not shown).
+    pub fn block_before(&self, id: BlockId) -> Option<BlockId> {
+        self.inner.layout.display_prev(id)
+    }
+
     /// Every block, in display order.
     pub fn blocks(&self) -> Result<Vec<Block>> {
         self.guard.run(|| {
@@ -187,7 +197,8 @@ impl Page {
             inner.layout.shift_after(id, count_isize(&text));
             if id == inner.genesis && inner.is_hidden(id) {
                 inner.set_attr(id, "hidden", false)?;
-                return inner.finish(vec![id]);
+                let before = inner.layout.clone();
+                return inner.finish(before, vec![id]);
             }
             inner.doc.commit();
             Ok(Patch {
@@ -216,7 +227,8 @@ impl Page {
                 .shift_after(id, -isize::try_from(to - from).unwrap_or(isize::MAX));
             if id == inner.genesis && inner.is_hidden(id) {
                 // A deleted first block that had text typed into it hides again once it's empty.
-                return inner.finish(vec![id]);
+                let before = inner.layout.clone();
+                return inner.finish(before, vec![id]);
             }
             inner.doc.commit();
             Ok(Patch {
@@ -283,34 +295,32 @@ impl Page {
         kind: BlockKind,
     ) -> Result<(BlockId, Patch)> {
         let inner = &mut self.inner;
-        self.guard.run(|| {
-            let new = match after {
-                Some(a) => {
-                    let (_, end) = inner.layout.text_range(a).ok_or(Error::UnknownBlock(a))?;
-                    let new = inner.insert_marker(a, end, &kind)?;
-                    inner.doc.commit();
-                    return Ok((
-                        new,
-                        Patch {
-                            updated: vec![new],
-                            removed: vec![],
-                            order_changed: true,
-                        },
-                    ));
-                }
-                None => {
-                    let last = *inner
-                        .layout
-                        .body
-                        .last()
-                        .ok_or(Error::UnknownBlock(inner.genesis))?;
-                    let end = inner.layout.body_len;
-                    let new = inner.insert_marker(last, end, &kind)?;
-                    inner.order().insert(0, new.to_string())?;
-                    new
-                }
-            };
-            Ok((new, inner.finish(vec![new])?))
+        self.guard.run(|| match after {
+            Some(a) => {
+                let (_, end) = inner.layout.text_range(a).ok_or(Error::UnknownBlock(a))?;
+                let new = inner.insert_marker(a, end, &kind)?;
+                inner.doc.commit();
+                Ok((
+                    new,
+                    Patch {
+                        updated: vec![new],
+                        removed: vec![],
+                        order_changed: true,
+                    },
+                ))
+            }
+            None => {
+                let before = inner.layout.clone();
+                let last = *inner
+                    .layout
+                    .body
+                    .last()
+                    .ok_or(Error::UnknownBlock(inner.genesis))?;
+                let end = inner.layout.body_len;
+                let new = inner.insert_marker(last, end, &kind)?;
+                inner.order().insert(0, new.to_string())?;
+                Ok((new, inner.finish(before, vec![new])?))
+            }
         })
     }
 
@@ -343,6 +353,7 @@ impl Page {
                 ));
             }
             // One of them was moved, so their texts are apart: copy, then delete.
+            let before = inner.layout.clone();
             let spans = inner.block(id)?.spans;
             let (_, mut at) = inner
                 .layout
@@ -360,7 +371,7 @@ impl Page {
             }
             inner.layout = Layout::compute(&inner.doc, Some(inner.genesis));
             inner.delete_block(id)?;
-            Ok((JoinOutcome::Copied, inner.finish(vec![prev])?))
+            Ok((JoinOutcome::Copied, inner.finish(before, vec![prev])?))
         })
     }
 
@@ -368,8 +379,9 @@ impl Page {
     pub fn delete_block(&mut self, id: BlockId) -> Result<Patch> {
         let inner = &mut self.inner;
         self.guard.run(|| {
+            let before = inner.layout.clone();
             inner.delete_block(id)?;
-            inner.finish(vec![])
+            inner.finish(before, vec![])
         })
     }
 
@@ -380,7 +392,12 @@ impl Page {
             inner.check(id)?;
             let map = inner.attrs_map(id)?;
             attrs::write_kind(&map, kind)?;
-            inner.finish(vec![id])
+            // A kind is shown inside the block only; nothing else moves.
+            inner.doc.commit();
+            Ok(Patch {
+                updated: vec![id],
+                ..Patch::default()
+            })
         })
     }
 
@@ -394,8 +411,9 @@ impl Page {
                 .display_prev(id)
                 .map_or(0, |p| inner.shown_indent(p).saturating_add(1));
             let indent = indent.min(limit).min(MAX_INDENT);
+            let before = inner.layout.clone();
             inner.set_attr(id, "indent", i64::from(indent))?;
-            inner.finish(vec![id])
+            inner.finish(before, vec![id])
         })
     }
 
@@ -410,6 +428,7 @@ impl Page {
             if after == Some(id) || inner.layout.display_prev(id) == after {
                 return Ok(Patch::default());
             }
+            let before = inner.layout.clone();
             // The block after `id` in the body would otherwise follow it to its new place.
             inner.pin_next(id)?;
             let target = match after {
@@ -433,7 +452,7 @@ impl Page {
                 }
                 None => order.insert(target, id.to_string())?,
             }
-            inner.finish(vec![id])
+            inner.finish(before, vec![id])
         })
     }
 
@@ -704,13 +723,11 @@ impl Inner {
         Ok(())
     }
 
-    /// Commits, recomputes the layout and reports what changed against the layout before.
-    fn finish(&mut self, touched: Vec<BlockId>) -> Result<Patch> {
+    /// Commits, recomputes the layout and reports what changed against `before`, the layout as
+    /// it was before the edit started.
+    fn finish(&mut self, before: Layout, touched: Vec<BlockId>) -> Result<Patch> {
         self.doc.commit();
-        let before = std::mem::replace(
-            &mut self.layout,
-            Layout::compute(&self.doc, Some(self.genesis)),
-        );
+        self.layout = Layout::compute(&self.doc, Some(self.genesis));
         let after = &self.layout;
         let mut updated: Vec<BlockId> = touched
             .into_iter()
@@ -778,7 +795,7 @@ fn marks_of(marks: &drusite_model::Marks) -> Vec<Mark> {
         out.push(Mark::Code);
     }
     if let Some(href) = &marks.link {
-        out.push(Mark::Link(href.clone()));
+        out.push(Mark::Link { href: href.clone() });
     }
     out
 }

@@ -33,7 +33,7 @@ pub(crate) fn configure_styles(doc: &LoroDoc) {
 
 pub(crate) fn mark_value(mark: &Mark) -> LoroValue {
     match mark {
-        Mark::Link(href) => href.as_str().into(),
+        Mark::Link { href } => href.as_str().into(),
         _ => true.into(),
     }
 }
@@ -62,7 +62,7 @@ pub(crate) fn marks_from<S: std::hash::BuildHasher>(
 pub(crate) fn write_kind(map: &LoroMap, kind: &BlockKind) -> LoroResult<()> {
     map.insert("type", kind.name())?;
     match kind {
-        BlockKind::Heading(level) => map.insert("level", i64::from(level.number())),
+        BlockKind::Heading { level } => map.insert("level", i64::from(level.number())),
         BlockKind::Todo { checked } => map.insert("checked", *checked),
         BlockKind::Code { language } => map.insert("language", language.as_str()),
         BlockKind::Callout { icon } => map.insert("icon", icon.as_str()),
@@ -82,7 +82,9 @@ pub(crate) fn read_kind(map: Option<&LoroMap>) -> BlockKind {
         return BlockKind::Paragraph;
     };
     match get_str(map, "type").as_deref() {
-        Some("heading") => BlockKind::Heading(HeadingLevel::clamped(get_int(map, "level"))),
+        Some("heading") => BlockKind::Heading {
+            level: HeadingLevel::clamped(get_int(map, "level")),
+        },
         Some("bulleted") => BlockKind::Bulleted,
         Some("numbered") => BlockKind::Numbered,
         Some("todo") => BlockKind::Todo {

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "The main window: the Core API and the core's events, nothing else.",
+  "windows": ["main"],
+  "permissions": ["allow-core", "core:event:allow-listen", "core:event:allow-unlisten"]
+}

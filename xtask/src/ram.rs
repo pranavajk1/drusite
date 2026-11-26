@@ -106,8 +106,8 @@ pub(crate) fn check(report: &mut Report, opts: &Options) -> Result<()> {
     );
     if opts.app.is_none() {
         report.note(
-            "ram: measures the drusite-app stub, which has no webview and doesn't open the \
-             workspace yet; the real app arrives with the editor (Phase 1 step 5).",
+            "ram: measures the Tauri app opening the workspace, with a placeholder page in place \
+             of the editor until Phase 1 step 5.",
         );
     }
     Ok(())
@@ -138,7 +138,9 @@ fn write_fixture(dir: &Path) -> Result<PathBuf> {
         page.insert_text(last, 0, &format!("Notes for page {i}"))?;
         for b in 0..20 {
             let kind = match b % 5 {
-                0 => BlockKind::Heading(HeadingLevel::H2),
+                0 => BlockKind::Heading {
+                    level: HeadingLevel::H2,
+                },
                 1 => BlockKind::Bulleted,
                 2 => BlockKind::Todo {
                     checked: b % 2 == 0,
@@ -167,7 +169,15 @@ fn write_fixture(dir: &Path) -> Result<PathBuf> {
 fn build_app() -> Result<PathBuf> {
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
     let status = Command::new(cargo)
-        .args(["build", "--release", "--locked", "--package", "drusite-app"])
+        .args([
+            "build",
+            "--release",
+            "--locked",
+            "--package",
+            "drusite-app",
+            "--features",
+            "custom-protocol",
+        ])
         .status()
         .context("cannot run cargo")?;
     if !status.success() {

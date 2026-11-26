@@ -10,12 +10,17 @@ authors.workspace = true
 publish.workspace = true
 
 [dependencies]
+serde.workspace = true
+specta.workspace = true
 thiserror.workspace = true
-uuid.workspace = true
+uuid = { workspace = true, features = ["serde"] }
 
 # In the browser, IDs take their randomness from the JavaScript runtime.
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 uuid = { workspace = true, features = ["js"] }
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [lints]
 workspace = true

@@ -9,6 +9,8 @@
 use std::fmt;
 use std::str::FromStr;
 
+use serde::{Deserialize, Serialize};
+use specta::Type;
 use uuid::Uuid;
 
 /// The version of the page and workspace document layout. Stored in every document, so a newer
@@ -21,7 +23,10 @@ pub const MAX_INDENT: u8 = 8;
 macro_rules! id_type {
     ($(#[$doc:meta])* $name:ident) => {
         $(#[$doc])*
-        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        ///
+        /// Serialized as the UUID's hyphenated string.
+        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Type)]
+        #[serde(transparent)]
         pub struct $name(Uuid);
 
         impl $name {
@@ -80,8 +85,9 @@ id_type!(
 #[error("not an ID: {0:?}")]
 pub struct IdError(pub String);
 
-/// Heading levels 1 to 3, as in Notion.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Heading levels 1 to 3, as in Notion. Serialized as `"h1"`, `"h2"`, `"h3"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]
+#[serde(rename_all = "lowercase")]
 pub enum HeadingLevel {
     H1,
     H2,
@@ -109,10 +115,13 @@ impl HeadingLevel {
 
 /// What a block is. Changing it is an attribute change on the same block, never a new block, so
 /// a concurrent edit to the block's text survives.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]
+#[serde(tag = "type", rename_all = "camelCase")]
 pub enum BlockKind {
     Paragraph,
-    Heading(HeadingLevel),
+    Heading {
+        level: HeadingLevel,
+    },
     Bulleted,
     Numbered,
     Todo {
@@ -137,7 +146,7 @@ impl BlockKind {
     pub const fn name(&self) -> &'static str {
         match self {
             Self::Paragraph => "paragraph",
-            Self::Heading(_) => "heading",
+            Self::Heading { .. } => "heading",
             Self::Bulleted => "bulleted",
             Self::Numbered => "numbered",
             Self::Todo { .. } => "todo",
@@ -151,7 +160,8 @@ impl BlockKind {
 }
 
 /// Inline formatting on a run of text.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
 pub struct Marks {
     pub bold: bool,
     pub italic: bool,
@@ -168,14 +178,15 @@ impl Marks {
 }
 
 /// One mark, for adding or removing formatting on a range.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]
+#[serde(tag = "type", rename_all = "camelCase")]
 pub enum Mark {
     Bold,
     Italic,
     Underline,
     Strikethrough,
     Code,
-    Link(String),
+    Link { href: String },
 }
 
 impl Mark {
@@ -187,13 +198,13 @@ impl Mark {
             Self::Underline => "underline",
             Self::Strikethrough => "strikethrough",
             Self::Code => "code",
-            Self::Link(_) => "link",
+            Self::Link { .. } => "link",
         }
     }
 }
 
 /// A run of text with the same formatting.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]
 pub struct Span {
     pub text: String,
     pub marks: Marks,
@@ -209,7 +220,7 @@ impl Span {
 }
 
 /// A block as the editor sees it.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]
 pub struct Block {
     pub id: BlockId,
     pub kind: BlockKind,

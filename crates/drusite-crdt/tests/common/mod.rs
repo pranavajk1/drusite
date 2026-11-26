@@ -28,7 +28,7 @@ pub fn shape(page: &Page) -> String {
         .iter()
         .map(|b| {
             let kind = match &b.kind {
-                BlockKind::Heading(l) => format!("h{}", l.number()),
+                BlockKind::Heading { level: l } => format!("h{}", l.number()),
                 k => k.name()[..1].to_string(),
             };
             let indent = if b.indent > 0 {

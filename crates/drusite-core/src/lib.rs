@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The client engine: the encrypted local store, and (from Phase 1 step 4) the Core API the UI
-//! talks to. Search, the sync client, the Markdown bridge and the local MCP server join it in
+//! The client engine: the encrypted local store, and the Core API the UI talks to. Search, the sync client, the Markdown bridge and the local MCP server join it in
 //! later phases.
 
+pub mod api;
+#[cfg(feature = "sqlite")]
+mod engine;
 pub mod key;
 #[cfg(feature = "sqlite")]
 pub mod store;
 
+#[cfg(feature = "sqlite")]
+pub use engine::{Core, EventSink};
 pub use key::StoreKey;
 
 /// Everything that can go wrong in the core.

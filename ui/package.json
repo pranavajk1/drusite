@@ -1,0 +1,16 @@
+{
+  "name": "drusite-ui",
+  "private": true,
+  "version": "0.0.0",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.12.5"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
+}

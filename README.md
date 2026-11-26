@@ -17,7 +17,8 @@ Rust sync server. Notion's block model, real-time sync, and notes that AI tools 
 | `drusite-server` | The server binary (Phase 2) |
 | `drusite-app` | The Tauri 2 shell, an adapter from the Core API to Tauri |
 | `drusite-wasm` | The browser adapter: the core as WebAssembly (Phase 6) |
-| `xtask` | Repo tooling: `cargo xtask budgets` enforces the performance budgets |
+| `xtask` | Repo tooling: `cargo xtask budgets` enforces the performance budgets; `cargo xtask bindings` writes the UI's TypeScript types |
+| `ui/` | The frontend (TypeScript). It reaches the core only through `ui/src/core/client.ts` |
 
 ## Building
 

@@ -18,6 +18,8 @@ sqlite = ["dep:rusqlite"]
 drusite-crdt.workspace = true
 drusite-model.workspace = true
 getrandom.workspace = true
+serde.workspace = true
+specta.workspace = true
 thiserror.workspace = true
 zeroize.workspace = true
 
@@ -31,6 +33,7 @@ rusqlite = { workspace = true, optional = true, features = ["bundled-sqlcipher-v
 
 [dev-dependencies]
 fastrand.workspace = true
+serde_json.workspace = true
 tempfile.workspace = true
 
 [lints]

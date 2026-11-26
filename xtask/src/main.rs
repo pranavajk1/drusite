@@ -2,9 +2,11 @@
 
 //! Drusite's repo tooling. Run it with `cargo xtask <command>`.
 //!
-//! The one command so far is `budgets`: the performance budgets CI enforces. Each check exits
-//! non-zero when its budget is broken, which fails the build.
+//! - `budgets`: the performance budgets CI enforces. Each check exits non-zero when its budget
+//!   is broken, which fails the build.
+//! - `bindings`: the UI's TypeScript types for the Core API.
 
+mod bindings;
 mod budgets;
 mod keystroke;
 mod mem;
@@ -18,6 +20,9 @@ use anyhow::{Context, Result, bail};
 
 const USAGE: &str = "\
 usage: cargo xtask budgets [all|keystroke|ram] [options]
+       cargo xtask bindings [--check]
+
+bindings       writes the UI's TypeScript types for the Core API (--check: fail if stale)
 
   keystroke    the cost of one keystroke in a 10,000-block page
   ram          idle RAM of the desktop app, all processes, 1,000-page workspace, one page open
@@ -46,6 +51,14 @@ fn run() -> Result<bool> {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
         Some("budgets") => {}
+        Some("bindings") => {
+            let check = match args.next().as_deref() {
+                Some("--check") => true,
+                None => false,
+                Some(other) => bail!("unknown argument `{other}`\n\n{USAGE}"),
+            };
+            return bindings::run(check);
+        }
         Some("-h" | "--help" | "help") | None => {
             println!("{USAGE}");
             return Ok(true);
