@@ -1474,3 +1474,109 @@ async fn oidc_signs_in_and_is_careful_with_emails() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert!(victim.cookies.keys().all(|k| !k.contains("session")));
 }
+
+/// Signs an app in with a password account; returns the app and its tokens.
+async fn signed_in_app(server: &common::Server, email: &str) -> (App, Tokens) {
+    let app = App::new(&server.url);
+    let mut browser = Browser::new(&server.url);
+    let auth = app.start();
+    let request = open_authorize(&mut browser, &auth).await;
+    let step = signup(&mut browser, email, Some(&request)).await;
+    let code = finish(&mut browser, &auth, &step).await;
+    let tokens = app.exchange(&auth, &code).await;
+    (app, tokens)
+}
+
+#[tokio::test]
+async fn racing_refreshes_leave_one_live_chain_and_no_errors() {
+    let Some(server) = common::serve(&password_server()).await else {
+        return;
+    };
+    let (app, tokens) = signed_in_app(&server, "race@example.com").await;
+    let app = Arc::new(app);
+    // A device that fires the same refresh eight times at once (a retry storm).
+    let mut tasks = Vec::new();
+    for _ in 0..8 {
+        let app = Arc::clone(&app);
+        let refresh = tokens.refresh.clone();
+        tasks.push(tokio::spawn(async move { app.refresh(&refresh).await }));
+    }
+    let mut issued = Vec::new();
+    for task in tasks {
+        let (status, body) = task.await.unwrap();
+        assert!(
+            status == StatusCode::OK || status == StatusCode::BAD_REQUEST,
+            "{status} {body}"
+        );
+        if status == StatusCode::OK {
+            issued.push(body["refresh_token"].as_str().unwrap().to_owned());
+        }
+    }
+    assert!(!issued.is_empty());
+    // The grant survives, and exactly one refresh token is still unused: one chain.
+    let (revoked, unused): (bool, i64) = sqlx::query_as(
+        "SELECT g.revoked_at IS NOT NULL,
+                (SELECT count(*) FROM refresh_tokens r WHERE r.grant_id = g.id AND r.used_at IS NULL)
+         FROM oauth_grants g",
+    )
+    .fetch_one(server.db.db.pool())
+    .await
+    .unwrap();
+    assert!(!revoked);
+    assert_eq!(unused, 1);
+    let mut live = 0;
+    for refresh in issued {
+        if app.refresh(&refresh).await.0 == StatusCode::OK {
+            live += 1;
+            break;
+        }
+    }
+    assert_eq!(live, 1, "the chain goes on from one of the racing answers");
+}
+
+#[tokio::test]
+async fn the_sweeper_removes_only_what_has_expired() {
+    let Some(server) = common::serve(&password_server()).await else {
+        return;
+    };
+    let (app, tokens) = signed_in_app(&server, "sweep@example.com").await;
+    let pool = server.db.db.pool();
+    let count = |table: &'static str| async move {
+        sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(format!("SELECT count(*) FROM {table}")))
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    };
+    // Something expired in each table, next to the live rows the sign-in made.
+    for sql in [
+        "INSERT INTO dpop_proofs VALUES ('jkt', 'old', now() - interval '1 minute')",
+        "INSERT INTO auth_challenges (id, kind, data, expires_at)
+             VALUES (gen_random_uuid(), 'x', '{}', now() - interval '1 minute')",
+        "INSERT INTO auth_attempts (key, at) VALUES ('old', now() - interval '2 days')",
+        "INSERT INTO access_tokens (token_hash, grant_id, expires_at)
+             SELECT '\\x00', id, now() - interval '1 minute' FROM oauth_grants",
+    ] {
+        sqlx::query(sqlx::AssertSqlSafe(sql))
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+    let before = (
+        count("dpop_proofs").await,
+        count("auth_challenges").await,
+        count("access_tokens").await,
+    );
+    drusite_server::auth::tokens::sweep(&server.state)
+        .await
+        .unwrap();
+    let after = (
+        count("dpop_proofs").await,
+        count("auth_challenges").await,
+        count("access_tokens").await,
+    );
+    assert_eq!(after, (before.0 - 1, before.1 - 1, before.2 - 1));
+    assert_eq!(count("auth_attempts").await, 0);
+    // The live sign-in is untouched.
+    assert_eq!(app.me(&tokens.access).await.0, StatusCode::OK);
+    assert_eq!(app.refresh(&tokens.refresh).await.0, StatusCode::OK);
+}

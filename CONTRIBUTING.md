@@ -41,6 +41,15 @@ DRUSITE_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:55432/postgres 
 
 `.github/workflows/ci.yml` (the `server` job) shows how it starts the store and OpenBao.
 
+Sign-in end to end, in real Chromium against a real OIDC provider (Keycloak) and SMTP server
+(Mailpit), with a passkey on Chromium's virtual authenticator. The script starts everything in
+Docker and cleans up; it isn't in CI. `HEADED=1` shows the browser.
+
+```bash
+(cd ui && npm ci)
+ui/server-e2e/run.sh
+```
+
 After changing the Core API (`crates/drusite-core/src/api.rs`), regenerate the UI's types with
 `cargo xtask bindings` and commit them.
 

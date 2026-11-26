@@ -58,6 +58,7 @@ function action(fn) {
       await fn(event);
     } catch (e) {
       if (e.name === "NotAllowedError") setError("The passkey prompt was closed.");
+      else if (e.name === "InvalidStateError") setError("This device already has a passkey for your account.");
       else setError(e.message);
     } finally {
       if (button && "disabled" in button) button.disabled = false;
