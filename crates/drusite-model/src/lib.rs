@@ -79,6 +79,14 @@ id_type!(
     /// A workspace: one page tree and the pages in it.
     WorkspaceId
 );
+id_type!(
+    /// An account on a Drusite server.
+    UserId
+);
+id_type!(
+    /// A device signed in to an account: one app install, with its own key.
+    DeviceId
+);
 
 /// A string that isn't an ID.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

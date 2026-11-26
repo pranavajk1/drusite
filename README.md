@@ -3,7 +3,7 @@
 An open-source notes app: Tauri 2 on every platform, a Rust core with Loro CRDT documents, and a
 Rust sync server. Notion's block model, real-time sync, and notes that AI tools can read.
 
-**Status:** Phase 1 (foundations), in progress. Nothing here is a usable app yet.
+**Status:** Phase 2 (server, sync, login), in progress. Nothing here is a usable app yet.
 
 ## Layout
 
@@ -14,7 +14,7 @@ Rust sync server. Notion's block model, real-time sync, and notes that AI tools 
 | `drusite-proto` | The sync protocol (Phase 2) |
 | `drusite-core` | The client engine and the Core API the UI talks to |
 | `drusite-ai` | The AI provider interface and adapters (Phase 3) |
-| `drusite-server` | The server binary (Phase 2) |
+| `drusite-server` | The server binary: PostgreSQL 16+ with pgvector, any S3-compatible store. [`drusite.example.toml`](crates/drusite-server/drusite.example.toml) shows its configuration |
 | `drusite-app` | The Tauri 2 shell, an adapter from the Core API to Tauri |
 | `drusite-wasm` | The browser adapter: the core as WebAssembly (Phase 6) |
 | `xtask` | Repo tooling: `cargo xtask budgets` enforces the performance budgets; `cargo xtask bindings` writes the UI's TypeScript types |

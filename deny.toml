@@ -11,6 +11,9 @@ yanked = "deny"
 unmaintained = "all"
 ignore = [
     { id = "RUSTSEC-2024-0370", reason = "proc-macro-error is unmaintained; a build-time macro used by gtk-rs 0.18, which Tauri 2 needs for its GTK 3 webview on Linux. Nothing newer exists for GTK 3." },
+    { id = "RUSTSEC-2026-0543", reason = "chrono was declared unmaintained in 2026-09 with no fixed release. The server gets it through cedar-policy (datetime extension) and object_store (timestamps); neither has a release without it yet. Drusite's own code uses `time`. Drop when both move off chrono." },
+    { id = "RUSTSEC-2026-0542", reason = "humantime is unmaintained because it wraps chrono (RUSTSEC-2026-0543); object_store uses it to parse durations in its config. Drop with the chrono exception." },
+    { id = "RUSTSEC-2023-0071", reason = "Marvin attack on rsa 0.9: a timing side channel in RSA decryption and signing with a private key. The server gets rsa through openidconnect, which only verifies RS256 ID-token signatures with providers' public keys, so there is no private key to attack. Drop when openidconnect moves to rsa 0.10." },
     { id = "RUSTSEC-2023-0089", reason = "atomic-polyfill is unmaintained; it comes from heapless 0.7, which loro pulls in through postcard's default `heapless-cas` feature and never uses. Drop when loro turns off postcard's default features." },
 ]
 
@@ -38,6 +41,21 @@ allow = [
 # SQLite's public-domain "blessing", and libtomcrypt's WTFPL, both permissive and GPL-compatible.
 crate = "sqlcipher-src"
 allow = ["blessing", "WTFPL"]
+
+[[licenses.exceptions]]
+# Mozilla's root certificate list as Rust data, under a permissive data licence that combines
+# with AGPL. Used by the server's TLS clients (PostgreSQL, S3, the KMS, OTLP).
+crate = "webpki-roots"
+allow = ["CDLA-Permissive-2.0"]
+
+[[licenses.exceptions]]
+crate = "webpki-root-certs"
+allow = ["CDLA-Permissive-2.0"]
+
+[[licenses.exceptions]]
+# Public-domain-equivalent (more permissive than MIT). lettre uses it to encode email bodies.
+crate = "quoted_printable"
+allow = ["0BSD"]
 
 [licenses.private]
 # Drusite's own crates aren't published; their licence is checked like everything else.

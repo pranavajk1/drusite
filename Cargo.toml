@@ -17,9 +17,43 @@ publish = false
 drusite-model = { path = "crates/drusite-model" }
 drusite-crdt = { path = "crates/drusite-crdt" }
 drusite-core = { path = "crates/drusite-core" }
+drusite-dpop = { path = "crates/drusite-dpop" }
 
 # Third-party. Each is the newest stable release when added; bump them together.
+subtle = "2.6.1"
+http = "1.5.0"
+webauthn-rs = { version = "0.6.2", default-features = false }
+hmac = "0.13.0"
+sha1 = "0.11.0"
+sha2 = "0.11.2"
+p256 = { version = "0.14.0", default-features = false }
+openidconnect = { version = "4.1.0", default-features = false }
+lettre = { version = "0.11.24", default-features = false }
+argon2 = "0.6.0"
 anyhow = "1.0.105"
+axum = "0.8.9"
+base64 = "0.23.1"
+blake3 = "1.8.7"
+bytes = "1.12.2"
+cedar-policy = "4.15.0"
+chacha20poly1305 = "0.11.0"
+clap = { version = "4.6.10", features = ["derive", "env"] }
+object_store = { version = "0.14.2", features = ["aws"] }
+opentelemetry = "0.33.1"
+opentelemetry-appender-tracing = "0.33.1"
+opentelemetry-otlp = "0.33.1"
+opentelemetry_sdk = "0.33.1"
+reqwest = { version = "0.13.5", default-features = false }
+sqlx = { version = "0.9.1", default-features = false }
+time = "0.3.55"
+tokio = "1.54.1"
+toml = "1.2.3"
+tower = "0.5.3"
+tower-http = "0.7.1"
+tracing = "0.1.44"
+tracing-opentelemetry = "0.34.0"
+tracing-subscriber = "0.3.23"
+url = "2.5.9"
 fastrand = "2.5.0"
 getrandom = "0.4.3"
 libc = "0.2.191"
