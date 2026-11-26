@@ -1,0 +1,96 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# A complete Drusite server on one machine: drusite-server, PostgreSQL with pgvector, and
+# SeaweedFS as the S3-compatible store. Run ./setup.sh once (it writes the secrets), edit
+# drusite.toml (at least public_url and the login methods), then:
+#
+#   docker compose up -d
+#   docker compose run --rm drusite account create you@example.com
+#
+# Put a reverse proxy that passes WebSockets in front of port 8080 for HTTPS, or use any of your
+# own: Postgres 16+ with pgvector, any S3-compatible store, any OIDC provider.
+
+name: drusite
+
+services:
+  drusite:
+    image: ghcr.io/pranavajk1/drusite-server:${DRUSITE_VERSION:-main}
+    restart: unless-stopped
+    environment:
+      DRUSITE_CONFIG: /etc/drusite/drusite.toml
+    volumes:
+      - ./drusite.toml:/etc/drusite/drusite.toml:ro
+    secrets:
+      - database_url
+      - s3_secret_key
+      - master_key
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      bucket:
+        condition: service_completed_successfully
+
+  postgres:
+    image: pgvector/pgvector:0.8.7-pg18@sha256:38681dc6eaf55308e2a4c6de392d131652dcfac70e1263e35cd9b5ea3fe39782
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    volumes:
+      - postgres:/var/lib/postgresql
+      # First start only: an ordinary role for Drusite (row-level security doesn't apply to
+      # superusers), its database, and pgvector.
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    secrets:
+      - postgres_password
+      - db_password
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "drusite"]
+      interval: 5s
+      retries: 30
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.53@sha256:ccad23e18639c8b98cee17e7100b95830a06077b56d8e5b006d6dcf8ec5e94a0
+    restart: unless-stopped
+    command: ["server", "-filer", "-s3", "-ip.bind=0.0.0.0", "-s3.config=/run/secrets/s3_config"]
+    volumes:
+      - seaweedfs:/data
+    secrets:
+      - s3_config
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9333/cluster/status"]
+      interval: 5s
+      retries: 30
+
+  # Creates the bucket if it isn't there yet, then exits.
+  bucket:
+    image: chrislusf/seaweedfs:4.53@sha256:ccad23e18639c8b98cee17e7100b95830a06077b56d8e5b006d6dcf8ec5e94a0
+    entrypoint:
+      - sh
+      - -c
+      - |
+        shell() { echo "$$1" | weed shell -master=seaweedfs:9333; }
+        shell s3.bucket.list | grep -qw drusite || shell 's3.bucket.create -name drusite'
+        shell s3.bucket.list | grep -qw drusite
+    depends_on:
+      seaweedfs:
+        condition: service_healthy
+
+volumes:
+  postgres:
+  seaweedfs:
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password
+  db_password:
+    file: ./secrets/db_password
+  database_url:
+    file: ./secrets/database_url
+  s3_config:
+    file: ./secrets/s3.json
+  s3_secret_key:
+    file: ./secrets/s3_secret_key
+  master_key:
+    file: ./secrets/master_key

@@ -1,0 +1,11 @@
+apiVersion: v2
+name: drusite
+description: The Drusite sync server. Bring your own PostgreSQL (16+, with pgvector) and S3-compatible store.
+type: application
+version: 0.1.0
+appVersion: "main"
+home: https://github.com/pranavajk1/drusite
+sources:
+  - https://github.com/pranavajk1/drusite
+annotations:
+  licenses: AGPL-3.0-or-later

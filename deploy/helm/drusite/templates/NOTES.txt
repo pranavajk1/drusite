@@ -1,0 +1,7 @@
+Drusite is starting. It reads its config from the {{ include "drusite.fullname" . }} ConfigMap
+{{- if .Values.secret.name }} and its secrets from the {{ .Values.secret.name }} Secret{{ end }}.
+
+The first account:
+
+  kubectl exec -n {{ .Release.Namespace }} deploy/{{ include "drusite.fullname" . }} -- \
+    /usr/local/bin/drusite-server account create you@example.com

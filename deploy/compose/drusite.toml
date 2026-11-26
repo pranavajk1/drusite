@@ -1,0 +1,29 @@
+# drusite-server for docker compose. Secrets come from the files ./setup.sh wrote; see
+# crates/drusite-server/drusite.example.toml for every setting.
+
+# Where people and apps reach the server: your HTTPS address, behind a reverse proxy.
+public_url = "http://localhost:8080"
+
+[database]
+url_file = "/run/secrets/database_url"
+
+[storage]
+endpoint = "http://seaweedfs:8333"
+bucket = "drusite"
+access_key_id = "drusite"
+secret_access_key_file = "/run/secrets/s3_secret_key"
+
+[keys]
+source = "file"
+path = "/run/secrets/master_key"
+
+# At least one login method. Passkeys and passwords work with nothing else; add an OIDC provider
+# with [auth.oidc.<id>] (see the example config).
+[auth]
+self_signup = false
+
+[auth.passkeys]
+enabled = true
+
+[auth.password]
+enabled = true
