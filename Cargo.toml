@@ -21,6 +21,7 @@ drusite-dpop = { path = "crates/drusite-dpop" }
 drusite-proto = { path = "crates/drusite-proto" }
 
 # Third-party. Each is the newest stable release when added; bump them together.
+turmoil = "0.7.2"
 futures-util = { version = "0.3.34", default-features = false }
 tokio-tungstenite = { version = "0.29.0", default-features = false }
 zstd = { version = "0.14.5", default-features = false }
