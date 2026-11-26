@@ -1,0 +1,7 @@
+# The server image needs the Rust workspace and nothing else.
+target/
+spikes/
+**/node_modules/
+ui/dist/
+.git/
+crates/drusite-app/gen/
