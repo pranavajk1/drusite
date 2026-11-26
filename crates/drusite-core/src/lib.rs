@@ -10,6 +10,8 @@ mod engine;
 pub mod key;
 #[cfg(feature = "sqlite")]
 pub mod store;
+#[cfg(feature = "sqlite")]
+pub mod sync;
 
 #[cfg(feature = "sqlite")]
 pub use engine::{Core, EventSink};

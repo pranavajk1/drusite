@@ -1971,6 +1971,10 @@ version = "0.5.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.sha1]]
+version = "0.10.7"
+criteria = "safe-to-deploy"
+
+[[exemptions.sha1]]
 version = "0.11.0"
 criteria = "safe-to-deploy"
 
@@ -2262,6 +2266,10 @@ criteria = "safe-to-deploy"
 version = "0.1.19"
 criteria = "safe-to-deploy"
 
+[[exemptions.tokio-tungstenite]]
+version = "0.29.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.tokio-util]]
 version = "0.7.20"
 criteria = "safe-to-deploy"
@@ -2336,6 +2344,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.tray-icon]]
 version = "0.25.1"
+criteria = "safe-to-deploy"
+
+[[exemptions.tungstenite]]
+version = "0.29.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.twox-hash]]
@@ -2472,6 +2484,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.webpki-root-certs]]
 version = "1.0.12"
+criteria = "safe-to-deploy"
+
+[[exemptions.webpki-roots]]
+version = "0.26.11"
 criteria = "safe-to-deploy"
 
 [[exemptions.webpki-roots]]
@@ -2764,4 +2780,16 @@ criteria = "safe-to-deploy"
 
 [[exemptions.zmij]]
 version = "1.0.23"
+criteria = "safe-to-deploy"
+
+[[exemptions.zstd]]
+version = "0.14.5"
+criteria = "safe-to-deploy"
+
+[[exemptions.zstd-safe]]
+version = "8.4.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.zstd-sys]]
+version = "2.2.0+zstd.1.6.0"
 criteria = "safe-to-deploy"

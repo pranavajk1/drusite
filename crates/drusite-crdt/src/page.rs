@@ -518,6 +518,14 @@ impl Page {
             .run(|| Ok(self.inner.doc.export(ExportMode::updates(since))?))
     }
 
+    /// Imported updates still waiting for changes from another writer, which neither the
+    /// snapshot nor [`Self::export_updates`] holds. Saved beside a snapshot, they apply once
+    /// what they wait for arrives.
+    pub fn export_pending(&self) -> Result<Option<Vec<u8>>> {
+        self.guard
+            .run(|| Ok(self.inner.doc.export_pending_updates()?))
+    }
+
     /// The version this page is at: pass it to [`Page::export_updates`] later.
     pub fn version(&self) -> VersionVector {
         self.inner.doc.oplog_vv()

@@ -42,6 +42,30 @@ pub struct Server {
     _keys: tempfile::TempDir,
 }
 
+impl Server {
+    /// Another server node on the same database and master keys, as a deployment with more
+    /// than one replica would run.
+    pub async fn second_node(&self) -> (Url, AppState) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let url = Url::parse(&format!("http://localhost:{port}/")).unwrap();
+        let keys = self._keys.path().join("master-keys");
+        let (config, _dir) = config(
+            &self.db.app_url,
+            &[
+                ("DRUSITE__PUBLIC_URL", url.as_str()),
+                ("DRUSITE__AUTH__PASSWORD__ENABLED", "true"),
+                ("DRUSITE__KEYS__PATH", keys.to_str().unwrap()),
+            ],
+        );
+        let (state, _) = state(config, self.db.db.clone());
+        let app = router(state.clone());
+        drusite_server::sync::Hub::spawn_workers(&state);
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (url, state)
+    }
+}
+
 pub async fn serve(overrides: &[(&str, &str)]) -> Option<Server> {
     let db = fresh_db().await?;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -53,6 +77,7 @@ pub async fn serve(overrides: &[(&str, &str)]) -> Option<Server> {
     let (config, keys) = config(&db.app_url, &all);
     let (state, sent) = state(config, db.db.clone());
     let app = router(state.clone());
+    drusite_server::sync::Hub::spawn_workers(&state);
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     Some(Server {
         url,

@@ -197,6 +197,7 @@ async fn serve(config: Config) -> anyhow::Result<()> {
     let listen = config.server.listen;
     let state = AppState::new(config, db, blobs, Keyring::new(source), policy, auth);
     let _sweeper = drusite_server::auth::spawn_sweeper(state.clone());
+    let _sync = drusite_server::sync::Hub::spawn_workers(&state);
     let listener = tokio::net::TcpListener::bind(listen)
         .await
         .with_context(|| format!("listening on {listen}"))?;

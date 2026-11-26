@@ -13,4 +13,5 @@ pub mod health;
 pub mod keys;
 pub mod policy;
 pub mod storage;
+pub mod sync;
 pub mod telemetry;

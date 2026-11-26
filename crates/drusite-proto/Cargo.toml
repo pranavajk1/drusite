@@ -9,5 +9,15 @@ repository.workspace = true
 authors.workspace = true
 publish.workspace = true
 
+[features]
+default = ["zstd"]
+# Compressed frames. Off for the browser build, which reads and writes uncompressed frames.
+zstd = ["dep:zstd"]
+
+[dependencies]
+prost.workspace = true
+thiserror.workspace = true
+zstd = { workspace = true, optional = true }
+
 [lints]
 workspace = true
