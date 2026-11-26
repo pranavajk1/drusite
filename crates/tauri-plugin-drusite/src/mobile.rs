@@ -155,3 +155,34 @@ pub(crate) async fn authenticate<R: Runtime>(handle: PluginHandle<R>, url: &Url)
 pub(crate) fn cancel<R: Runtime>(handle: &PluginHandle<R>) {
     let _ = handle.run_mobile_plugin::<serde::de::IgnoredAny>("cancelAuthentication", ());
 }
+
+/// On Android 17 and later, asks for the local-network permission when `server` is on the
+/// local network, since connections there are otherwise dropped without an error.
+#[cfg(target_os = "android")]
+pub(crate) async fn local_network<R: Runtime>(
+    handle: &PluginHandle<R>,
+    server: &str,
+) -> Result<()> {
+    #[derive(Deserialize)]
+    struct Answer {
+        granted: bool,
+    }
+    if !crate::on_local_network(server).await {
+        return Ok(());
+    }
+    let handle = handle.clone();
+    // The platform call blocks until the person answers, so it waits off the async threads.
+    let answer: Answer =
+        tokio::task::spawn_blocking(move || handle.run_mobile_plugin("localNetwork", ()))
+            .await
+            .map_err(|e| Error::Platform(e.to_string()))??;
+    if answer.granted {
+        Ok(())
+    } else {
+        Err(Error::Platform(
+            "Drusite needs the “local network” permission to reach a server on your network. \
+             Allow it in Settings › Apps › Drusite › Permissions, then sign in again."
+                .to_owned(),
+        ))
+    }
+}

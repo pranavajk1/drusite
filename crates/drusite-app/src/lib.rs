@@ -147,6 +147,11 @@ impl Ready {
 
     async fn sign_in(&self, handle: &AppHandle, server: &str) -> Result<Response, ApiError> {
         self.replace_sign_in(None);
+        handle
+            .drusite()
+            .prepare_to_reach(server)
+            .await
+            .map_err(account_error)?;
         let redirect = handle.drusite().redirect().await.map_err(account_error)?;
         let url = self
             .supervisor

@@ -14,8 +14,11 @@ import android.security.keystore.KeyProperties
 import android.security.keystore.StrongBoxUnavailableException
 import android.util.Base64
 import androidx.appcompat.app.AppCompatActivity
+import app.tauri.PermissionState
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
+import app.tauri.annotation.Permission
+import app.tauri.annotation.PermissionCallback
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
@@ -51,8 +54,12 @@ class AuthenticateArgs {
 }
 
 /// The Android half of the Drusite plugin: the device key and the store key in the Android
-/// Keystore, and signing in through the browser.
-@TauriPlugin
+/// Keystore, signing in through the browser, and the local-network permission.
+@TauriPlugin(
+  permissions = [
+    Permission(strings = ["android.permission.ACCESS_LOCAL_NETWORK"], alias = "localNetwork")
+  ]
+)
 class DrusitePlugin(private val activity: Activity) : Plugin(activity) {
   private val keyStore: KeyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
   private val main = Handler(Looper.getMainLooper())
@@ -175,6 +182,26 @@ class DrusitePlugin(private val activity: Activity) : Plugin(activity) {
     val ret = JSObject()
     ret.put("name", named?.takeIf { it.isNotBlank() } ?: "${Build.MANUFACTURER} ${Build.MODEL}")
     invoke.resolve(ret)
+  }
+
+  // ---- The local network ----
+
+  /// From Android 17, an app needs ACCESS_LOCAL_NETWORK (a runtime permission) to reach
+  /// addresses on the local network; without it, connections there are silently dropped.
+  /// Resolves `granted`, asking the person first if it hasn't been decided yet.
+  @Command
+  fun localNetwork(invoke: Invoke) {
+    if (Build.VERSION.SDK_INT < 37 || getPermissionState("localNetwork") == PermissionState.GRANTED) {
+      invoke.resolve(JSObject().put("granted", true))
+    } else {
+      requestPermissionForAlias("localNetwork", invoke, "localNetworkAnswered")
+    }
+  }
+
+  @PermissionCallback
+  private fun localNetworkAnswered(invoke: Invoke) {
+    invoke.resolve(
+      JSObject().put("granted", getPermissionState("localNetwork") == PermissionState.GRANTED))
   }
 
   // ---- Signing in ----

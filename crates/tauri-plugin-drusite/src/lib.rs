@@ -142,6 +142,20 @@ impl<R: Runtime> Drusite<R> {
         }
     }
 
+    /// Asks for what the platform needs before the app can reach `server`: on Android 17 and
+    /// later, the local-network permission when the server is on the local network.
+    pub async fn prepare_to_reach(&self, server: &str) -> Result<()> {
+        #[cfg(target_os = "android")]
+        {
+            mobile::local_network(&self.handle, server).await
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            let _ = server;
+            Ok(())
+        }
+    }
+
     /// Gets ready to sign in: picks the redirect the browser will come back to.
     pub async fn redirect(&self) -> Result<Redirect<R>> {
         #[cfg(desktop)]
@@ -207,4 +221,81 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             Ok(())
         })
         .build()
+}
+
+/// Whether `server` (an address as the person typed it, scheme optional) resolves to an
+/// address on the local network. Unresolvable servers count as not local: signing in will
+/// report the real problem.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub(crate) async fn on_local_network(server: &str) -> bool {
+    let typed = server.trim();
+    let with_scheme = if typed.contains("://") {
+        typed.to_owned()
+    } else {
+        format!("https://{typed}")
+    };
+    let Ok(url) = url::Url::parse(&with_scheme) else {
+        return false;
+    };
+    let (Some(host), Some(port)) = (url.host_str(), url.port_or_known_default()) else {
+        return false;
+    };
+    let host = host
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .to_owned();
+    match tokio::net::lookup_host((host.as_str(), port)).await {
+        Ok(addrs) => addrs.into_iter().any(|a| is_local_network(a.ip())),
+        Err(_) => false,
+    }
+}
+
+/// The addresses Android 17 counts as the local network: private, link-local, shared (CGNAT,
+/// which Tailscale uses) and unique-local. Loopback is the device itself, so it isn't.
+fn is_local_network(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            let [a, b, ..] = v4.octets();
+            v4.is_private() || v4.is_link_local() || (a == 100 && (64..128).contains(&b))
+        }
+        std::net::IpAddr::V6(v6) => {
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_local_network(v4.into());
+            }
+            let first = v6.segments()[0];
+            (first & 0xfe00) == 0xfc00 || (first & 0xffc0) == 0xfe80
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_network_addresses() {
+        for local in [
+            "192.168.68.212",
+            "10.0.0.1",
+            "172.16.5.4",
+            "169.254.1.1",
+            "100.100.1.1",
+            "fd00:976a::9",
+            "fe80::1",
+            "::ffff:192.168.1.1",
+        ] {
+            assert!(is_local_network(local.parse().unwrap()), "{local}");
+        }
+        for public in ["1.1.1.1", "127.0.0.1", "100.128.0.1", "::1", "2607:fc20::1"] {
+            assert!(!is_local_network(public.parse().unwrap()), "{public}");
+        }
+    }
+
+    #[tokio::test]
+    async fn typed_servers() {
+        assert!(on_local_network("192.168.1.10").await);
+        assert!(on_local_network("http://10.0.0.2:8080/").await);
+        assert!(!on_local_network("127.0.0.1").await);
+        assert!(!on_local_network("not a server").await);
+    }
 }
