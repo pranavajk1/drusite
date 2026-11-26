@@ -127,6 +127,24 @@ jobs:
           curl -sf -H "X-Vault-Token: dev-root" -X POST -d '{"type":"chacha20-poly1305"}' http://localhost:8200/v1/transit/keys/drusite
       - run: cargo test --package drusite-server --locked
 
+  simulation:
+    name: sync simulation
+    # Real cores through network chaos in turmoil; every edit must survive (see
+    # crates/drusite-core/tests/simulation.rs). Too slow for the ordinary test run, so it's
+    # ignored there and runs here. The stores go to RAM: each core's SQLCipher store syncs every
+    # write to disk, which is most of the time on a CI runner's disk.
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      TMPDIR: /dev/shm
+      DRUSITE_SIM_SEEDS: "3"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo test --package drusite-core --test simulation --release --locked -- --ignored --nocapture
+
   budgets:
     name: performance budgets (${{ matrix.os }})
     strategy:

@@ -52,10 +52,11 @@ ui/server-e2e/run.sh
 
 Sync is also tested in a deterministic network simulation (turmoil): real cores against a
 model of the server, through partitions, dropped connections, duplicated messages and crashes,
-checking that every edit survives. CI runs 3 seeds; run many more before changing sync:
+checking that every edit survives. It's too slow for the ordinary test run, so it's ignored
+there; CI runs 3 seeds in its own job. Run many more before changing sync:
 
 ```bash
-DRUSITE_SIM_SEEDS=50 cargo test -p drusite-core --test simulation -- --nocapture
+DRUSITE_SIM_SEEDS=50 cargo test -p drusite-core --test simulation --release -- --ignored --nocapture
 ```
 
 After changing the Core API (`crates/drusite-core/src/api.rs`), regenerate the UI's types with

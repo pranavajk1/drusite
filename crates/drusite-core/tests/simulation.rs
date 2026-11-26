@@ -20,8 +20,10 @@
 //! Every edit is a unique token. When the chaos stops and the network heals, every device must
 //! hold every token that was ever saved, exactly once, and all devices must agree.
 //!
-//! `DRUSITE_SIM_SEEDS=n` runs seeds 1 to n (default 3, about 45 s each);
-//! `DRUSITE_SIM_SEED=s` runs just seed s. Run many before changing sync.
+//! It's ignored in the ordinary test run (too slow) and has its own CI job. Run it with
+//! `cargo test -p drusite-core --test simulation --release -- --ignored --nocapture`.
+//! `DRUSITE_SIM_SEEDS=n` runs seeds 1 to n (default 3); `DRUSITE_SIM_SEED=s` runs just seed
+//! s. Run many before changing sync.
 
 #![allow(clippy::unwrap_used, clippy::too_many_lines)]
 
@@ -1067,6 +1069,7 @@ fn check(slots: &[Arc<Mutex<DeviceSlot>>], saved: &[String]) -> Result<(), Strin
 }
 
 #[test]
+#[ignore = "slow: CI runs it in its own job; run with --ignored"]
 fn every_edit_survives_network_chaos() {
     let seeds: Vec<u64> = match std::env::var("DRUSITE_SIM_SEED") {
         Ok(s) => vec![s.parse().unwrap()],
