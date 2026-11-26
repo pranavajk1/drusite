@@ -42,14 +42,24 @@ pub(crate) fn app_processes(root: u32) -> anyhow::Result<Vec<ProcessMemory>> {
     // The tree is shallow; repeat until no new descendants turn up.
     loop {
         let before = members.len();
-        for (pid, proc_) in sys.processes() {
+        // On Linux, sysinfo lists every thread as a process too; only real processes count.
+        for (pid, proc_) in sys
+            .processes()
+            .iter()
+            .filter(|(_, p)| p.thread_kind().is_none())
+        {
             if let Some(parent) = proc_.parent()
                 && members.contains(&parent.as_u32())
             {
                 members.insert(pid.as_u32());
             }
         }
-        for pid in sys.processes().keys() {
+        for pid in sys
+            .processes()
+            .iter()
+            .filter(|(_, p)| p.thread_kind().is_none())
+            .map(|(pid, _)| pid)
+        {
             if responsible_pid(pid.as_u32()).is_some_and(|r| members.contains(&r)) {
                 members.insert(pid.as_u32());
             }
@@ -62,7 +72,9 @@ pub(crate) fn app_processes(root: u32) -> anyhow::Result<Vec<ProcessMemory>> {
     Ok(members
         .into_iter()
         .filter_map(|pid| {
-            let proc_ = sys.process(Pid::from_u32(pid))?;
+            let proc_ = sys
+                .process(Pid::from_u32(pid))
+                .filter(|p| p.thread_kind().is_none())?;
             Some(ProcessMemory {
                 pid,
                 name: proc_.name().to_string_lossy().into_owned(),

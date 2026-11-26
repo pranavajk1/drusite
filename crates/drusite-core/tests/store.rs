@@ -212,8 +212,12 @@ fn killing_the_app_mid_write_loses_nothing_it_saved() {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(12);
+    // Keep going (within reason) until the log has been compacted at least once, however slowly
+    // this machine saves: some kills must land during or after a compaction.
     let mut total_saved = 0;
-    for round in 0..rounds {
+    let mut round = 0;
+    while round < rounds || (total_saved <= COMPACT_AFTER_UPDATES as usize + 50 && round < 400) {
+        round += 1;
         let mut child = Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
