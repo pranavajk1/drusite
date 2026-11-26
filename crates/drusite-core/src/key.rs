@@ -57,6 +57,7 @@ impl StoreKey {
     }
 
     /// The `PRAGMA key` value SQLCipher takes for a raw key: `"x'…'"`.
+    #[cfg(feature = "sqlite")]
     pub(crate) fn pragma_value(&self) -> Zeroizing<String> {
         Zeroizing::new(format!("\"x'{}'\"", self.to_hex().as_str()))
     }
