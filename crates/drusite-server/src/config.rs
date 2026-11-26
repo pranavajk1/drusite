@@ -327,7 +327,11 @@ pub struct OidcProviderConfig {
     pub enabled: bool,
     /// The name on the sign-in button, e.g. "Authentik" or "Google".
     pub display_name: String,
-    pub issuer: Url,
+    /// The issuer exactly as the provider states it. Providers compare it character for
+    /// character, trailing slash included (Authentik's and Auth0's have one, Keycloak's and
+    /// Google's don't), so it stays a string rather than a parsed URL, which would add or keep
+    /// a slash on its own.
+    pub issuer: String,
     pub client_id: String,
     /// Leave out for a public client.
     #[serde(default)]
@@ -543,7 +547,10 @@ impl Config {
                     "OIDC provider ID {id:?} must be lowercase letters, digits and _"
                 ));
             }
-            if provider.issuer.scheme() != "https" && !is_loopback(&provider.issuer) {
+            let issuer = Url::parse(&provider.issuer).map_err(|e| {
+                ConfigError::Invalid(format!("[auth.oidc.{id}] issuer isn't a URL: {e}"))
+            })?;
+            if issuer.scheme() != "https" && !is_loopback(&issuer) {
                 return invalid(format!("[auth.oidc.{id}] issuer must use https"));
             }
             if !provider.scopes.iter().any(|s| s == "openid") {
