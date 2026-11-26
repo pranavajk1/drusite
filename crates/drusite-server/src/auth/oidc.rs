@@ -127,8 +127,7 @@ impl Providers {
         if let Some(metadata) = cached {
             return Ok(metadata);
         }
-        let issuer = IssuerUrl::new(config.issuer.as_str().trim_end_matches('/').to_owned())
-            .map_err(AuthError::internal)?;
+        let issuer = IssuerUrl::new(config.issuer.clone()).map_err(AuthError::internal)?;
         let metadata = CoreProviderMetadata::discover_async(issuer, &self.client())
             .await
             .map_err(|e| AuthError::internal(anyhow::anyhow!("OIDC discovery for {id}: {e}")))?;
@@ -533,7 +532,7 @@ mod tests {
         OidcProviderConfig {
             enabled: true,
             display_name: "x".into(),
-            issuer: url::Url::parse("https://idp.example").unwrap_or_else(|_| unreachable!()),
+            issuer: "https://idp.example".to_owned(),
             client_id: "c".into(),
             client_secret: None,
             scopes: vec!["openid".into()],

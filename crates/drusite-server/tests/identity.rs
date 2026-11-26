@@ -1143,16 +1143,30 @@ mod provider {
     #[derive(Clone)]
     pub(super) struct Provider {
         pub(super) url: Url,
+        /// What discovery and ID tokens say the issuer is.
+        pub(super) issuer: String,
         pub(super) claims: Arc<Mutex<Value>>,
         key: Arc<SoftwareKey>,
         codes: Arc<Mutex<HashMap<String, (String, String)>>>,
     }
 
+    /// A provider whose issuer has no trailing slash, like Keycloak's.
     pub(super) async fn start() -> Provider {
+        start_with(false).await
+    }
+
+    /// A provider whose issuer ends in a slash, like Authentik's and Auth0's.
+    pub(super) async fn start_with_slash() -> Provider {
+        start_with(true).await
+    }
+
+    async fn start_with(slash: bool) -> Provider {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = Url::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
+        let base = url.as_str().trim_end_matches('/').to_owned();
         let provider = Provider {
             url,
+            issuer: if slash { format!("{base}/") } else { base },
             claims: Arc::new(Mutex::new(json!({}))),
             key: Arc::new(SoftwareKey::generate().unwrap()),
             codes: Arc::default(),
@@ -1168,13 +1182,13 @@ mod provider {
     }
 
     fn issuer(p: &Provider) -> String {
-        p.url.as_str().trim_end_matches('/').to_owned()
+        p.issuer.clone()
     }
 
     async fn discovery(State(p): State<Provider>) -> axum::Json<Value> {
-        let i = issuer(&p);
+        let i = p.url.as_str().trim_end_matches('/');
         axum::Json(json!({
-            "issuer": i,
+            "issuer": issuer(&p),
             "authorization_endpoint": format!("{i}/authorize"),
             "token_endpoint": format!("{i}/token"),
             "jwks_uri": format!("{i}/jwks"),
@@ -1255,10 +1269,37 @@ async fn oidc_sign_in(browser: &mut Browser, request: Option<&str>) -> reqwest::
     browser.get(&callback).await
 }
 
+/// Issuers are compared exactly. Authentik's ends in a slash; Drusite used to drop it, and
+/// then refused the provider's own (correct) issuer during discovery.
+#[tokio::test]
+async fn an_issuer_with_a_trailing_slash_is_kept_as_written() {
+    let idp = provider::start_with_slash().await;
+    assert!(idp.issuer.ends_with('/'));
+    let Some(server) = common::serve(&[
+        ("DRUSITE__AUTH__OIDC__IDP__DISPLAY_NAME", "Authentik"),
+        ("DRUSITE__AUTH__OIDC__IDP__ISSUER", &idp.issuer),
+        ("DRUSITE__AUTH__OIDC__IDP__CLIENT_ID", "drusite"),
+        ("DRUSITE__AUTH__OIDC__IDP__CLIENT_SECRET", "s3cret"),
+        ("DRUSITE__AUTH__OIDC__IDP__AUTO_CREATE", "true"),
+    ])
+    .await
+    else {
+        return;
+    };
+    *idp.claims.lock().unwrap() =
+        json!({ "sub": "u1", "email": "sam@example.com", "email_verified": true });
+    let response = oidc_sign_in(&mut Browser::new(&server.url), None).await;
+    assert!(
+        response.status().is_redirection() || response.status().is_success(),
+        "{}",
+        response.status()
+    );
+}
+
 #[tokio::test]
 async fn oidc_signs_in_and_is_careful_with_emails() {
     let idp = provider::start().await;
-    let issuer = idp.url.to_string();
+    let issuer = idp.issuer.clone();
     let Some(server) = common::serve(&[
         ("DRUSITE__AUTH__PASSWORD__ENABLED", "true"),
         ("DRUSITE__AUTH__SELF_SIGNUP", "true"),
