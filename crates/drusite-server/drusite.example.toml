@@ -46,6 +46,11 @@ source = "env"
 [auth]
 # Let anyone create an account with a password, passkey or magic link.
 self_signup = false
+# Apps sign in through the browser and get tokens bound to a key on the device.
+# access_token_minutes = 10   # how long an access token lasts; apps refresh it
+# device_idle_days = 30       # a device unused this long is signed out
+# device_max_days = 365       # every device signs in again after this long
+# session_hours = 12          # how long a browser stays signed in to the sign-in pages
 
 [auth.passkeys]
 enabled = true
@@ -64,8 +69,12 @@ display_name = "Single sign-on"
 issuer = "https://idp.example.com/"
 client_id = "drusite"
 client_secret_file = "/run/secrets/oidc-client-secret"
-# Create an account on first sign-in, optionally only for some domains or groups.
+# Create an account on first sign-in.
 auto_create = true
+# Join a first sign-in to the existing account with the same email, only if the provider says
+# it verified the email. Turn on only for a provider that verifies emails properly.
+# link_by_verified_email = false
+# Only let some people sign in: verified emails in these domains, members of these groups.
 # allowed_email_domains = ["example.com"]
 # allowed_groups = ["notes"]
 # groups_claim = "groups"

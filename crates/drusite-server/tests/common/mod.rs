@@ -4,11 +4,64 @@
 
 #![allow(dead_code, unreachable_pub, clippy::unwrap_used)]
 
+use std::sync::{Arc, Mutex};
+
+use drusite_server::app::{AppState, router};
+use drusite_server::auth::AuthState;
+use drusite_server::auth::mail::{Mailer, SentMail};
 use drusite_server::config::Config;
 use drusite_server::crypto::LocalMasterKeys;
 use drusite_server::db::Db;
+use drusite_server::keys::{KeySource, Keyring};
+use drusite_server::policy::Policy;
+use drusite_server::storage::BlobStore;
 use sqlx::postgres::PgPoolOptions;
 use url::Url;
+
+/// App state for tests: an in-memory store, and email kept in memory.
+pub fn state(config: Config, db: Db) -> (AppState, Arc<Mutex<Vec<SentMail>>>) {
+    let source = KeySource::from_config(&config.keys).unwrap();
+    let (mailer, sent) = Mailer::memory();
+    let state = AppState::new(
+        config,
+        db,
+        BlobStore::in_memory(),
+        Keyring::new(source),
+        Policy::load().unwrap(),
+        AuthState::new(mailer).unwrap(),
+    );
+    (state, sent)
+}
+
+/// A real server on a loopback port, with its own database.
+pub struct Server {
+    pub url: Url,
+    pub state: AppState,
+    pub sent: Arc<Mutex<Vec<SentMail>>>,
+    pub db: TestDb,
+    _keys: tempfile::TempDir,
+}
+
+pub async fn serve(overrides: &[(&str, &str)]) -> Option<Server> {
+    let db = fresh_db().await?;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    // localhost rather than the address: passkeys need a domain name.
+    let port = listener.local_addr().unwrap().port();
+    let url = Url::parse(&format!("http://localhost:{port}/")).unwrap();
+    let mut all = vec![("DRUSITE__PUBLIC_URL", url.as_str())];
+    all.extend_from_slice(overrides);
+    let (config, keys) = config(&db.app_url, &all);
+    let (state, sent) = state(config, db.db.clone());
+    let app = router(state.clone());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    Some(Server {
+        url,
+        state,
+        sent,
+        db,
+        _keys: keys,
+    })
+}
 
 /// The role tests connect as: an ordinary role, so row-level security applies to it.
 const APP_ROLE: &str = "drusite_test";
@@ -103,6 +156,7 @@ pub fn config(database_url: &str, overrides: &[(&str, &str)]) -> (Config, tempfi
     .iter()
     .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
     .collect();
+    env.retain(|(k, _)| !overrides.iter().any(|(o, _)| o == k));
     env.extend(
         overrides
             .iter()

@@ -11,21 +11,11 @@ use axum::http::{Request, StatusCode};
 use drusite_server::app::{AppState, router};
 use drusite_server::config::Config;
 use drusite_server::db::Db;
-use drusite_server::keys::{KeySource, Keyring};
-use drusite_server::policy::Policy;
-use drusite_server::storage::BlobStore;
 use sqlx::postgres::PgPoolOptions;
 use tower::ServiceExt as _;
 
 fn state(config: Config, db: Db) -> AppState {
-    let source = KeySource::from_config(&config.keys).unwrap();
-    AppState::new(
-        config,
-        db,
-        BlobStore::in_memory(),
-        Keyring::new(source),
-        Policy::load().unwrap(),
-    )
+    common::state(config, db).0
 }
 
 /// A database that isn't there: connecting fails, quickly.
@@ -96,20 +86,22 @@ async fn login_methods_that_are_off_have_no_routes() {
         })
     );
 
-    // Switched on: the routes exist (and wait for step 2). Switched off: nothing there.
+    // Switched on: the routes exist (these take POST, so a GET is 405). Switched off: nothing
+    // there.
     for path in [
-        "/api/v1/auth/passkeys/login",
-        "/api/v1/auth/oidc/authentik/start",
+        "/api/v1/auth/passkeys/login/start",
+        "/api/v1/auth/passkeys/signup/start",
     ] {
         assert_eq!(
             get(&app, path).await.0,
-            StatusCode::NOT_IMPLEMENTED,
+            StatusCode::METHOD_NOT_ALLOWED,
             "{path}"
         );
     }
     for path in [
         "/api/v1/auth/password/login",
-        "/api/v1/auth/magic-link/send",
+        "/api/v1/auth/password/signup",
+        "/api/v1/auth/magic-link/start",
         "/api/v1/auth/oidc/google/start",
         "/api/v1/auth/oidc/nonexistent/start",
     ] {

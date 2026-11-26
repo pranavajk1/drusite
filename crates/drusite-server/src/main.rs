@@ -8,6 +8,8 @@ use std::process::ExitCode;
 use anyhow::Context as _;
 use clap::{Parser, Subcommand};
 use drusite_server::app::{self, AppState};
+use drusite_server::auth::AuthState;
+use drusite_server::auth::mail::Mailer;
 use drusite_server::config::{Config, LoginMethod};
 use drusite_server::crypto::LocalMasterKeys;
 use drusite_server::db::Db;
@@ -186,8 +188,15 @@ async fn serve(config: Config) -> anyhow::Result<()> {
         .await
         .context("checking the object store can be written")?;
 
+    let mailer = Mailer::from_config(config.smtp.as_ref())?;
+    if config.auth.magic_link.enabled {
+        mailer.check().await.context("checking the SMTP server")?;
+    }
+    let auth = AuthState::new(mailer)?;
+
     let listen = config.server.listen;
-    let state = AppState::new(config, db, blobs, Keyring::new(source), policy);
+    let state = AppState::new(config, db, blobs, Keyring::new(source), policy, auth);
+    let _sweeper = drusite_server::auth::spawn_sweeper(state.clone());
     let listener = tokio::net::TcpListener::bind(listen)
         .await
         .with_context(|| format!("listening on {listen}"))?;

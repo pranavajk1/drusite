@@ -218,7 +218,7 @@ fn default_transit_mount() -> String {
 }
 
 /// Every login method is a switch. A method that's off has no routes at all.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AuthConfig {
     /// Let anyone create an account with a password, a passkey or a magic link. OIDC providers
@@ -235,6 +235,50 @@ pub struct AuthConfig {
     /// OIDC providers by ID (lowercase letters, digits and `_`), e.g. `[auth.oidc.authentik]`.
     #[serde(default)]
     pub oidc: BTreeMap<String, OidcProviderConfig>,
+    /// How long an app's access token lasts. Apps refresh it with their device key.
+    #[serde(default = "default_access_token_minutes")]
+    pub access_token_minutes: u32,
+    /// A device that hasn't connected for this long is signed out.
+    #[serde(default = "default_device_idle_days")]
+    pub device_idle_days: u32,
+    /// Every device signs in again after this long, however often it connects.
+    #[serde(default = "default_device_max_days")]
+    pub device_max_days: u32,
+    /// How long a browser stays signed in to the sign-in pages and account settings.
+    #[serde(default = "default_session_hours")]
+    pub session_hours: u32,
+}
+
+const fn default_access_token_minutes() -> u32 {
+    10
+}
+
+const fn default_device_idle_days() -> u32 {
+    30
+}
+
+const fn default_device_max_days() -> u32 {
+    365
+}
+
+const fn default_session_hours() -> u32 {
+    12
+}
+
+impl Default for AuthConfig {
+    fn default() -> Self {
+        Self {
+            self_signup: false,
+            password: PasswordConfig::default(),
+            passkeys: PasskeysConfig::default(),
+            magic_link: MagicLinkConfig::default(),
+            oidc: BTreeMap::new(),
+            access_token_minutes: default_access_token_minutes(),
+            device_idle_days: default_device_idle_days(),
+            device_max_days: default_device_max_days(),
+            session_hours: default_session_hours(),
+        }
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -293,10 +337,18 @@ pub struct OidcProviderConfig {
     /// Create an account on someone's first sign-in through this provider.
     #[serde(default)]
     pub auto_create: bool,
-    /// Only these email domains may create an account (empty: any).
+    /// Let a first sign-in through this provider join the existing account with the same
+    /// email. Only when the provider says it has verified the email (`email_verified`), and only
+    /// for a provider you trust to verify emails properly: anyone who can make an account there
+    /// with your email could otherwise take over your Drusite account. Off by default.
+    #[serde(default)]
+    pub link_by_verified_email: bool,
+    /// Only people whose verified email is in one of these domains may sign in through this
+    /// provider (empty: any).
     #[serde(default)]
     pub allowed_email_domains: Vec<String>,
-    /// Only members of these provider groups may create an account (empty: any).
+    /// Only members of these provider groups may sign in through this provider (empty: any).
+    /// Checked at every sign-in, so removing someone from the group locks them out.
     #[serde(default)]
     pub allowed_groups: Vec<String>,
     /// The ID-token claim that lists the user's groups.
@@ -468,6 +520,13 @@ impl Config {
                     .to_owned(),
             );
         }
+        if auth.passkeys.enabled && !matches!(self.public_url.host(), Some(url::Host::Domain(_))) {
+            return invalid(format!(
+                "[auth.passkeys] needs public_url to use a domain name, not an IP address \
+                 ({}): passkeys belong to a domain. Use localhost for local testing.",
+                self.public_url
+            ));
+        }
         if auth.magic_link.enabled && self.smtp.is_none() {
             return invalid("[auth.magic_link] is enabled but [smtp] isn't configured".to_owned());
         }
@@ -509,6 +568,18 @@ impl Config {
             && smtp.username.is_some() != smtp.password.is_some()
         {
             return invalid("[smtp] set both username and password, or neither".to_owned());
+        }
+        if !(1..=60).contains(&auth.access_token_minutes) {
+            return invalid("[auth] access_token_minutes must be 1 to 60".to_owned());
+        }
+        if auth.device_idle_days == 0 || auth.device_max_days < auth.device_idle_days {
+            return invalid(
+                "[auth] device_idle_days must be at least 1 and device_max_days at least that"
+                    .to_owned(),
+            );
+        }
+        if !(1..=24 * 30).contains(&auth.session_hours) {
+            return invalid("[auth] session_hours must be 1 to 720".to_owned());
         }
         if self.database.max_connections == 0 {
             return invalid("[database] max_connections must be at least 1".to_owned());

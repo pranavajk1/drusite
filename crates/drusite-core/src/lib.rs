@@ -4,6 +4,7 @@
 //! later phases.
 
 pub mod api;
+pub mod auth;
 #[cfg(feature = "sqlite")]
 mod engine;
 pub mod key;

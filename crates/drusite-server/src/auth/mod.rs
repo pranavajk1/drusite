@@ -1,26 +1,68 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Sign-in. Every login method is a config switch, and a method that's off has no routes at
-//! all: its paths are 404s, not hidden buttons. The apps ask `GET /api/v1/auth/methods` which
-//! methods to show.
+//! Identity: sign-in, accounts, and Drusite's own OAuth 2.1 server.
 //!
-//! Step 1 of Phase 2 wires the switches; each method's endpoints arrive with Identity (step 2)
-//! and answer 501 until then.
+//! Every login method is a config switch, and a method that's off has no routes at all: its
+//! paths are 404s, not hidden buttons. The sign-in page asks `GET /api/v1/auth/methods` which
+//! to show.
+//!
+//! - Browsers sign in on `/login` (password with TOTP, passkeys, magic links, OIDC) and get a
+//!   session cookie for the sign-in and account pages.
+//! - Apps sign in through that page with OAuth 2.1 and PKCE, and get opaque, short-lived access
+//!   tokens and rotating refresh tokens, both bound to a device key with DPoP.
 
-use axum::extract::State;
-use axum::http::StatusCode;
-use axum::routing::get;
+mod account;
+pub mod clients;
+pub mod dpop;
+mod error;
+pub mod extract;
+mod login;
+mod magic;
+pub mod mail;
+pub mod oauth;
+mod oidc;
+mod pages;
+mod passkeys;
+mod password;
+mod secret;
+pub mod session;
+pub mod tokens;
+pub mod totp;
+mod users;
+
+use axum::extract::{Path, State};
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Serialize;
+use uuid::Uuid;
+
+pub use error::{AuthError, AuthResult};
+pub use extract::Authenticated;
 
 use crate::app::AppState;
-use crate::config::{AuthConfig, LoginMethod};
+use crate::config::LoginMethod;
 
 /// Where each method's endpoints live.
 pub const PASSWORD_PATH: &str = "/api/v1/auth/password";
 pub const PASSKEYS_PATH: &str = "/api/v1/auth/passkeys";
 pub const MAGIC_LINK_PATH: &str = "/api/v1/auth/magic-link";
 pub const OIDC_PATH: &str = "/api/v1/auth/oidc";
+
+/// What identity keeps between requests besides the database.
+#[derive(Debug)]
+pub struct AuthState {
+    pub mailer: mail::Mailer,
+    providers: oidc::Providers,
+}
+
+impl AuthState {
+    pub fn new(mailer: mail::Mailer) -> anyhow::Result<Self> {
+        Ok(Self {
+            mailer,
+            providers: oidc::Providers::new()?,
+        })
+    }
+}
 
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -59,29 +101,64 @@ async fn methods(State(state): State<AppState>) -> Json<Methods> {
     })
 }
 
-async fn not_built_yet() -> (StatusCode, Json<serde_json::Value>) {
-    (
-        StatusCode::NOT_IMPLEMENTED,
-        Json(serde_json::json!({ "error": "not_implemented" })),
-    )
-}
-
-fn placeholder() -> Router<AppState> {
-    Router::new().fallback(not_built_yet)
+/// Which app is asking, for the sign-in page; 400 if the request has expired.
+async fn request_info(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> AuthResult<Json<serde_json::Value>> {
+    let client = oauth::request_info(&state, id).await?;
+    Ok(Json(serde_json::json!({ "client": client })))
 }
 
 /// The routes of the methods that are switched on, and nothing for the others.
-pub fn routes(config: &AuthConfig) -> Router<AppState> {
-    let mut router = Router::new().route("/api/v1/auth/methods", get(methods));
-    for method in config.enabled_methods() {
-        router = match method {
-            LoginMethod::Password => router.nest(PASSWORD_PATH, placeholder()),
-            LoginMethod::Passkeys => router.nest(PASSKEYS_PATH, placeholder()),
-            LoginMethod::MagicLink => router.nest(MAGIC_LINK_PATH, placeholder()),
-            LoginMethod::Oidc { id, .. } => {
-                router.nest(&format!("{OIDC_PATH}/{id}"), placeholder())
-            }
+pub fn routes(state: &AppState) -> Router<AppState> {
+    let auth = &state.config().auth;
+    let mut api = Router::new()
+        .route("/api/v1/auth/methods", get(methods))
+        .route("/api/v1/auth/request/{id}", get(request_info))
+        .route("/api/v1/auth/recover", post(magic::recover))
+        .route("/api/v1/auth/recover/peek", post(magic::recover_peek))
+        .nest("/api/v1/account", account::routes(state));
+    for method in auth.enabled_methods() {
+        api = match method {
+            LoginMethod::Password => api.nest(PASSWORD_PATH, password::routes()),
+            LoginMethod::Passkeys => api.nest(PASSKEYS_PATH, passkeys::routes()),
+            LoginMethod::MagicLink => api.nest(MAGIC_LINK_PATH, magic::routes()),
+            // All providers share one set of routes, added once below.
+            LoginMethod::Oidc { .. } => api,
         };
     }
-    router
+    if auth.oidc.values().any(|p| p.enabled) {
+        api = api.nest(OIDC_PATH, oidc::routes());
+    }
+    let api = api.layer(axum::middleware::from_fn_with_state(
+        state.clone(),
+        session::same_origin_only,
+    ));
+
+    Router::new()
+        .merge(api)
+        .merge(pages::routes())
+        .route("/api/v1/me", get(account::app_me))
+        .route(
+            "/.well-known/oauth-authorization-server",
+            get(oauth::metadata),
+        )
+        .route(oauth::AUTHORIZE_PATH, get(oauth::authorize))
+        .route(oauth::CONTINUE_PATH, get(oauth::resume))
+        .route(oauth::TOKEN_PATH, post(oauth::token))
+        .route(oauth::REVOKE_PATH, post(oauth::revoke))
+}
+
+/// Deletes expired tokens, challenges and the like every few minutes.
+pub fn spawn_sweeper(state: AppState) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(300));
+        loop {
+            tick.tick().await;
+            if let Err(error) = tokens::sweep(&state).await {
+                tracing::warn!(%error, "sweeping expired sign-in data");
+            }
+        }
+    })
 }

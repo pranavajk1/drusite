@@ -17,8 +17,19 @@ publish = false
 drusite-model = { path = "crates/drusite-model" }
 drusite-crdt = { path = "crates/drusite-crdt" }
 drusite-core = { path = "crates/drusite-core" }
+drusite-dpop = { path = "crates/drusite-dpop" }
 
 # Third-party. Each is the newest stable release when added; bump them together.
+subtle = "2.6.1"
+http = "1.5.0"
+webauthn-rs = { version = "0.6.2", default-features = false }
+hmac = "0.13.0"
+sha1 = "0.11.0"
+sha2 = "0.11.2"
+p256 = { version = "0.14.0", default-features = false }
+openidconnect = { version = "4.1.0", default-features = false }
+lettre = { version = "0.11.24", default-features = false }
+argon2 = "0.6.0"
 anyhow = "1.0.105"
 axum = "0.8.9"
 base64 = "0.23.1"

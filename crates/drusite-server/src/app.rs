@@ -14,6 +14,8 @@ use tower_http::sensitive_headers::SetSensitiveRequestHeadersLayer;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
 
+use crate::auth::AuthState;
+use crate::auth::mail::Mailer;
 use crate::config::Config;
 use crate::db::Db;
 use crate::keys::Keyring;
@@ -28,6 +30,7 @@ struct Inner {
     blobs: BlobStore,
     keys: Keyring,
     policy: Policy,
+    auth: AuthState,
 }
 
 /// Everything a request handler needs. Cheap to clone.
@@ -35,14 +38,30 @@ struct Inner {
 pub struct AppState(Arc<Inner>);
 
 impl AppState {
-    pub fn new(config: Config, db: Db, blobs: BlobStore, keys: Keyring, policy: Policy) -> Self {
+    pub fn new(
+        config: Config,
+        db: Db,
+        blobs: BlobStore,
+        keys: Keyring,
+        policy: Policy,
+        auth: AuthState,
+    ) -> Self {
         Self(Arc::new(Inner {
             config,
             db,
             blobs,
             keys,
             policy,
+            auth,
         }))
+    }
+
+    pub fn auth(&self) -> &AuthState {
+        &self.0.auth
+    }
+
+    pub fn mailer(&self) -> &Mailer {
+        &self.0.auth.mailer
     }
 
     pub fn config(&self) -> &Config {
@@ -72,7 +91,7 @@ pub fn router(state: AppState) -> Router {
     let timeout = Duration::from_secs(state.config().server.request_timeout_secs);
     Router::new()
         .merge(health::routes())
-        .merge(auth::routes(&state.config().auth))
+        .merge(auth::routes(&state))
         .layer(axum::middleware::from_fn(telemetry::record_request))
         .layer(
             ServiceBuilder::new()
