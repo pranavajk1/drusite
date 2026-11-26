@@ -32,6 +32,12 @@ allow = [
     "Zlib",
 ]
 
+# Allowed for one crate only, with the reason.
+[[licenses.exceptions]]
+# SQLite's public-domain "blessing", and libtomcrypt's WTFPL, both permissive and GPL-compatible.
+crate = "sqlcipher-src"
+allow = ["blessing", "WTFPL"]
+
 [licenses.private]
 # Drusite's own crates aren't published; their licence is checked like everything else.
 ignore = false

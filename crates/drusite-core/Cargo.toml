@@ -9,5 +9,29 @@ repository.workspace = true
 authors.workspace = true
 publish.workspace = true
 
+[features]
+default = ["sqlite"]
+# The encrypted SQLite store. Off for the browser build, which stores documents in OPFS.
+sqlite = ["dep:rusqlite"]
+
+[dependencies]
+drusite-crdt.workspace = true
+drusite-model.workspace = true
+getrandom.workspace = true
+thiserror.workspace = true
+zeroize.workspace = true
+
+# SQLCipher uses Apple's CommonCrypto on Apple platforms and a vendored OpenSSL elsewhere.
+[target.'cfg(target_vendor = "apple")'.dependencies]
+rusqlite = { workspace = true, optional = true, features = ["bundled-sqlcipher"] }
+security-framework.workspace = true
+
+[target.'cfg(not(target_vendor = "apple"))'.dependencies]
+rusqlite = { workspace = true, optional = true, features = ["bundled-sqlcipher-vendored-openssl"] }
+
+[dev-dependencies]
+fastrand.workspace = true
+tempfile.workspace = true
+
 [lints]
 workspace = true

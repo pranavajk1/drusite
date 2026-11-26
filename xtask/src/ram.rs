@@ -4,7 +4,9 @@
 //! it go idle, and add up the memory of every process that belongs to it.
 //!
 //! The contract with the app (see `crates/drusite-app`):
-//! - `DRUSITE_DATA_DIR`: the workspace to open.
+//! - `DRUSITE_DATA_DIR`: the folder holding the store to open (`workspace.drusite`).
+//! - `DRUSITE_BENCH_KEY_FILE`: the store key, as hex. Only for benchmarks: the app normally
+//!   takes its key from the Keychain.
 //! - `DRUSITE_BENCH_READY_FILE`: the app creates it once it is idle with a page open.
 
 use std::path::{Path, PathBuf};
@@ -12,6 +14,11 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
+
+use drusite_core::StoreKey;
+use drusite_core::store::{DocKind, STORE_FILE, Store};
+use drusite_crdt::Workspace;
+use drusite_model::{BlockKind, HeadingLevel};
 
 use crate::budgets::{RAM_FIXTURE_PAGES, RAM_IDLE_TOTAL_BYTES, Report, fmt_bytes};
 use crate::mem;
@@ -43,7 +50,12 @@ pub(crate) fn check(report: &mut Report, opts: &Options) -> Result<()> {
         None => build_app()?,
     };
     let data_dir = work.join(format!("workspace-{RAM_FIXTURE_PAGES}"));
-    write_fixture(&data_dir)?;
+    let started = std::time::Instant::now();
+    let key_file = write_fixture(&data_dir)?;
+    println!(
+        "ram: wrote the {RAM_FIXTURE_PAGES}-page workspace in {:.1}s",
+        started.elapsed().as_secs_f64()
+    );
     let ready_file = work.join("app-ready");
     let _ = std::fs::remove_file(&ready_file);
 
@@ -53,6 +65,7 @@ pub(crate) fn check(report: &mut Report, opts: &Options) -> Result<()> {
         &[
             ("DRUSITE_DATA_DIR", data_dir.as_os_str()),
             ("DRUSITE_BENCH_READY_FILE", ready_file.as_os_str()),
+            ("DRUSITE_BENCH_KEY_FILE", key_file.as_os_str()),
         ],
     )?;
 
@@ -93,22 +106,62 @@ pub(crate) fn check(report: &mut Report, opts: &Options) -> Result<()> {
     );
     if opts.app.is_none() {
         report.note(
-            "ram: measures the drusite-app stub, which has no webview yet, on an empty workspace. \
-             The fixture generator arrives with the local store (Phase 1 step 3) and the real \
-             app with the editor (step 5).",
+            "ram: measures the drusite-app stub, which has no webview and doesn't open the \
+             workspace yet; the real app arrives with the editor (Phase 1 step 5).",
         );
     }
     Ok(())
 }
 
-/// Writes the workspace the app opens. Until the local store exists (Phase 1 step 3) there is
-/// nothing to write but the folder.
-fn write_fixture(dir: &Path) -> Result<()> {
+/// Writes the workspace the app opens: an encrypted store holding a workspace of
+/// [`RAM_FIXTURE_PAGES`] pages, each a short day's notes, and the key that opens it.
+fn write_fixture(dir: &Path) -> Result<PathBuf> {
     if dir.exists() {
         std::fs::remove_dir_all(dir)?;
     }
     std::fs::create_dir_all(dir)?;
-    Ok(())
+    let key = StoreKey::generate()?;
+    let key_file = dir.join("bench.key");
+    std::fs::write(&key_file, key.to_hex().as_bytes())?;
+    let mut store = Store::open(&dir.join(STORE_FILE), &key)?;
+    let mut ws = Workspace::create()?;
+    let mut ws_at = store.create_workspace(&ws)?;
+    let mut parent = None;
+    for i in 0..RAM_FIXTURE_PAGES {
+        // Ten top-level sections of a hundred pages each.
+        let under = if i % 100 == 0 { None } else { parent };
+        let mut page = ws.create_page(under, &format!("Page {i}"))?;
+        if i % 100 == 0 {
+            parent = Some(page.id());
+        }
+        let mut last = page.order()[0];
+        page.insert_text(last, 0, &format!("Notes for page {i}"))?;
+        for b in 0..20 {
+            let kind = match b % 5 {
+                0 => BlockKind::Heading(HeadingLevel::H2),
+                1 => BlockKind::Bulleted,
+                2 => BlockKind::Todo {
+                    checked: b % 2 == 0,
+                },
+                _ => BlockKind::Paragraph,
+            };
+            let (id, _) = page.insert_block_after(Some(last), kind)?;
+            page.insert_text(
+                id,
+                0,
+                "The quick brown fox jumps over the lazy dog, again and again.",
+            )?;
+            last = id;
+        }
+        store.create_page(&page)?;
+    }
+    store.save_workspace(&ws, &mut ws_at)?;
+    let pages = store.docs(DocKind::Page)?.len();
+    anyhow::ensure!(
+        pages == RAM_FIXTURE_PAGES,
+        "the fixture holds {pages} pages"
+    );
+    Ok(key_file)
 }
 
 fn build_app() -> Result<PathBuf> {

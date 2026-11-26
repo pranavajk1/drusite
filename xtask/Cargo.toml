@@ -11,6 +11,7 @@ publish.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+drusite-core.workspace = true
 drusite-crdt.workspace = true
 drusite-model.workspace = true
 fastrand.workspace = true

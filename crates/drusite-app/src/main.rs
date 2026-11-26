@@ -5,7 +5,8 @@
 //! The stub already speaks the benchmark contract `cargo xtask budgets ram` relies on, so the
 //! harness and CI job are exercised end to end before the real app exists:
 //!
-//! - `DRUSITE_DATA_DIR`: the workspace to open (the harness points it at a generated fixture).
+//! - `DRUSITE_DATA_DIR`: the folder holding the store to open (the harness generates one).
+//! - `DRUSITE_BENCH_KEY_FILE`: the store key as hex, instead of the Keychain (benchmarks only).
 //! - `DRUSITE_BENCH_READY_FILE`: once the app is idle with a page open, it creates this file.
 
 use std::time::Duration;
