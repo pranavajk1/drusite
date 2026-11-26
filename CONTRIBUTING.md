@@ -50,6 +50,14 @@ Docker and cleans up; it isn't in CI. `HEADED=1` shows the browser.
 ui/server-e2e/run.sh
 ```
 
+Sync is also tested in a deterministic network simulation (turmoil): real cores against a
+model of the server, through partitions, dropped connections, duplicated messages and crashes,
+checking that every edit survives. CI runs 3 seeds; run many more before changing sync:
+
+```bash
+DRUSITE_SIM_SEEDS=50 cargo test -p drusite-core --test simulation -- --nocapture
+```
+
 After changing the Core API (`crates/drusite-core/src/api.rs`), regenerate the UI's types with
 `cargo xtask bindings` and commit them.
 

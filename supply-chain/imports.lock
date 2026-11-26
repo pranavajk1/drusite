@@ -1218,6 +1218,11 @@ who = "David Cook <dcook@divviup.org>"
 criteria = "safe-to-deploy"
 delta = "0.9.5 -> 0.10.0"
 
+[[audits.isrg.audits.rand_distr]]
+who = "David Cook <dcook@divviup.org>"
+criteria = "safe-to-deploy"
+delta = "0.4.3 -> 0.5.1"
+
 [[audits.isrg.audits.sha2]]
 who = "David Cook <dcook@divviup.org>"
 criteria = "safe-to-deploy"
@@ -2093,6 +2098,16 @@ who = "Alex Franchuk <afranchuk@mozilla.com>"
 criteria = "safe-to-deploy"
 delta = "0.10.0 -> 0.10.1"
 aggregated-from = "https://raw.githubusercontent.com/mozilla/cargo-vet/main/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.rand_distr]]
+who = "Ben Dean-Kawamura <bdk@mozilla.com>"
+criteria = "safe-to-deploy"
+version = "0.4.3"
+notes = """
+Simple crate that extends `rand`.  It has little unsafe code and uses Miri to test it.
+As far as I can tell, it does not have any file IO or network access.
+"""
+aggregated-from = "https://raw.githubusercontent.com/mozilla-firefox/firefox/main/supply-chain/audits.toml"
 
 [[audits.mozilla.audits.raw-window-handle]]
 who = "Jim Blandy <jimb@red-bean.com>"
