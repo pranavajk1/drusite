@@ -10,13 +10,17 @@
 #   Tauri 2 needs for GTK 3 on Linux. Nothing newer exists for GTK 3.
 # - RUSTSEC-2024-0429: glib 0.18's VariantStrIter is unsound; fixed only in glib 0.20, which
 #   targets GTK 4. Linux only, and Drusite doesn't iterate GVariants.
-# - RUSTSEC-2026-0543: chrono is unmaintained. It is in Cargo.lock only as an optional feature of
-#   serde_with and isn't built for any target (`cargo tree -i chrono --target all` is empty).
+# - RUSTSEC-2026-0543: chrono is unmaintained, with no fixed release. The server gets it through
+#   cedar-policy and object_store, neither of which has a release without it (see deny.toml).
+#
+# The server's:
+# - RUSTSEC-2026-0542: humantime is unmaintained because it wraps chrono; object_store uses it.
 [advisories]
 ignore = [
     "RUSTSEC-2024-0370",
     "RUSTSEC-2024-0429",
     "RUSTSEC-2026-0543",
+    "RUSTSEC-2026-0542",
     "RUSTSEC-2023-0089",
     "RUSTSEC-2026-0574",
     "RUSTSEC-2026-0575",

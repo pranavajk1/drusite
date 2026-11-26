@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// The entities and actions Drusite's Cedar policies talk about.
+
+namespace Drusite {
+    // A role in one workspace: "<workspace id>/owner", "/editor" or "/viewer". Owners are in
+    // their workspace's editors role, and editors in its viewers role, so a policy written for
+    // viewers covers everyone above them.
+    entity Role in [Role];
+
+    entity User in [Role] = {
+        disabled: Bool,
+    };
+
+    entity Workspace = {
+        viewers: Role,
+        editors: Role,
+        owners: Role,
+    };
+
+    // A page, or the workspace document that holds the page tree.
+    entity Document in [Workspace] = {
+        workspace: Workspace,
+    };
+
+    action read_workspace, create_document, manage_members, delete_workspace
+        appliesTo { principal: User, resource: Workspace };
+
+    action read_document, write_document, delete_document
+        appliesTo { principal: User, resource: Document };
+}

@@ -1,0 +1,86 @@
+# An example drusite-server configuration. Every value can also come from an environment
+# variable (DRUSITE__SECTION__KEY, e.g. DRUSITE__DATABASE__URL), and any value from a file by
+# adding _file to its key (url_file = "/run/secrets/database-url"), so secrets needn't be here.
+# `drusite-server check-config` checks a config without starting anything.
+
+# Where users and apps reach the server. https, except for localhost.
+public_url = "https://notes.example.com"
+
+[server]
+listen = "0.0.0.0:8080"
+# request_timeout_secs = 30
+
+[database]
+# PostgreSQL 16 or newer, with pgvector 0.8 or newer. Connect as an ordinary role (it may own
+# the database): row-level security doesn't apply to superusers or BYPASSRLS roles. pgvector
+# isn't a trusted extension, so an administrator runs `CREATE EXTENSION vector;` once.
+url_file = "/run/secrets/database-url"
+# max_connections = 16
+# migrate_on_start = true
+
+[storage]
+# Any S3-compatible store. Leave out endpoint for AWS S3, and the keys to use the standard AWS_*
+# variables, a web identity token or instance metadata.
+endpoint = "https://s3.example.com"
+bucket = "drusite"
+# region = "us-east-1"
+access_key_id = "drusite"
+secret_access_key_file = "/run/secrets/s3-secret-key"
+# virtual_hosted_style = false
+# prefix = ""
+
+[keys]
+# Where the master key comes from. It wraps each workspace's own key.
+# env:     master keys in DRUSITE_MASTER_KEY (make one with `drusite-server keys generate`)
+# file:    master keys in a file (path = "/run/secrets/master-key")
+# transit: OpenBao or Vault Transit wraps keys itself; the master key never leaves the KMS
+source = "env"
+# source = "transit"
+# address = "https://bao.example.com"
+# key = "drusite"
+# token_file = "/run/secrets/bao-token"
+
+# Login methods. Each is off unless switched on, and one that's off has no routes at all. The
+# server refuses to start with none. `drusite-server account recover <email>` prints a one-time
+# sign-in link for anyone locked out.
+[auth]
+# Let anyone create an account with a password, passkey or magic link.
+self_signup = false
+
+[auth.passkeys]
+enabled = true
+
+[auth.password]
+enabled = false
+# require_totp = false
+
+[auth.magic_link]
+enabled = false
+# ttl_minutes = 15
+
+# One table per OIDC provider; the ID (here "idp") is lowercase letters, digits and _.
+[auth.oidc.idp]
+display_name = "Single sign-on"
+issuer = "https://idp.example.com/"
+client_id = "drusite"
+client_secret_file = "/run/secrets/oidc-client-secret"
+# Create an account on first sign-in, optionally only for some domains or groups.
+auto_create = true
+# allowed_email_domains = ["example.com"]
+# allowed_groups = ["notes"]
+# groups_claim = "groups"
+
+# Needed for magic links.
+# [smtp]
+# host = "smtp.example.com"
+# port = 587
+# tls = "starttls"   # or "tls" (port 465) or "none"
+# username = "drusite"
+# password_file = "/run/secrets/smtp-password"
+# from = "Drusite <notes@example.com>"
+
+[telemetry]
+# log_format = "json"   # or "pretty"
+# Traces, metrics and logs go over OTLP/HTTP when OTEL_EXPORTER_OTLP_ENDPOINT is set; the other
+# standard OTEL_* variables apply. otlp = false turns it off regardless.
+# service_name = "drusite-server"

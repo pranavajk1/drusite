@@ -77,6 +77,56 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: cargo build --package drusite-model --package drusite-crdt --package drusite-wasm --target wasm32-unknown-unknown --locked
 
+  server:
+    name: server on PostgreSQL ${{ matrix.postgres }}
+    # The oldest PostgreSQL Drusite supports and the newest release, each with pgvector, plus an
+    # S3-compatible store (versitygw) and a KMS (OpenBao Transit). Images are pinned by digest.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - postgres: 16
+            image: pgvector/pgvector:0.8.7-pg16@sha256:484e838076e04939d27d3e176e91c86eea96236126023be8d3059761122e579f
+          - postgres: 19
+            image: pgvector/pgvector:0.8.7-pg19@sha256:89879f41d564f67b0c1462a491d16fcbc6de39ac10db17e7a4bba2138a5e0ba5
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: ${{ matrix.image }}
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+    env:
+      DRUSITE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      DRUSITE_REQUIRE_DB_TESTS: "1"
+      DRUSITE_TEST_S3_ENDPOINT: http://localhost:7070
+      DRUSITE_TEST_S3_BUCKET: drusite
+      DRUSITE_TEST_S3_ACCESS_KEY: testkey
+      DRUSITE_TEST_S3_SECRET_KEY: testsecret
+      DRUSITE_TEST_TRANSIT_ADDR: http://localhost:8200
+      DRUSITE_TEST_TRANSIT_TOKEN: dev-root
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Start the S3 store and the KMS
+        run: |
+          mkdir -p "$RUNNER_TEMP/s3/drusite"
+          docker run -d --name s3 -p 7070:7070 -v "$RUNNER_TEMP/s3:/data" \
+            versity/versitygw:v1.11.0@sha256:8319a530d08d537426e2f855bae5280709795dc73a3f0c347973ef915d6343c5 \
+            --access testkey --secret testsecret posix /data
+          docker run -d --name kms -p 8200:8200 -e BAO_DEV_ROOT_TOKEN_ID=dev-root \
+            openbao/openbao:2.7.3@sha256:ba4b133eb9586630024e71a617e66f37f29cc3534cdd46a6233e098ceded8dc9 \
+            server -dev -dev-listen-address=0.0.0.0:8200
+          for _ in $(seq 30); do curl -sf http://localhost:8200/v1/sys/health >/dev/null && break; sleep 1; done
+          curl -sf -H "X-Vault-Token: dev-root" -X POST -d '{"type":"transit"}' http://localhost:8200/v1/sys/mounts/transit
+          curl -sf -H "X-Vault-Token: dev-root" -X POST -d '{"type":"chacha20-poly1305"}' http://localhost:8200/v1/transit/keys/drusite
+      - run: cargo test --package drusite-server --locked
+
   budgets:
     name: performance budgets (${{ matrix.os }})
     strategy:
