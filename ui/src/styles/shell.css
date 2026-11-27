@@ -388,6 +388,18 @@
   font-size: var(--text-sm);
 }
 
+.account-head-sync .dot {
+  flex: none;
+}
+
+.account-head-host {
+  color: var(--text-3);
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sync-dot.online {
   background: var(--success);
 }

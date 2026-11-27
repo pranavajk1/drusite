@@ -340,7 +340,8 @@
     {@render avatar(32)}
     <div class="account-head-text">
       <span class="account-head-name">{who ?? "Not signed in"}</span>
-      <span class="account-head-sync">{@render syncDot()}<span>{syncLabel}{#if host && account.email} · {host}{/if}</span></span>
+      <span class="account-head-sync">{@render syncDot()}<span>{syncLabel}</span></span>
+      {#if host && account.email}<span class="account-head-host">{host}</span>{/if}
     </div>
   </div>
 {/snippet}

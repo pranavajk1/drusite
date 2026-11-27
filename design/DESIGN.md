@@ -228,7 +228,7 @@ Moods use Lucide faces (angry, frown, meh, smile, laugh) in the mood colours.
   - the **account button**, pinned to the foot above a hairline: avatar (the email's initial on
     `--accent-soft-2`, or a person icon when signed out), the email (or "Not signed in"), the sync
     dot and a chevrons-up-down. It opens the **account menu** above it, at least as wide: a header
-    with a 32 px avatar, the email and "dot · status · server", a line, then Settings (⌘,) and
+    with a 32 px avatar, the email, the sync dot and status, and the server, a line, then Settings (⌘,) and
     Trash, a line, and Sign out (or "Sign in to sync", which opens Settings at Account). The same
     button and menu are at the foot of the phone drawer.
 - **Resizing**: the sidebar's right edge (6 px, `col-resize`) shows a 2 px `--border-strong` line on

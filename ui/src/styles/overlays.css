@@ -403,6 +403,12 @@
   box-shadow: 0 -1px 0 var(--divider);
 }
 
+@media (pointer: coarse) {
+  .slash-close kbd {
+    display: none;
+  }
+}
+
 .slash-hint {
   color: var(--text-3);
   pointer-events: none;

@@ -130,10 +130,25 @@ class MenuView {
     this.dom.hidden = true;
     // Keep the editor's focus and selection while the menu is used with a pointer.
     this.dom.addEventListener("mousedown", (e) => e.preventDefault());
+    // A touch on the menu can take the focus from the editor before its click arrives, which
+    // would hide the menu under the finger: while it's pressed, the menu stays.
+    this.dom.addEventListener("pointerdown", () => (this.pressed = true));
+    const release = () => setTimeout(() => (this.pressed = false), 400);
+    this.dom.addEventListener("pointerup", release);
+    this.dom.addEventListener("pointercancel", release);
+    this.dom.addEventListener("click", (e) => {
+      this.pressed = false;
+      const row = (e.target as Element).closest<HTMLElement>("[data-index], .slash-close");
+      if (!row) return;
+      if (row.classList.contains("slash-close")) this.dismiss();
+      else pick(this.view, Number(row.dataset.index));
+    });
     document.body.append(this.dom);
     // Only while the editor has the focus: not over a dialog, and not for a `/` another device typed.
     this.onFocus = () => this.update(this.view);
-    this.onBlur = () => (this.dom.hidden = true);
+    this.onBlur = () => {
+      if (!this.pressed) this.dom.hidden = true;
+    };
     view.dom.addEventListener("focus", this.onFocus);
     view.dom.addEventListener("blur", this.onBlur);
     // The page scrolls the window, and the keyboard resizes the visual viewport: follow the line.
@@ -143,11 +158,24 @@ class MenuView {
     window.addEventListener("scroll", this.onMove, true);
     window.addEventListener("resize", this.onMove);
     window.visualViewport?.addEventListener("resize", this.onMove);
+    // The phone's formatting bar can show after the menu opened (once the keyboard is up): make
+    // room for it then.
+    this.barWatch = new ResizeObserver(this.onMove);
   }
+
+  private barWatch: ResizeObserver;
+  private watched: Element | null = null;
 
   private onMove: () => void;
 
   private onFocus: () => void;
+  private pressed = false;
+
+  private dismiss() {
+    const st = key.getState(this.view.state)!;
+    this.view.dispatch(this.view.state.tr.setMeta(key, { ...CLOSED, dismissed: st.from }));
+    this.view.focus();
+  }
   private onBlur: () => void;
 
   update(view: EditorView) {
@@ -172,6 +200,12 @@ class MenuView {
    * and scrolls.
    */
   private place() {
+    const bar = document.querySelector(".phone-toolbar");
+    if (bar && bar !== this.watched) {
+      this.barWatch.disconnect();
+      this.barWatch.observe(bar);
+      this.watched = bar;
+    }
     const caret = this.view.coordsAtPos(this.view.state.selection.from);
     const top = visibleTop() + 8;
     const bottom = visibleBottom() - 8;
@@ -218,7 +252,7 @@ class MenuView {
         const st = key.getState(this.view.state)!;
         if (st.index !== i) this.view.dispatch(this.view.state.tr.setMeta(key, { ...st, index: i }));
       });
-      row.addEventListener("click", () => pick(this.view, i));
+      row.dataset.index = String(i);
       return row;
     });
     const list = document.createElement("div");
@@ -227,10 +261,6 @@ class MenuView {
     const close = document.createElement("div");
     close.className = "menu-item slash-close";
     close.innerHTML = `<span class="menu-item-label">Close menu</span><kbd>esc</kbd>`;
-    close.addEventListener("click", () => {
-      const st = key.getState(this.view.state)!;
-      this.view.dispatch(this.view.state.tr.setMeta(key, { ...CLOSED, dismissed: st.from }));
-    });
     this.dom.replaceChildren(list, close);
   }
 
