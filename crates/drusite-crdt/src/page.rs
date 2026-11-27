@@ -5,6 +5,8 @@
 //! Positions in the API are UTF-16 code units within one block's text, the unit ProseMirror and
 //! the browser use. They are checked and converted before anything is written.
 
+use std::collections::HashMap;
+
 use drusite_model::{Block, BlockId, BlockKind, MAX_INDENT, Mark, PageId, SCHEMA_VERSION, Span};
 use loro::cursor::PosType;
 use loro::{
@@ -205,7 +207,7 @@ impl Page {
 
     /// The blocks in display order.
     pub fn order(&self) -> Vec<BlockId> {
-        self.inner.layout.display.clone()
+        self.inner.layout.display_ids()
     }
 
     /// Where block `id` is shown, counting from 0, if it is shown.
@@ -223,9 +225,8 @@ impl Page {
         self.guard.run(|| {
             self.inner
                 .layout
-                .display
-                .iter()
-                .map(|&id| self.inner.block(id))
+                .display_iter()
+                .map(|id| self.inner.block(id))
                 .collect()
         })
     }
@@ -397,12 +398,11 @@ impl Page {
             }
             None => {
                 let before = inner.layout.clone();
-                let last = *inner
+                let last = inner
                     .layout
-                    .body
-                    .last()
+                    .body_last()
                     .ok_or(Error::UnknownBlock(inner.genesis))?;
-                let end = inner.layout.body_len;
+                let end = inner.layout.body_len();
                 // The new block only sits after `last` in the text; nobody worked in `last`, so a
                 // deleted first block there stays deleted.
                 let new = inner.insert_marker(last, end, &kind, false)?;
@@ -423,8 +423,8 @@ impl Page {
             };
             if id != inner.genesis && inner.layout.body_prev(id) == Some(prev) {
                 // The texts are already next to each other: drop the marker between them.
-                let i = inner.layout.body_at(id).ok_or(Error::UnknownBlock(id))?;
-                inner.body().delete(inner.layout.marker_pos[i], 1)?;
+                let at = inner.layout.marker_pos(id).ok_or(Error::UnknownBlock(id))?;
+                inner.body().delete(at, 1)?;
                 inner.forget(id)?;
                 let doc = &inner.doc;
                 let reindented = inner.layout.remove_joined(id, |b| stored_indent(doc, b));
@@ -558,16 +558,15 @@ impl Page {
         let result = self.guard.run(|| {
             let before: Vec<Block> = inner
                 .layout
-                .display
-                .iter()
-                .map(|&id| inner.block(id))
+                .display_iter()
+                .map(|id| inner.block(id))
                 .collect::<Result<_>>()?;
             crate::guard::import_checked(&inner.doc, bytes)?;
             inner.layout = Layout::compute(&inner.doc, Some(inner.genesis));
             let mut patch = Patch::default();
             let old: std::collections::HashMap<BlockId, &Block> =
                 before.iter().map(|b| (b.id, b)).collect();
-            for &id in &inner.layout.display {
+            for id in inner.layout.display_iter() {
                 let block = inner.block(id)?;
                 if old.get(&id).is_none_or(|b| **b != block) {
                     patch.updated.push(id);
@@ -578,11 +577,7 @@ impl Page {
                 .map(|b| b.id)
                 .filter(|id| inner.layout.display_at(*id).is_none())
                 .collect();
-            patch.order_changed = before.iter().map(|b| b.id).ne(inner
-                .layout
-                .display
-                .iter()
-                .copied());
+            patch.order_changed = before.iter().map(|b| b.id).ne(inner.layout.display_iter());
             Ok(patch)
         });
         if matches!(result, Err(Error::WrongDocument)) {
@@ -622,13 +617,7 @@ impl Page {
     #[doc(hidden)]
     pub fn layout_is_consistent(&self) -> bool {
         let fresh = Layout::compute(&self.inner.doc, Some(self.inner.genesis));
-        let have = &self.inner.layout;
-        fresh.body == have.body
-            && fresh.marker_pos == have.marker_pos
-            && fresh.body_len == have.body_len
-            && fresh.display == have.display
-            && fresh.indent == have.indent
-            && fresh.anchors == have.anchors
+        fresh.same_as(&self.inner.layout)
     }
 
     /// Runs `f` inside the panic guard. Lets tests check that a panic poisons the page.
@@ -687,9 +676,7 @@ impl Inner {
     }
 
     fn shown_indent(&self, id: BlockId) -> u8 {
-        self.layout
-            .display_at(id)
-            .map_or(0, |i| self.layout.indent[i])
+        self.layout.indent_of(id).unwrap_or(0)
     }
 
     /// The block's text as stored, stray markers included.
@@ -821,7 +808,10 @@ impl Inner {
 
     /// Takes `id` out of `order` and drops its attributes.
     fn forget(&mut self, id: BlockId) -> Result<()> {
-        while let Some(i) = self.order_index(id) {
+        // Only an anchored block is in `order`; don't read the whole list to learn this one isn't.
+        while self.layout.anchored.contains(&id)
+            && let Some(i) = self.order_index(id)
+        {
             self.order().delete(i, 1)?;
         }
         self.doc.get_map("blocks").delete(&id.to_string())?;
@@ -852,25 +842,24 @@ impl Inner {
         self.doc.commit();
         self.layout = Layout::compute(&self.doc, Some(self.genesis));
         let after = &self.layout;
+        let was: HashMap<BlockId, u8> = before.shown().collect();
+        let now: HashMap<BlockId, u8> = after.shown().collect();
         let mut updated: Vec<BlockId> = touched
             .into_iter()
-            .filter(|&id| after.display_at(id).is_some())
+            .filter(|id| now.contains_key(id))
             .collect();
-        for (i, &id) in after.display.iter().enumerate() {
-            let was = before.display_at(id).map(|j| before.indent[j]);
-            if was != Some(after.indent[i]) && !updated.contains(&id) {
+        for (id, indent) in after.shown() {
+            if was.get(&id) != Some(&indent) && !updated.contains(&id) {
                 updated.push(id);
             }
         }
         Ok(Patch {
             updated,
             removed: before
-                .display
-                .iter()
-                .copied()
-                .filter(|&id| after.display_at(id).is_none())
+                .display_iter()
+                .filter(|id| !now.contains_key(id))
                 .collect(),
-            order_changed: before.display != after.display,
+            order_changed: before.display_iter().ne(after.display_iter()),
         })
     }
 }

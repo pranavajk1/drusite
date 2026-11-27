@@ -141,3 +141,43 @@ fn three_devices_random_edits_converge() {
         }
     }
 }
+
+/// The same edits on long pages, two devices apart. The layout keeps its block lists in chunks
+/// of about √n blocks; a page this long has many of them, so edits split, merge and re-cut
+/// chunks, and every one must still leave the layout exactly as a full recompute would.
+#[test]
+fn long_page_random_edits_keep_the_layout() {
+    let seeds = env("FUZZ_SEEDS", 30) / 10;
+    let steps = env("FUZZ_STEPS", 200) * 3;
+    for seed in 1..=seeds {
+        let mut rng = fastrand::Rng::with_seed(seed);
+        let texts: Vec<String> = (0..300 + rng.usize(..300))
+            .map(|i| format!("block {i}"))
+            .collect();
+        let texts: Vec<&str> = texts.iter().map(String::as_str).collect();
+        let (d0, _) = page_with_blocks(&texts);
+        let mut devices = [fork(&d0), d0];
+        for _ in 0..steps {
+            let d = rng.usize(..2);
+            random_edit(&mut devices[d], &mut rng);
+            if rng.u8(..16) == 0 {
+                let (a, b) = devices.split_at_mut(1);
+                sync(&mut a[0], &mut b[0]);
+                assert!(a[0].layout_is_consistent() && b[0].layout_is_consistent());
+            }
+        }
+        let (a, b) = devices.split_at_mut(1);
+        sync(&mut a[0], &mut b[0]);
+        assert_eq!(
+            a[0].blocks().unwrap(),
+            b[0].blocks().unwrap(),
+            "seed {seed}"
+        );
+        assert_eq!(
+            a[0].blocks().unwrap(),
+            fork(&a[0]).blocks().unwrap(),
+            "seed {seed}"
+        );
+        assert_well_formed(&a[0]);
+    }
+}
