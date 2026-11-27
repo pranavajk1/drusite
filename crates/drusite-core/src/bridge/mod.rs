@@ -747,7 +747,11 @@ impl Core {
             .into_iter()
             .map(|r| (r.page.clone(), r))
             .collect();
-        let dirty: HashSet<PageId> = std::mem::take(&mut self.bridge_dirty);
+        // Each page is crossed off once its file is right, so a round that fails partway
+        // leaves the rest for the next.
+        let dirty: HashSet<PageId> = self.bridge_dirty.clone();
+        let shown: HashSet<PageId> = nodes.iter().map(|n| n.id).collect();
+        self.bridge_dirty.retain(|id| shown.contains(id));
 
         // Files of pages no longer shown (in the trash, deleted) go.
         let live: HashSet<String> = nodes.iter().map(|n| n.id.to_string()).collect();
@@ -772,8 +776,11 @@ impl Core {
                 && r.meta == meta
                 && VersionVector::decode(&r.version).is_ok_and(|v| v == version)
             {
+                self.bridge_dirty.remove(&node.id);
                 continue;
             }
+            // Written again on the next round too (an attachment still on its way).
+            let mut again = false;
             let links = Links::new(root, path, &paths, &titles, &self.store);
             let text = drusite_markdown::write(&front, &blocks, &links);
             let attachments = links.out.take();
@@ -790,7 +797,7 @@ impl Core {
                         // Not here yet: fetched, and written on a later round.
                         None => {
                             self.wanted_blobs.insert(blob);
-                            self.bridge_dirty.insert(node.id);
+                            again = true;
                         }
                     }
                 }
@@ -824,6 +831,9 @@ impl Core {
                 mtime,
                 size,
             })?;
+            if !again {
+                self.bridge_dirty.remove(&node.id);
+            }
             report.written += 1;
         }
         Ok(())
