@@ -1014,3 +1014,134 @@ async fn changing_the_embedding_model_indexes_again() {
         tail.join("\n")
     );
 }
+
+/// A real self-hosted model behind an OpenAI-compatible endpoint (Ollama, llama.cpp, vLLM,
+/// LiteLLM, …). Skipped unless `DRUSITE_TEST_CHAT_URL` (such as `http://localhost:11434/v1`),
+/// `DRUSITE_TEST_CHAT_MODEL` and `DRUSITE_TEST_EMBED_MODEL` are set; `DRUSITE_TEST_EMBED_MODEL_2`
+/// (a model with vectors of another size) adds a change of embedding model.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_self_hosted_model_answers_with_citations() {
+    let var = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
+    let (Some(url), Some(chat), Some(embed)) = (
+        var("DRUSITE_TEST_CHAT_URL"),
+        var("DRUSITE_TEST_CHAT_MODEL"),
+        var("DRUSITE_TEST_EMBED_MODEL"),
+    ) else {
+        eprintln!("skipped: set DRUSITE_TEST_CHAT_URL, _CHAT_MODEL and _EMBED_MODEL");
+        return;
+    };
+    logs();
+    let env = [
+        ("DRUSITE__AUTH__PASSWORD__ENABLED", "true"),
+        ("DRUSITE__ASK__PER_MINUTE", "100"),
+        ("DRUSITE__ASK__CHAT__BASE_URL", url.as_str()),
+        ("DRUSITE__ASK__CHAT__MODEL", chat.as_str()),
+        ("DRUSITE__ASK__CHAT__MAX_TOKENS", "2048"),
+        ("DRUSITE__ASK__TIMEOUT_SECS", "600"),
+        ("DRUSITE__SEARCH__EMBEDDINGS__BASE_URL", url.as_str()),
+        ("DRUSITE__SEARCH__EMBEDDINGS__MODEL", embed.as_str()),
+    ];
+    let Some(server) = common::serve(&env).await else {
+        return;
+    };
+    let indexer = drusite_server::search::spawn_indexer(server.state.clone());
+    let user = account(&server.state, "real@example.com").await;
+    let mac = Device::new(&server.state, user).await;
+    let (pets, _) = mac.page(
+        "Pets",
+        &["Our dog is called Biscuit. He is a three-year-old beagle."],
+    );
+    mac.page(
+        "Kitchen",
+        &["The sourdough starter lives in the fridge, fed every Sunday."],
+    );
+    mac.page(
+        "Travel",
+        &["In March we flew to Zanzibar for the spice tour."],
+    );
+    mac.connect(&server.url);
+    mac.indexed(&server.url, "beagle").await;
+    // Vectors are made right after the words; wait for every page's.
+    for _ in 0..300 {
+        let n: i64 = sqlx::query_scalar("SELECT count(DISTINCT page_id) FROM search_embeddings")
+            .fetch_one(server.db.admin.pool())
+            .await
+            .unwrap();
+        if n >= 4 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    let dims: Vec<i32> =
+        sqlx::query_scalar("SELECT DISTINCT vector_dims(embedding) FROM search_embeddings")
+            .fetch_all(server.db.admin.pool())
+            .await
+            .unwrap();
+    eprintln!("{embed}: {dims:?} dimensions");
+
+    // By meaning: "puppy" and "pet" are on no page.
+    let answer = mac
+        .ask(&server.url, None, "What is my puppy's name?")
+        .await
+        .unwrap();
+    let text = answer.text();
+    eprintln!("{chat} answered: {text}");
+    let done = answer.events.iter().find(|(n, _)| n == "done");
+    assert!(done.is_some(), "no answer: {:?}", answer.events);
+    assert!(text.contains("Biscuit"), "{text}");
+    assert!(!text.contains("<think>"), "{text}");
+    let sources = answer.one("sources").as_array().unwrap().clone();
+    let cited: Vec<u64> = done.unwrap().1["cited"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|n| n.as_u64().unwrap())
+        .collect();
+    assert!(!cited.is_empty(), "no citation: {text}");
+    let first = sources.iter().find(|s| s["n"] == cited[0]).unwrap();
+    assert_eq!(first["page"], pets.to_string(), "{first}");
+
+    // Another embedding model, with vectors of another size: everything is embedded again.
+    if let Some(embed2) = var("DRUSITE_TEST_EMBED_MODEL_2") {
+        indexer.abort();
+        let (_, state) = server
+            .second_node_with(&[
+                ("DRUSITE__SEARCH__EMBEDDINGS__BASE_URL", url.as_str()),
+                ("DRUSITE__SEARCH__EMBEDDINGS__MODEL", embed2.as_str()),
+                ("DRUSITE__ASK__CHAT__BASE_URL", url.as_str()),
+                ("DRUSITE__ASK__CHAT__MODEL", chat.as_str()),
+            ])
+            .await;
+        drusite_server::search::forget_other_models(&state)
+            .await
+            .unwrap();
+        drusite_server::search::backfill(&state).await.unwrap();
+        drusite_server::search::spawn_indexer(state.clone());
+        let mut models = Vec::new();
+        for _ in 0..600 {
+            models =
+                sqlx::query_scalar::<_, String>("SELECT DISTINCT model FROM search_embeddings")
+                    .fetch_all(server.db.admin.pool())
+                    .await
+                    .unwrap();
+            let pages: i64 =
+                sqlx::query_scalar("SELECT count(DISTINCT page_id) FROM search_embeddings")
+                    .fetch_one(server.db.admin.pool())
+                    .await
+                    .unwrap();
+            if models == [embed2.clone()] && pages >= 4 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+        assert_eq!(models, [embed2.clone()]);
+        let dims2: Vec<i32> =
+            sqlx::query_scalar("SELECT DISTINCT vector_dims(embedding) FROM search_embeddings")
+                .fetch_all(server.db.admin.pool())
+                .await
+                .unwrap();
+        eprintln!("{embed2}: {dims2:?} dimensions");
+        assert_ne!(dims, dims2);
+    }
+    assert_no_secrets_logged();
+}
