@@ -1134,7 +1134,7 @@ async fn a_self_hosted_model_answers_with_citations() {
             }
             tokio::time::sleep(Duration::from_millis(200)).await;
         }
-        assert_eq!(models, [embed2.clone()]);
+        assert_eq!(models, std::slice::from_ref(&embed2));
         let dims2: Vec<i32> =
             sqlx::query_scalar("SELECT DISTINCT vector_dims(embedding) FROM search_embeddings")
                 .fetch_all(server.db.admin.pool())
