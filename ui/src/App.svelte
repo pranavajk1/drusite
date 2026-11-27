@@ -38,16 +38,39 @@
   let drawer = $state(false);
   /** On desktops, the sidebar can be put away. */
   let collapsed = $state(localStorage.getItem("drusite.sidebar") === "collapsed");
-  /** Something takes typing on a touch screen: the keyboard is up, so the tab bar steps aside. */
+  /**
+   * The tab bar steps aside on a touch screen while the editor has the focus (its formatting bar
+   * takes the bottom edge) or while the keyboard is up for some other field. Focus alone doesn't
+   * mean a keyboard: iOS doesn't open one for a field focused without a tap.
+   */
   let writing = $state(false);
   const touch = window.matchMedia?.("(pointer: coarse)").matches ?? false;
+  let tallest = window.innerHeight;
+  function keyboardUp(): boolean {
+    const vv = window.visualViewport;
+    // iOS shrinks only the visual viewport; Android shrinks the window.
+    tallest = Math.max(tallest, window.innerHeight);
+    return (vv ? window.innerHeight - vv.height > 120 : false) || window.innerHeight < tallest - 120;
+  }
   function focusChanged() {
     // After focusout the new focus isn't set yet; look once it is.
     setTimeout(() => {
+      if (!touch) return;
       const el = document.activeElement;
-      writing = touch && !!el?.closest("input:not([type=checkbox]):not([type=radio]), textarea, [contenteditable='true']");
+      const inEditor = !!el?.closest(".ProseMirror");
+      const typing = !!el?.closest("input:not([type=checkbox]):not([type=radio]), textarea");
+      writing = inEditor || (typing && keyboardUp());
     });
   }
+  onMount(() => {
+    window.visualViewport?.addEventListener("resize", focusChanged);
+    window.addEventListener("resize", focusChanged);
+    return () => {
+      window.visualViewport?.removeEventListener("resize", focusChanged);
+      window.removeEventListener("resize", focusChanged);
+    };
+  });
+
   let pageMenu = $state<HTMLElement | null>(null);
 
   const LAST = "drusite.lastPage";
