@@ -49,7 +49,20 @@ export type BlockKind = { type: "paragraph" } | { type: "heading"; level: Headin
  *  Lists the pages a query matches. `query` is a [`PageQuery`] as JSON; the block has no
  *  text of its own.
  */
-{ type: "query"; query: string };
+{ type: "query"; query: string } | 
+/**
+ *  A file stored with the workspace: shown inline when it's an image, as a card otherwise.
+ *  The block's text is its caption.
+ */
+{ type: "attachment"; 
+/**  The file's address in the workspace's attachment store (64 hex digits). */
+blob: string; 
+/**  The file's name, with its extension. */
+name: string; 
+/**  Its media type, such as `image/png`. */
+mime: string; 
+/**  Its size in bytes. */
+size: number };
 
 /**  Something the UI asks the core to do. */
 export type Command = 

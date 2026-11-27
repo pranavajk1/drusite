@@ -67,6 +67,17 @@ pub(crate) fn write_kind(map: &LoroMap, kind: &BlockKind) -> LoroResult<()> {
         BlockKind::Code { language } => map.insert("language", language.as_str()),
         BlockKind::Callout { icon } => map.insert("icon", icon.as_str()),
         BlockKind::Query { query } => map.insert("query", query.as_str()),
+        BlockKind::Attachment {
+            blob,
+            name,
+            mime,
+            size,
+        } => {
+            map.insert("blob", blob.as_str())?;
+            map.insert("name", name.as_str())?;
+            map.insert("mime", mime.as_str())?;
+            map.insert("size", i64::from(*size))
+        }
         BlockKind::Paragraph
         | BlockKind::Bulleted
         | BlockKind::Numbered
@@ -102,6 +113,12 @@ pub(crate) fn read_kind(map: Option<&LoroMap>) -> BlockKind {
         Some("toggle") => BlockKind::Toggle,
         Some("query") => BlockKind::Query {
             query: get_str(map, "query").unwrap_or_default(),
+        },
+        Some("attachment") => BlockKind::Attachment {
+            blob: get_str(map, "blob").unwrap_or_default(),
+            name: get_str(map, "name").unwrap_or_default(),
+            mime: get_str(map, "mime").unwrap_or_default(),
+            size: u32::try_from(get_int(map, "size")).unwrap_or(0),
         },
         _ => BlockKind::Paragraph,
     }
