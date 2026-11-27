@@ -3,10 +3,13 @@
   import { onMount } from "svelte";
 
   import type { CoreClient } from "./core/client";
-  import type { AccountStatus, PageId, PageInfo } from "./core/types";
+  import type { AccountStatus, PageId, PageInfo, Settings } from "./core/types";
+  import { setQueryHost } from "./editor/query";
+  import { today } from "./journal/dates";
   import Account, { phaseLabel } from "./lib/Account.svelte";
   import PageEditor from "./lib/PageEditor.svelte";
   import PageTree from "./lib/PageTree.svelte";
+  import SettingsSheet from "./lib/Settings.svelte";
 
   let { client }: { client: CoreClient } = $props();
 
@@ -16,6 +19,8 @@
   let readySent = false;
   let account = $state<AccountStatus>({ server: null, email: null, phase: "signedOut", message: null });
   let showAccount = $state(false);
+  let showSettings = $state(false);
+  let settings = $state<Settings>({ journalParent: null, journalTemplate: null, weekStart: 1 });
   /** On phones, the page list is a drawer over the page. */
   let drawer = $state(false);
 
@@ -38,10 +43,13 @@
         }
       }
       if (event.type === "accountChanged") account = event.status;
+      if (event.type === "settingsChanged") settings = event.settings;
     });
+    setQueryHost({ client, open: (id) => select(id), pages: () => pages });
     (async () => {
       try {
         account = await client.accountStatus();
+        settings = await client.settings();
         pages = await client.listPages();
         if (pages.length === 0) {
           const first = await client.createPage(null, "");
@@ -67,6 +75,17 @@
   async function createPage(parent: PageId | null) {
     try {
       const page = await client.createPage(parent, "");
+      select(page.id);
+    } catch (e) {
+      show(e);
+    }
+  }
+
+  /** Opens the journal entry for `date`, making it from the template if it's new. */
+  async function openDay(date: string) {
+    try {
+      const { page } = await client.openJournalDay(date);
+      pages = await client.listPages();
       select(page.id);
     } catch (e) {
       show(e);
@@ -103,7 +122,8 @@
     void client.ready();
   }
 
-  const title = $derived(pages.find((p) => p.id === current)?.title ?? "");
+  const info = $derived(pages.find((p) => p.id === current) ?? null);
+  const title = $derived(info?.title ?? "");
 </script>
 
 <div class="app" class:drawer-open={drawer}>
@@ -116,7 +136,14 @@
   </header>
   <aside class="sidebar">
     <div class="sidebar-head">Drusite</div>
+    <div class="sidebar-actions">
+      <button class="sidebar-action" onclick={() => openDay(today())}>📅 Today</button>
+      {#if settings.journalParent}
+        <button class="sidebar-action" onclick={() => select(settings.journalParent!)}>📖 Journal</button>
+      {/if}
+    </div>
     <PageTree {pages} {current} onselect={select} oncreate={createPage} ondelete={deletePage} onmove={movePage} />
+    <button class="sidebar-action" onclick={() => (showSettings = true)}>⚙️ Settings</button>
     <button class="sync-status" onclick={() => (showAccount = true)}>
       <span class="sync-dot {account.phase}"></span>
       <span class="sync-label">{phaseLabel(account.phase)}{account.phase === "online" && account.email ? ` · ${account.email}` : ""}</span>
@@ -133,11 +160,25 @@
     {/if}
     {#if current}
       {#key current}
-        <PageEditor {client} page={current} {title} onopened={opened} onerror={show} />
+        <PageEditor
+          {client}
+          page={current}
+          {title}
+          {info}
+          {pages}
+          {settings}
+          onday={openDay}
+          onselect={select}
+          onopened={opened}
+          onerror={show}
+        />
       {/key}
     {/if}
   </main>
 </div>
 {#if showAccount}
   <Account {client} status={account} onclose={() => (showAccount = false)} />
+{/if}
+{#if showSettings}
+  <SettingsSheet {client} {settings} {pages} onclose={() => (showSettings = false)} onerror={show} />
 {/if}

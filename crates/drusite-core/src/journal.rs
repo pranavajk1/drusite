@@ -450,6 +450,61 @@ mod tests {
         assert!(open_day(&mut f.core, "2026-01-01").1);
     }
 
+    /// The commands exactly as the UI's JSON has them.
+    #[test]
+    fn commands_from_the_ui_parse() {
+        let mut f = fixture();
+        let call = |core: &mut Core, json: &str| -> Response {
+            let command: Command = serde_json::from_str(json).unwrap();
+            core.handle(command).unwrap()
+        };
+        let Response::JournalDay { page, .. } = call(
+            &mut f.core,
+            r#"{"type":"openJournalDay","date":"2026-11-26"}"#,
+        ) else {
+            panic!()
+        };
+        call(
+            &mut f.core,
+            &format!(
+                r#"{{"type":"setProperty","page":"{}","name":"Mood","value":{{"type":"number","value":4}}}}"#,
+                page.id
+            ),
+        );
+        call(
+            &mut f.core,
+            &format!(
+                r#"{{"type":"setProperty","page":"{}","name":"Mood","value":null}}"#,
+                page.id
+            ),
+        );
+        call(
+            &mut f.core,
+            r#"{"type":"setSetting","setting":{"type":"weekStart","value":0}}"#,
+        );
+        call(
+            &mut f.core,
+            r#"{"type":"setSetting","setting":{"type":"journalTemplate","value":null}}"#,
+        );
+        let Response::Pages { pages } = call(
+            &mut f.core,
+            r#"{"type":"queryPages","query":{"kind":"journal","conditions":[{"property":"Date","comparison":"equals","value":{"type":"date","value":"2026-11-26"}}],"sort":{"by":"Date","descending":true},"limit":10}}"#,
+        ) else {
+            panic!()
+        };
+        assert_eq!(pages.len(), 1);
+        let json = serde_json::to_value(&pages[0]).unwrap();
+        assert_eq!(json["kind"], "journal");
+        assert_eq!(
+            json["properties"],
+            serde_json::json!([{"name": "Date", "value": {"type": "date", "value": "2026-11-26"}}])
+        );
+        assert!(
+            serde_json::from_str::<Command>(r#"{"type":"openJournalDay","date":"2026-2-30"}"#)
+                .is_err()
+        );
+    }
+
     #[test]
     fn properties_can_be_removed() {
         let mut f = fixture();

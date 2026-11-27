@@ -12,6 +12,11 @@
   --code-bg: #f3f2ef;
   --callout: #f6f4ee;
   --danger: #c0392b;
+  --mood-1: #d9534f;
+  --mood-2: #e8914a;
+  --mood-3: #d6c25a;
+  --mood-4: #8cc26b;
+  --mood-5: #3fa66a;
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   color-scheme: light dark;
@@ -29,6 +34,11 @@
     --accent-soft: #2f2a4a;
     --code-bg: #2a2a28;
     --callout: #2a2927;
+    --mood-1: #c8645f;
+    --mood-2: #cf8a52;
+    --mood-3: #bfae5a;
+    --mood-4: #7fae66;
+    --mood-5: #4c9a6c;
   }
 }
 
@@ -691,4 +701,345 @@ button {
    (style-src 'self'), so the stylesheet hides it instead. */
 #__tauri_isolation__ {
   display: none !important;
+}
+
+/* ---- Sidebar actions ---- */
+
+.sidebar-actions {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 8px;
+}
+
+.sidebar-action {
+  text-align: left;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.sidebar-action:hover {
+  background: var(--hover);
+}
+
+/* ---- Journal and properties ---- */
+
+.journal-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin: -8px 0 12px;
+  color: var(--muted);
+}
+
+.mood-picker {
+  display: flex;
+  gap: 4px;
+}
+
+.mood {
+  font-size: 20px;
+  line-height: 1;
+  padding: 6px;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  opacity: 0.55;
+  filter: grayscale(0.6);
+}
+
+.mood:hover,
+.mood.picked {
+  opacity: 1;
+  filter: none;
+}
+
+.mood.picked {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.properties {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.property {
+  display: flex;
+  gap: 12px;
+  padding: 2px 0;
+}
+
+.property dt {
+  min-width: 120px;
+  color: var(--muted);
+}
+
+.property dd {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.property-remove {
+  color: var(--muted);
+  visibility: hidden;
+}
+
+.property:hover .property-remove,
+.property-remove:focus-visible {
+  visibility: visible;
+}
+
+.property-add {
+  align-self: flex-start;
+  color: var(--muted);
+  font-size: 14px;
+  padding: 2px 0;
+  margin-bottom: 12px;
+}
+
+.property-add:hover {
+  color: var(--text);
+}
+
+.property-form,
+.query-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+.property-form input,
+.property-form select,
+.query-widget input,
+.query-widget select,
+.sheet select {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 8px;
+  min-width: 0;
+}
+
+.property-form button,
+.query-widget button {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 10px;
+}
+
+.property-form button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.sheet select {
+  width: 100%;
+  font-size: 16px;
+  padding: 8px 10px;
+  margin-bottom: 14px;
+}
+
+/* ---- Journal views ---- */
+
+.journal-views {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px 32px;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+
+.journal-views h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.jv-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.jv-head button {
+  font-size: 18px;
+  padding: 0 8px;
+  border-radius: 6px;
+}
+
+.jv-head button:hover {
+  background: var(--hover);
+}
+
+.jv-calendar table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.jv-calendar th {
+  font-weight: 500;
+  color: var(--muted);
+  font-size: 12px;
+  padding-bottom: 4px;
+}
+
+.jv-calendar td {
+  padding: 2px;
+  text-align: center;
+}
+
+.jv-day {
+  width: 100%;
+  aspect-ratio: 1;
+  max-width: 40px;
+  border-radius: 8px;
+  color: var(--muted);
+}
+
+.jv-day:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.jv-day:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.jv-day.has-entry {
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.jv-day.today {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.jv-day.mood-1 { background: color-mix(in srgb, var(--mood-1) 35%, transparent); }
+.jv-day.mood-2 { background: color-mix(in srgb, var(--mood-2) 35%, transparent); }
+.jv-day.mood-3 { background: color-mix(in srgb, var(--mood-3) 35%, transparent); }
+.jv-day.mood-4 { background: color-mix(in srgb, var(--mood-4) 35%, transparent); }
+.jv-day.mood-5 { background: color-mix(in srgb, var(--mood-5) 35%, transparent); }
+
+.jv-side h3 {
+  margin-bottom: 8px;
+}
+
+.jv-list,
+.query-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.jv-list button,
+.query-results button {
+  width: 100%;
+  text-align: left;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+
+.jv-list button:hover,
+.query-results button:hover {
+  background: var(--hover);
+}
+
+.jv-ago {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.jv-mood {
+  grid-column: 1 / -1;
+}
+
+.jv-mood svg {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.jv-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.jv-line {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.5;
+}
+
+.jv-dot.mood-1 { fill: var(--mood-1); }
+.jv-dot.mood-2 { fill: var(--mood-2); }
+.jv-dot.mood-3 { fill: var(--mood-3); }
+.jv-dot.mood-4 { fill: var(--mood-4); }
+.jv-dot.mood-5 { fill: var(--mood-5); }
+
+.journal-views .hint {
+  color: var(--muted);
+  margin: 4px 0 0;
+}
+
+/* ---- Filter block ---- */
+
+.block-query {
+  margin: 8px 0;
+}
+
+.query-widget {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 14px;
+  user-select: none;
+}
+
+.query-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.query-form {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 4px;
+}
+
+.query-form[hidden] {
+  display: none;
+}
+
+.query-empty {
+  color: var(--muted);
+  padding: 4px 6px;
+}
+
+.query-text {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .journal-views {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
