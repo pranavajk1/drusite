@@ -27,6 +27,11 @@ export function setQueryHost(h: QueryHost | null): void {
   host = h;
 }
 
+/** The app's side of the widgets in pages: the core, and opening a page. */
+export function queryHost(): QueryHost | null {
+  return host;
+}
+
 export function defaultQueryJson(): string {
   return JSON.stringify(DEFAULT_QUERY);
 }

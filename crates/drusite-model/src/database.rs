@@ -35,6 +35,8 @@ pub struct PropertyDef {
     /// The choices of a select, multi-select or status property, in order.
     pub options: Vec<SelectOption>,
     /// Where it comes in the schema; views have their own order.
+    /// (A plain number for TypeScript: never NaN.)
+    #[specta(type = u32)]
     pub position: f64,
     /// A description, shown as the property's tooltip.
     pub description: Option<String>,
@@ -395,6 +397,8 @@ pub struct SelectOption {
     /// A status option's group; none for select options.
     pub group: Option<StatusGroup>,
     /// Where it comes among the property's options.
+    /// (A plain number for TypeScript: never NaN.)
+    #[specta(type = u32)]
     pub position: f64,
 }
 
@@ -681,7 +685,7 @@ pub struct Person {
 #[serde(tag = "type", content = "value", rename_all = "camelCase")]
 pub enum Value {
     Text(String),
-    Number(f64),
+    Number(#[specta(type = u32)] f64),
     Select(OptionId),
     MultiSelect(Vec<OptionId>),
     Status(OptionId),
@@ -778,6 +782,8 @@ pub struct View {
     pub name: String,
     pub layout: Layout,
     /// Where it comes among the database's views.
+    /// (A plain number for TypeScript: never NaN.)
+    #[specta(type = u32)]
     pub position: f64,
     pub filter: Option<Filter>,
     /// The first sort decides, the next breaks ties, and so on. None: the rows' own order.
@@ -919,7 +925,7 @@ pub enum FilterOp {
 #[serde(tag = "type", content = "value", rename_all = "camelCase")]
 pub enum FilterValue {
     Text(String),
-    Number(f64),
+    Number(#[specta(type = u32)] f64),
     Checkbox(bool),
     Date(Day),
     /// `today`, `tomorrow`, `yesterday`: relative to the day the view is shown.

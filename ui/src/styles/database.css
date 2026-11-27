@@ -1,0 +1,1146 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+
+/* Databases: views (table, board, calendar, list, gallery), cells, and their editors.
+   design/DESIGN.md §7.10. */
+
+/* ---- Option chips ---- */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  height: 20px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-xs);
+  font-size: var(--text-sm);
+  line-height: 20px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+button.chip {
+  border: 0;
+  cursor: pointer;
+}
+
+.tag-default {
+  background: var(--tag-default);
+}
+.tag-gray {
+  background: var(--tag-gray);
+}
+.tag-brown {
+  background: var(--tag-brown);
+}
+.tag-orange {
+  background: var(--tag-orange);
+}
+.tag-yellow {
+  background: var(--tag-yellow);
+}
+.tag-green {
+  background: var(--tag-green);
+}
+.tag-blue {
+  background: var(--tag-blue);
+}
+.tag-purple {
+  background: var(--tag-purple);
+}
+.tag-pink {
+  background: var(--tag-pink);
+}
+.tag-red {
+  background: var(--tag-red);
+}
+
+.status-chip {
+  border-radius: var(--radius-full);
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: currentColor;
+  opacity: 0.6;
+}
+
+.chips {
+  display: inline-flex;
+  gap: var(--space-1);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.chips.wrap {
+  flex-wrap: wrap;
+}
+
+.person {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.person-avatar {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  background: var(--accent-soft-2);
+  color: var(--accent-text);
+  font-size: 10px;
+  font-weight: var(--weight-semibold);
+  flex: none;
+}
+
+.chip-x {
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+  padding: 0;
+}
+
+.row-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  padding: 0 var(--space-1);
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row-link:hover {
+  background: var(--bg-hover);
+}
+
+.cell-link {
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cell-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cell-text.wrap,
+.db-table.wrap .cell-text {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.cell-text.number {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.cell-error {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+/* ---- The database: tabs, tools ---- */
+
+.database {
+  margin: var(--space-4) 0 var(--space-6);
+  font-size: var(--text-md);
+}
+
+.page.database-page {
+  /* A full-page database uses the window's width, as in Notion. */
+  max-width: none;
+}
+
+.database-page .database {
+  margin-top: var(--space-2);
+}
+
+.db-inline-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+  padding: var(--space-1) var(--space-1);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+
+.db-inline-title:hover {
+  background: var(--bg-hover);
+}
+
+.db-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  box-shadow: inset 0 -1px 0 var(--divider);
+}
+
+.db-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.db-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--row);
+  padding: 0 var(--space-2);
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: inset 0 -2px 0 transparent;
+}
+
+.db-tab:hover {
+  color: var(--text);
+}
+
+.db-tab[aria-selected="true"] {
+  color: var(--text);
+  box-shadow: inset 0 -2px 0 var(--text);
+}
+
+.db-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+}
+
+.db-tools .icon-btn.active {
+  color: var(--accent-text);
+}
+
+.db-new {
+  gap: var(--space-1);
+}
+
+.db-layouts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
+}
+
+.db-layouts .btn {
+  gap: var(--space-1);
+}
+
+.db-loading,
+.db-foot {
+  padding: var(--space-2) var(--space-1);
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+
+/* ---- Table ---- */
+
+.table-scroll {
+  overflow-x: auto;
+  margin: 0 calc(-1 * var(--space-1));
+}
+
+.db-table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  min-width: 100%;
+  width: max-content;
+}
+
+.db-table th,
+.db-table td {
+  height: 34px;
+  padding: 0;
+  text-align: left;
+  vertical-align: top;
+  box-shadow: inset 0 -1px 0 var(--divider), inset -1px 0 0 var(--divider);
+}
+
+.db-table th:last-child,
+.db-table td:last-child {
+  box-shadow: inset 0 -1px 0 var(--divider);
+  width: 40px;
+}
+
+.th-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  height: 34px;
+  padding: 0 var(--space-2);
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-regular);
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.th-btn:hover,
+.cell-btn[role="button"]:hover {
+  background: var(--bg-hover);
+}
+
+.th-add {
+  vertical-align: middle;
+}
+
+.cell-btn {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 34px;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  min-width: 0;
+}
+
+.cell-btn[role="button"] {
+  cursor: pointer;
+}
+
+.title-cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.title-cell .cell-btn {
+  font-weight: var(--weight-medium);
+}
+
+.row-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.open-row {
+  position: absolute;
+  right: var(--space-1);
+  gap: var(--space-1);
+  height: 22px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+  opacity: 0;
+}
+
+tr:hover .open-row,
+.open-row:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .open-row {
+    opacity: 1;
+  }
+}
+
+.group-row td {
+  padding: var(--space-3) var(--space-2) var(--space-1);
+  box-shadow: none;
+}
+
+.board-count {
+  margin-left: var(--space-2);
+  color: var(--text-3);
+  font-size: var(--text-sm);
+}
+
+.new-row td {
+  box-shadow: none;
+}
+
+.db-new-row,
+.board-new,
+.gallery-new {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  height: var(--row);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  cursor: pointer;
+}
+
+.db-new-row:hover,
+.board-new:hover,
+.gallery-new:hover {
+  background: var(--bg-hover);
+  color: var(--text-2);
+}
+
+/* ---- Board ---- */
+
+.board {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  overflow-x: auto;
+  padding: var(--space-3) 0 var(--space-4);
+}
+
+.board-col {
+  flex: 0 0 260px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+  min-height: 80px;
+}
+
+.board-col.drop-over {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.board-col-head {
+  display: flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-1) 0;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: pan-x pan-y;
+}
+
+.card:hover {
+  background: var(--bg-elevated);
+}
+
+.card .row-title {
+  font-weight: var(--weight-medium);
+  white-space: normal;
+}
+
+.card-prop {
+  display: flex;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+.card-prop.compact {
+  display: inline-flex;
+}
+
+.dragging {
+  opacity: 0.4;
+}
+
+.drag-ghost {
+  position: fixed;
+  z-index: var(--z-popover);
+  pointer-events: none;
+  box-shadow: var(--shadow-lg);
+  transform: rotate(2deg);
+  opacity: 0.95;
+}
+
+/* ---- Calendar ---- */
+
+.cal-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-3) 0 var(--space-2);
+}
+
+.cal-month {
+  flex: 1;
+  font-weight: var(--weight-semibold);
+}
+
+.cal-grid {
+  display: flex;
+  flex-direction: column;
+  box-shadow: inset 0 0 0 1px var(--divider);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.cal-row {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.cal-weekdays span {
+  padding: var(--space-1) var(--space-2);
+  color: var(--text-3);
+  font-size: var(--text-xs);
+  text-align: right;
+}
+
+.cal-day {
+  min-height: 96px;
+  padding: var(--space-1);
+  box-shadow: inset -1px -1px 0 var(--divider);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cal-day.other {
+  background: var(--bg-sidebar);
+}
+
+.cal-day.drop-over {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.cal-day-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.cal-day-num {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+.cal-day.today .cal-day-num {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.cal-add {
+  width: 20px;
+  height: 20px;
+  opacity: 0;
+}
+
+.cal-day:hover .cal-add,
+.cal-add:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .cal-add {
+    opacity: 1;
+  }
+}
+
+.cal-card {
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  box-shadow: var(--shadow-sm);
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: pan-x pan-y;
+}
+
+/* ---- List and gallery ---- */
+
+.db-group-head {
+  display: flex;
+  align-items: center;
+  padding: var(--space-3) var(--space-1) var(--space-1);
+}
+
+.db-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1) 0;
+}
+
+.db-list-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 34px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: inset 0 -1px 0 var(--divider);
+}
+
+.db-list-row:hover {
+  background: var(--bg-hover);
+}
+
+.db-list-row > .icon {
+  color: var(--text-3);
+  flex: none;
+}
+
+.db-list-row .row-title {
+  flex: 1;
+}
+
+.db-list-props {
+  display: flex;
+  gap: var(--space-2);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+}
+
+.gallery-card {
+  padding: 0 0 var(--space-3);
+  overflow: hidden;
+}
+
+.gallery-card > :not(.gallery-cover) {
+  margin: 0 var(--space-3);
+}
+
+.gallery-cover {
+  display: grid;
+  place-items: center;
+  height: 96px;
+  margin-bottom: var(--space-2);
+  background: var(--bg-subtle);
+  color: var(--text-3);
+}
+
+.gallery-new {
+  height: auto;
+  min-height: 120px;
+  justify-content: center;
+  box-shadow: inset 0 0 0 1px var(--divider);
+  border-radius: var(--radius-md);
+}
+
+/* ---- Popovers: cell editors, property forms, view settings ---- */
+
+.db-popover {
+  max-width: calc(100vw - 16px);
+  max-height: min(520px, 80vh);
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.db-sheet {
+  top: auto;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: auto;
+  max-width: none;
+  max-height: 80vh;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  padding: var(--space-4) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom));
+  box-shadow: var(--shadow-lg);
+  animation: sheet-in var(--dur-slow) var(--ease-out);
+}
+
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-popover);
+  background: var(--bg-backdrop);
+}
+
+.cell-input,
+.formula-input {
+  width: 100%;
+  resize: vertical;
+}
+
+.formula-input {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.option-list {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  max-height: 260px;
+}
+
+.option-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--row);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.option-row:hover {
+  background: var(--bg-hover);
+}
+
+.option-row .icon {
+  flex: none;
+}
+
+.option-row.create {
+  color: var(--text-2);
+}
+
+.option-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+}
+
+.option-main span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.option-group {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: var(--text-xs);
+}
+
+.picked:empty {
+  display: none;
+}
+
+.date-form,
+.prop-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.date-row,
+.prop-form-row {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+
+.date-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  padding-top: var(--space-1);
+}
+
+.form-actions .spacer {
+  flex: 1;
+}
+
+.prop-form-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-2);
+}
+
+.prop-form-head .input {
+  flex: 1;
+}
+
+.prop-form-label {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-2);
+}
+
+.prop-form-note {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+.option-edit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.formula-check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.formula-check.error {
+  color: var(--danger);
+}
+
+.formula-check.ok {
+  color: var(--text-2);
+}
+
+.formula-props {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.view-tabs {
+  display: flex;
+  gap: var(--space-1);
+  overflow-x: auto;
+  padding-bottom: var(--space-1);
+  box-shadow: inset 0 -1px 0 var(--divider);
+}
+
+.view-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--row);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.view-tab[aria-selected="true"] {
+  background: var(--bg-active);
+  color: var(--text);
+}
+
+.layout-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-1);
+}
+
+.layout-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.layout-choice[aria-checked="true"] {
+  color: var(--accent-text);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.filter-row .input {
+  flex: 1;
+  min-width: 100px;
+}
+
+.prop-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.prop-list-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--row);
+  padding: 0 var(--space-1);
+}
+
+.prop-list-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hidden-prop {
+  color: var(--text-3);
+}
+
+/* ---- A row's properties, on its page ---- */
+
+.row-props {
+  display: flex;
+  flex-direction: column;
+  margin: var(--space-2) 0 var(--space-4);
+  padding-bottom: var(--space-2);
+  box-shadow: inset 0 -1px 0 var(--divider);
+}
+
+.prop-row {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  align-items: start;
+  min-height: 34px;
+}
+
+.prop-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 34px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.prop-name span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prop-name:hover,
+.prop-value[role="button"]:hover {
+  background: var(--bg-hover);
+}
+
+.prop-value {
+  border-radius: var(--radius-sm);
+}
+
+.prop-empty {
+  color: var(--text-3);
+}
+
+.prop-add {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 34px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  cursor: pointer;
+  width: max-content;
+}
+
+.prop-add:hover {
+  background: var(--bg-hover);
+  color: var(--text-2);
+}
+
+/* ---- Inline databases in a page ---- */
+
+.block-database {
+  margin: var(--space-2) 0;
+}
+
+.block-database .database {
+  margin: 0;
+}
+
+/* ---- Phones: Notion mobile's shapes ---- */
+
+@media (max-width: 700px) {
+  .db-bar {
+    flex-wrap: wrap;
+    row-gap: 0;
+  }
+
+  .db-tools {
+    margin-left: auto;
+  }
+
+  /* One column at a time, swiped between, as on Notion's phone apps. */
+  .board {
+    scroll-snap-type: x mandatory;
+    margin: 0 calc(-1 * var(--page-pad));
+    padding-left: var(--page-pad);
+    padding-right: var(--page-pad);
+    scroll-padding: 0 var(--page-pad);
+  }
+
+  .board-col {
+    flex-basis: 82vw;
+    scroll-snap-align: start;
+  }
+
+  /* The table scrolls sideways with the title column held at the left. */
+  .table-scroll {
+    margin: 0 calc(-1 * var(--page-pad));
+    padding: 0 var(--page-pad);
+  }
+
+  .db-table td:first-child,
+  .db-table th:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--bg);
+  }
+
+  .cal-day {
+    min-height: 64px;
+  }
+
+  .cal-card {
+    font-size: var(--text-xs);
+    padding: 1px var(--space-1);
+  }
+
+  .cal-weekdays span {
+    text-align: center;
+    padding: var(--space-1) 0;
+  }
+
+  .gallery {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+
+  .prop-row {
+    grid-template-columns: 120px minmax(0, 1fr);
+  }
+}

@@ -44,6 +44,7 @@ pub const UNSUPPORTED: &[(&str, &str)] = &[
 /// A formula that can't be read, or that Notion would refuse.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, SpectaType)]
 #[serde(rename_all = "camelCase")]
+#[serde(rename = "FormulaError")]
 pub struct Error {
     /// Where in the formula, in bytes, when known.
     pub at: Option<u32>,
@@ -85,9 +86,10 @@ pub struct PageRef {
 /// A formula's value, and the value a rollup shows.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, SpectaType)]
 #[serde(tag = "type", content = "value", rename_all = "camelCase")]
+#[serde(rename = "FormulaValue")]
 pub enum Value {
     Empty,
-    Number(f64),
+    Number(#[specta(type = u32)] f64),
     Text(String),
     Bool(bool),
     Date(DateValue),

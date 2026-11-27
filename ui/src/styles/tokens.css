@@ -128,6 +128,18 @@
   --mood-4: #7fbc5e;
   --mood-5: #2f9e64;
 
+  /* Option colours: the backgrounds of select, status and multi-select chips (text is --text). */
+  --tag-default: #ecebef;
+  --tag-gray: #e3e2e6;
+  --tag-brown: #eee2d8;
+  --tag-orange: #fbe0c9;
+  --tag-yellow: #f8ecc0;
+  --tag-green: #d8efdf;
+  --tag-blue: #d6e6f7;
+  --tag-purple: #e6dcf8;
+  --tag-pink: #f7dbe9;
+  --tag-red: #f8d9d6;
+
   --shadow-sm: 0 1px 2px rgb(24 18 38 / 0.06), 0 0 0 1px rgb(24 18 38 / 0.06);
   --shadow-md: 0 4px 10px rgb(24 18 38 / 0.04), 0 14px 24px -6px rgb(24 18 38 / 0.1), 0 0 0 1px rgb(24 18 38 / 0.07);
   --shadow-lg: 0 6px 14px rgb(24 18 38 / 0.1), 0 24px 48px rgb(24 18 38 / 0.18), 0 0 0 1px rgb(24 18 38 / 0.07);
@@ -174,6 +186,17 @@
   --mood-4: #7fae66;
   --mood-5: #4c9a6c;
 
+  --tag-default: #34323a;
+  --tag-gray: #3c3a42;
+  --tag-brown: #44372d;
+  --tag-orange: #4f3824;
+  --tag-yellow: #4a4024;
+  --tag-green: #26412f;
+  --tag-blue: #243a51;
+  --tag-purple: #382c55;
+  --tag-pink: #4a2a3c;
+  --tag-red: #4d2a28;
+
   --shadow-sm: 0 0 0 1px rgb(255 255 255 / 0.08);
   --shadow-md: 0 14px 28px rgb(0 0 0 / 0.4), 0 0 0 1px rgb(255 255 255 / 0.08);
   --shadow-lg: 0 24px 48px rgb(0 0 0 / 0.55), 0 0 0 1px rgb(255 255 255 / 0.09);
@@ -214,6 +237,17 @@
     --mood-3: #bfa95a;
     --mood-4: #7fae66;
     --mood-5: #4c9a6c;
+
+    --tag-default: #34323a;
+    --tag-gray: #3c3a42;
+    --tag-brown: #44372d;
+    --tag-orange: #4f3824;
+    --tag-yellow: #4a4024;
+    --tag-green: #26412f;
+    --tag-blue: #243a51;
+    --tag-purple: #382c55;
+    --tag-pink: #4a2a3c;
+    --tag-red: #4d2a28;
     --shadow-sm: 0 0 0 1px rgb(255 255 255 / 0.08);
     --shadow-md: 0 14px 28px rgb(0 0 0 / 0.4), 0 0 0 1px rgb(255 255 255 / 0.08);
     --shadow-lg: 0 24px 48px rgb(0 0 0 / 0.55), 0 0 0 1px rgb(255 255 255 / 0.09);

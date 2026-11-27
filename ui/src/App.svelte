@@ -304,6 +304,15 @@
     }
   }
 
+  async function createDatabase(parent: PageId | null, template: "empty" | "tasks") {
+    try {
+      const { page } = await client.createDatabase(parent, template === "tasks" ? "Tasks" : "", false, template);
+      select(page.id);
+    } catch (e) {
+      show(e);
+    }
+  }
+
   function pageActions(id: PageId): MenuItem[] {
     return [
       { label: "Add a page inside", icon: "plus", run: () => createPage(id) },
@@ -312,6 +321,8 @@
         icon: "globe",
         run: () => (sharing = { anchor: phone() ? null : shareButton }),
       },
+      { label: "Add a database inside", icon: "table", run: () => createDatabase(id, "empty") },
+      { label: "Add a task board inside", icon: "square-kanban", run: () => createDatabase(id, "tasks") },
       { label: "Search", icon: "search", hint: "⌘K", run: () => (showSearch = true) },
       { label: "Move to Trash", icon: "trash-2", danger: true, run: () => deletePage(id) },
     ];
@@ -417,6 +428,7 @@
         journalParent={settings.journalParent}
         onselect={select}
         oncreate={createPage}
+        oncreatetasks={() => createDatabase(null, "tasks")}
         ondelete={deletePage}
         onmove={movePage}
       />

@@ -6,6 +6,7 @@
 import { DATE } from "../journal/mood";
 import { runQuery } from "../journal/query";
 import { dayTitle } from "../journal/dates";
+import { MemDatabases } from "./memory-db";
 import type { Transport } from "./client";
 import type {
   AgentToken,
@@ -132,6 +133,10 @@ export class MemoryCore {
   /** AI providers: kept, but never reached (nothing here makes requests). */
   private aiProviders: (AiProvider & { key: string | null })[] = [];
   private aiFeatures = new Map<AiFeature, AiChoice>();
+  private readonly dbs = new MemDatabases({
+    title: (id) => this.page(id).title,
+    rows: (db) => this.page(db).children.filter((c) => !this.trashed(c)),
+  });
 
   readonly transport: Transport = {
     call: async (command) => this.handle(command),
@@ -732,6 +737,66 @@ export class MemoryCore {
       }
       case "ready":
         return { type: "done" };
+      case "createDatabase": {
+        const page = this.addPage(command.parent, command.title, "database", []);
+        this.dbs.create(page.id, command.inline, command.template);
+        this.workspaceChanged();
+        return { type: "databaseCreated", page: this.info().find((p) => p.id === page.id)!, schema: this.dbs.schema(page.id) };
+      }
+      case "database":
+        return { type: "database", schema: this.dbs.schema(command.database) };
+      case "queryView":
+        return { type: "view", result: this.dbs.query(command.database, command.view) };
+      case "rowCells": {
+        const parent = this.page(command.row).parent;
+        if (parent === null || !this.dbs.isDatabase(parent)) return { type: "rowCells", schema: null, row: null };
+        return { type: "rowCells", schema: this.dbs.schema(parent), row: this.dbs.row(parent, command.row) };
+      }
+      case "putProperty": {
+        const schema = this.dbs.putProperty(command.database, command.property);
+        this.workspaceChanged();
+        return { type: "database", schema };
+      }
+      case "deleteProperty": {
+        const schema = this.dbs.deleteProperty(command.database, command.property);
+        this.workspaceChanged();
+        return { type: "database", schema };
+      }
+      case "putView": {
+        const schema = this.dbs.putView(command.database, command.view);
+        this.workspaceChanged();
+        return { type: "database", schema };
+      }
+      case "deleteView": {
+        const schema = this.dbs.deleteView(command.database, command.view);
+        this.workspaceChanged();
+        return { type: "database", schema };
+      }
+      case "setCell":
+        if (command.property === "title") this.page(command.row).title = command.value?.type === "text" ? command.value.value : "";
+        else this.dbs.setCell(command.row, command.property, command.value);
+        this.workspaceChanged();
+        return { type: "done" };
+      case "createRow": {
+        const page = this.addPage(command.database, command.title, "page", []);
+        if (command.after !== null) {
+          const kids = this.page(command.database).children;
+          kids.splice(kids.indexOf(page.id), 1);
+          kids.splice(kids.indexOf(command.after) + 1, 0, page.id);
+        }
+        for (const c of command.values) this.dbs.setCell(page.id, c.property, c.value);
+        this.dbs.rowCreated(command.database, page.id);
+        this.workspaceChanged();
+        return { type: "pageCreated", page: this.info().find((p) => p.id === page.id)! };
+      }
+      case "checkFormula":
+        return { type: "formulaCheck", check: { result: { type: "any" }, error: null } };
+      case "importNotion":
+      case "importNotionData":
+      case "importNotionApi":
+      case "notionToken":
+      case "forgetNotionToken":
+        fail("unsupported", "importing from Notion needs the Drusite app");
       case "edit":
         // As in the core, only an open page takes edits.
         if (!this.open.has(command.page)) fail("pageNotOpen", `page ${command.page} isn't open`);

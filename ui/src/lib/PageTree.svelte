@@ -13,6 +13,7 @@
     journalParent = null,
     onselect,
     oncreate,
+    oncreatetasks,
     ondelete,
     onmove,
   }: {
@@ -22,6 +23,8 @@
     journalParent?: PageId | null;
     onselect: (id: PageId) => void;
     oncreate: (parent: PageId | null) => void;
+    /** Makes a top-level task board. */
+    oncreatetasks?: () => void;
     ondelete: (id: PageId) => void;
     onmove: (id: PageId, parent: PageId | null, index: number) => void;
   } = $props();
@@ -69,7 +72,13 @@
   function iconOf(page: PageInfo): IconName {
     if (page.id === journalParent) return "book-open";
     if (page.kind === "journal") return "calendar-days";
+    if (page.kind === "database") return "table-properties";
     return page.children.length > 0 ? "file-text" : "file";
+  }
+
+  /** The subpages the tree shows: a database's rows are in its views, not here (as in Notion). */
+  function kids(page: PageInfo): PageId[] {
+    return page.kind === "database" ? [] : page.children;
   }
 
   let dragging = $state<PageId | null>(null);
@@ -160,8 +169,8 @@
         <button
           class="tree-caret"
           aria-label={expanded.has(id) ? "Collapse" : "Expand"}
-          aria-expanded={page.children.length > 0 ? expanded.has(id) : undefined}
-          disabled={page.children.length === 0}
+          aria-expanded={kids(page).length > 0 ? expanded.has(id) : undefined}
+          disabled={kids(page).length === 0}
           onclick={(e) => {
             e.stopPropagation();
             if (expanded.has(id)) expanded.delete(id);
@@ -169,7 +178,7 @@
           }}
         >
           <Icon name={iconOf(page)} class="tree-page-icon" />
-          {#if page.children.length > 0}<Icon name="chevron-right" class="tree-chevron" />{/if}
+          {#if kids(page).length > 0}<Icon name="chevron-right" class="tree-chevron" />{/if}
         </button>
         <span class="tree-title">{page.title || "Untitled"}</span>
         {#if page.published}
@@ -197,9 +206,9 @@
           }}><Icon name="plus" size={14} /></button
         >
       </div>
-      {#if page.children.length > 0 && expanded.has(id)}
+      {#if kids(page).length > 0 && expanded.has(id)}
         <ul role="group">
-          {#each page.children as child (child)}
+          {#each kids(page) as child (child)}
             {@render node(child, depth + 1)}
           {/each}
         </ul>
@@ -222,6 +231,7 @@
     ondrop={drop}
   >
     <button class="new-page" onclick={() => oncreate(null)}><Icon name="plus" />New page</button>
+    {#if oncreatetasks}<button class="new-page" onclick={() => oncreatetasks()}><Icon name="square-kanban" />New task board</button>{/if}
   </div>
 </nav>
 

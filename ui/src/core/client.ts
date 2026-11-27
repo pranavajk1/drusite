@@ -37,7 +37,28 @@ import type {
   ShareChange,
   ShareInfo,
   TrashItem,
+  Template,
+  Schema,
+  ViewResult,
+  RowView,
+  PropertyDef,
+  View,
+  Value,
+  CellValue,
+  FormulaCheck,
+  NotionReport,
+  Clock,
 } from "./types";
+
+/** The person's clock, for formulas and "today" in filters. */
+export function clock(): Clock {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return {
+    now: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`,
+    utcOffset: -d.getTimezoneOffset(),
+  };
+}
 
 export type * from "./types";
 
@@ -49,6 +70,8 @@ export interface Transport {
   /** Asks the person for a folder, where the platform can (desktops). */
   /** The system's folder picker, titled `title`; desktops only. */
   pickFolder?: (title: string) => Promise<string | null>;
+  /** The system's file picker, for files ending in one of `extensions`; desktops only. */
+  pickFile?: (title: string, extensions: string[]) => Promise<string | null>;
 }
 
 /** A failed command, with the core's error code. */
@@ -218,6 +241,86 @@ export class CoreClient {
   /** Asks for a folder; null if the person cancels or the platform can't. */
   async pickFolder(title: string): Promise<string | null> {
     return (await this.transport.pickFolder?.(title)) ?? null;
+  }
+
+  /** Whether this platform can give a file's path (desktops); elsewhere files come as bytes. */
+  get canPickFile(): boolean {
+    return !!this.transport.pickFile;
+  }
+
+  async pickFile(title: string, extensions: string[]): Promise<string | null> {
+    return (await this.transport.pickFile?.(title, extensions)) ?? null;
+  }
+
+  // ---- Databases ----
+
+  async createDatabase(parent: PageId | null, title: string, inline: boolean, template: Template): Promise<{ page: PageInfo; schema: Schema }> {
+    const { page, schema } = await this.call({ type: "createDatabase", parent, title, inline, template }, "databaseCreated");
+    return { page, schema };
+  }
+
+  async database(database: PageId): Promise<Schema> {
+    return (await this.call({ type: "database", database }, "database")).schema;
+  }
+
+  async queryView(database: PageId, view: string | null): Promise<ViewResult> {
+    return (await this.call({ type: "queryView", database, view, clock: clock() }, "view")).result;
+  }
+
+  async rowCells(row: PageId): Promise<{ schema: Schema | null; row: RowView | null }> {
+    const { schema, row: r } = await this.call({ type: "rowCells", row, clock: clock() }, "rowCells");
+    return { schema, row: r };
+  }
+
+  async putProperty(database: PageId, property: PropertyDef, twinName: string | null = null): Promise<Schema> {
+    return (await this.call({ type: "putProperty", database, property, twinName }, "database")).schema;
+  }
+
+  async deleteProperty(database: PageId, property: string): Promise<Schema> {
+    return (await this.call({ type: "deleteProperty", database, property }, "database")).schema;
+  }
+
+  async putView(database: PageId, view: View): Promise<Schema> {
+    return (await this.call({ type: "putView", database, view }, "database")).schema;
+  }
+
+  async deleteView(database: PageId, view: string): Promise<Schema> {
+    return (await this.call({ type: "deleteView", database, view }, "database")).schema;
+  }
+
+  async setCell(row: PageId, property: string, value: Value | null): Promise<void> {
+    await this.call({ type: "setCell", row, property, value }, "done");
+  }
+
+  async createRow(database: PageId, title: string, values: CellValue[] = [], after: PageId | null = null): Promise<PageInfo> {
+    return (await this.call({ type: "createRow", database, title, values, after }, "pageCreated")).page;
+  }
+
+  async checkFormula(database: PageId, expression: string): Promise<FormulaCheck> {
+    return (await this.call({ type: "checkFormula", database, expression }, "formulaCheck")).check;
+  }
+
+  /** Imports a Notion export: its `.zip` or the folder it unzips to (desktops). */
+  async importNotion(path: string): Promise<NotionReport> {
+    return (await this.call({ type: "importNotion", path }, "notionImported")).report;
+  }
+
+  /** Imports a Notion export from its bytes (base64). */
+  async importNotionData(name: string, data: string): Promise<NotionReport> {
+    return (await this.call({ type: "importNotionData", name, data }, "notionImported")).report;
+  }
+
+  /** Imports from Notion's API; a token given is kept for next time, none uses the kept one. */
+  async importNotionApi(token: string | null): Promise<NotionReport> {
+    return (await this.call({ type: "importNotionApi", token }, "notionImported")).report;
+  }
+
+  async notionToken(): Promise<boolean> {
+    return (await this.call({ type: "notionToken" }, "notionToken")).saved;
+  }
+
+  async forgetNotionToken(): Promise<void> {
+    await this.call({ type: "forgetNotionToken" }, "done");
   }
 
   async openPage(page: PageId): Promise<PageView> {

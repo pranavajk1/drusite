@@ -200,6 +200,11 @@ export type BlockKind = { type: "paragraph" } | { type: "heading"; level: Headin
  */
 { type: "query"; query: string } | 
 /**
+ *  A database shown inside the page: `database` is a subpage of kind
+ *  [`PageKind::Database`], and `view` the view it opens on. No text of its own.
+ */
+{ type: "database"; database: PageId; view: string | null } | 
+/**
  *  A file stored with the workspace: shown inline when it's an image, as a card otherwise.
  *  The block's text is its caption.
  */
@@ -236,6 +241,38 @@ export type BridgeStatus = {
 	/**  How the last round went, if one has run since the app started. */
 	last: BridgeRound | null,
 };
+
+/**  One cell, ready to show. */
+export type Cell = {
+	property: string,
+	/**  The stored value, for a property that stores one (and the far side of a relation). */
+	value: Value | null,
+	/**  The computed value, for a formula, rollup, created or edited property. */
+	computed: FormulaValue | null,
+	/**  The pages a relation links to, with their titles. */
+	pages: PageRef[],
+	/**  What the cell shows, as text. */
+	text: string,
+	/**  Why a formula couldn't be computed, when it couldn't. */
+	error: string | null,
+};
+
+/**  One value for [`Command::CreateRow`]. */
+export type CellValue = {
+	property: string,
+	value: Value,
+};
+
+/**  The person's clock, which formulas and relative filters ("today") use. */
+export type Clock = {
+	/**  The local date and time, `YYYY-MM-DDTHH:MM`. */
+	now: string,
+	/**  Minutes ahead of UTC. */
+	utcOffset: number,
+};
+
+/**  Notion's colours. */
+export type Color = "default" | "gray" | "brown" | "orange" | "yellow" | "green" | "blue" | "purple" | "pink" | "red";
 
 /**  Something the UI asks the core to do. */
 export type Command = 
@@ -407,7 +444,70 @@ today: string | null } |
  *  Gives a published page a new link; the old one stops working. Answered with
  *  [`Response::Share`].
  */
-{ type: "regenerateShareLink"; page: PageId };
+{ type: "regenerateShareLink"; page: PageId } | 
+/**
+ *  Makes a database under `parent` (inside it, shown as a block, when `inline`). Answered
+ *  with [`Response::DatabaseCreated`].
+ */
+{ type: "createDatabase"; parent: PageId | null; title: string; inline: boolean; template: Template } | 
+/**  A database's schema and views. Answered with [`Response::Database`]. */
+{ type: "database"; database: PageId } | 
+/**
+ *  What a view shows (the first view when `view` is none). Answered with
+ *  [`Response::View`].
+ */
+{ type: "queryView"; database: PageId; view: string | null; clock: Clock } | 
+/**
+ *  A row's cells, for its page; none when the page isn't a row. Answered with
+ *  [`Response::RowCells`].
+ */
+{ type: "rowCells"; row: PageId; clock: Clock } | 
+/**
+ *  Adds or changes a property. A new relation with `twin_name` is two-way: the related
+ *  database gets a property of that name showing the other side. Answered with
+ *  [`Response::Database`].
+ */
+{ type: "putProperty"; database: PageId; property: PropertyDef; twinName: string | null } | 
+/**
+ *  Removes a property (and a two-way relation's other side). Answered with
+ *  [`Response::Database`].
+ */
+{ type: "deleteProperty"; database: PageId; property: string } | 
+/**  Adds or changes a view. Answered with [`Response::Database`]. */
+{ type: "putView"; database: PageId; view: View } | { type: "deleteView"; database: PageId; view: string } | 
+/**
+ *  Sets a cell, or clears it (`value` none). The title cell renames the row; the far side
+ *  of a two-way relation changes the rows on the other end.
+ */
+{ type: "setCell"; row: PageId; property: string; value: Value | null } | 
+/**
+ *  Adds a row (after `after`, or last) with these values. Answered with
+ *  [`Response::PageCreated`].
+ */
+{ type: "createRow"; database: PageId; title: string; values: CellValue[]; after: PageId | null } | 
+/**
+ *  Whether a formula reads and type-checks, against a database's properties. Answered with
+ *  [`Response::FormulaCheck`].
+ */
+{ type: "checkFormula"; database: PageId; expression: string } | 
+/**
+ *  Imports a Notion export (its `.zip`, or the folder it unzips to), offline, as new pages
+ *  under a new top-level page. Answered with [`Response::NotionImported`]; desktops.
+ */
+{ type: "importNotion"; path: string } | 
+/**  The same, from the export's bytes (base64), for phones and the browser. */
+{ type: "importNotionData"; name: string; data: string } | 
+/**
+ *  Imports straight from Notion's API, with an internal integration's token: every page
+ *  shared with the integration. A token given is kept in the device's key store for next
+ *  time; none uses the one kept. Answered with [`Response::NotionImported`] at the end,
+ *  with [`Event::NotionProgress`] on the way.
+ */
+{ type: "importNotionApi"; token: string | null } | 
+/**  Whether a Notion token is kept. Answered with [`Response::NotionToken`]. */
+{ type: "notionToken" } | 
+/**  Forgets the kept Notion token. */
+{ type: "forgetNotionToken" };
 
 /**  How a condition compares a property. */
 export type Comparison = 
@@ -436,6 +536,21 @@ export type ConversationSummary = {
 	title: string,
 	/**  Unix milliseconds. */
 	updatedAt: number,
+};
+
+/**  What a card shows at its top. */
+export type Cover = { type: "none" } | 
+/**  The first image on the row's page. */
+{ type: "pageContent" } | 
+/**  The first image in a files property. */
+{ type: "property"; property: string };
+
+export type DateUnit = "day" | "week" | "month" | "year";
+
+/**  A date property's value: one moment, or a range. */
+export type DateValue = {
+	start: string,
+	end: string | null,
 };
 
 /**  One change to a page, as the editor makes it. */
@@ -508,11 +623,78 @@ export type Event =
 /**  The settings changed, here or on another device. */
 { type: "settingsChanged"; settings: Settings } | 
 /**  More of an answer to [`Command::Ask`]. */
-{ type: "ask"; request: string; update: AskUpdate };
+{ type: "ask"; request: string; update: AskUpdate } | 
+/**  How an import from Notion's API is going. */
+{ type: "notionProgress"; done: number; total: number; what: string };
 
 export type ExpiryChange = 
 /**  Unix milliseconds, in the future. */
 { type: "set"; at: number } | { type: "clear" };
+
+/**  A file in a files property: one stored with the workspace, or a link. */
+export type FileRef = {
+	name: string,
+	/**  The attachment's address in the workspace's store, for a stored file. */
+	blob: string | null,
+	/**  Where it is, for a linked file. */
+	url: string | null,
+};
+
+/**  Which rows a view shows: conditions, joined by `and` or `or`, nested as Notion nests them. */
+export type Filter = { type: "and"; filters: Filter[] } | { type: "or"; filters: Filter[] } | {
+	type: "condition",
+} & FilterCondition;
+
+export type FilterCondition = {
+	property: string,
+	op: FilterOp,
+	/**  What it compares with; none for the operators that take nothing (`isEmpty`, `pastWeek`). */
+	value: FilterValue | null,
+};
+
+/**  How a condition tests a value. Each works on the property types Notion offers it for. */
+export type FilterOp = "equals" | "notEquals" | "contains" | "notContains" | "startsWith" | "endsWith" | "isEmpty" | "isNotEmpty" | "greater" | "less" | "greaterOrEqual" | "lessOrEqual" | "before" | "after" | "onOrBefore" | "onOrAfter" | "pastWeek" | "pastMonth" | "pastYear" | "nextWeek" | "nextMonth" | "nextYear" | "thisWeek";
+
+/**  A value a filter compares with. */
+export type FilterValue = { type: "text"; value: string } | { type: "number"; value: number } | { type: "checkbox"; value: boolean } | { type: "date"; value: string } | 
+/**  `today`, `tomorrow`, `yesterday`: relative to the day the view is shown. */
+{ type: "relative"; value: RelativeDay } | 
+/**  An option, a person or a row, by ID. */
+{ type: "id"; value: string };
+
+/**  How a formula checks out. */
+export type FormulaCheck = {
+	/**  Its type, when Notion would accept it. */
+	result: FormulaType | null,
+	error: FormulaError | null,
+};
+
+/**  A formula that can't be read, or that Notion would refuse. */
+export type FormulaError = {
+	/**  Where in the formula, in bytes, when known. */
+	at: number | null,
+	message: string,
+};
+
+/**
+ *  A formula value's type. `Any` is a type the checker can't pin down (a rollup, an item of a
+ *  mixed list), and passes everywhere.
+ */
+export type FormulaType = { type: "any" } | { type: "number" } | { type: "text" } | { type: "bool" } | { type: "date" } | { type: "person" } | { type: "page" } | { type: "list"; item: FormulaType };
+
+/**  A formula's value, and the value a rollup shows. */
+export type FormulaValue = { type: "empty" } | { type: "number"; value: number } | { type: "text"; value: string } | { type: "bool"; value: boolean } | { type: "date"; value: DateValue } | { type: "person"; value: Person } | { type: "page"; value: PageRef } | { type: "list"; value: FormulaValue[] };
+
+/**  How a view groups its rows. */
+export type Grouping = {
+	property: string,
+	/**  Groups not shown (by key; `""` is the group without a value). */
+	hidden: string[],
+	/**  Whether empty groups are left out. */
+	hideEmpty: boolean,
+	/**  For a date property: group by day, week, month or year. */
+	dateUnit: DateUnit | null,
+};
 
 /**  Heading levels 1 to 3, as in Notion. Serialized as `"h1"`, `"h2"`, `"h3"`. */
 export type HeadingLevel = "h1" | "h2" | "h3";
@@ -528,6 +710,9 @@ export type ImportReport = {
 	/**  Links and embeds that pointed at nothing in the folder, and files that couldn't be read. */
 	unresolved: string[],
 };
+
+/**  How a view lays its rows out. */
+export type Layout = "table" | "board" | "calendar" | "list" | "gallery";
 
 /**  The local MCP endpoint. */
 export type LocalAgents = {
@@ -554,6 +739,21 @@ export type Marks = {
 	link: string | null,
 };
 
+/**  What an import from Notion made, and what it couldn't carry over. */
+export type NotionReport = {
+	/**  The page everything was imported under. */
+	page: PageId | null,
+	pages: number,
+	databases: number,
+	rows: number,
+	attachments: number,
+	/**  What couldn't be carried over as it was, one line each. */
+	unmapped: string[],
+};
+
+/**  How a number property shows its numbers (Notion's formats). */
+export type NumberFormat = "number" | "number_with_commas" | "percent" | "dollar" | "canadian_dollar" | "australian_dollar" | "euro" | "pound" | "yen" | "ruble" | "rupee" | "won" | "yuan" | "real" | "lira" | "franc" | "hong_kong_dollar" | "new_zealand_dollar" | "krona" | "norwegian_krone" | "mexican_peso" | "rand" | "new_taiwan_dollar" | "danish_krone" | "zloty" | "baht" | "forint" | "koruna" | "shekel" | "chilean_peso" | "philippine_peso" | "dirham" | "colombian_peso" | "riyal" | "ringgit" | "leu" | "argentine_peso" | "uruguayan_peso" | "singapore_dollar";
+
 /**
  *  A page.
  * 
@@ -577,7 +777,9 @@ export type PageInfo = {
 /**  What a page is for. */
 export type PageKind = "page" | 
 /**  One day of the journal. */
-"journal";
+"journal" | 
+/**  A database: its subpages are its rows. */
+"database";
 
 /**
  *  The blocks that changed, and only those. Apply `removed`, then `upserted` in order: each
@@ -600,6 +802,12 @@ export type PageQuery = {
 	limit: number | null,
 };
 
+/**  A page a formula reaches, through a relation. */
+export type PageRef = {
+	id: PageId,
+	title: string,
+};
+
 /**  An open page: everything the editor needs to show it. */
 export type PageView = {
 	id: PageId,
@@ -609,6 +817,17 @@ export type PageView = {
 };
 
 export type PasswordChange = { type: "set"; password: string } | { type: "clear" };
+
+/**
+ *  A person in a people property. Drusite's people are accounts on its server, named by email;
+ *  one imported from Notion keeps the name and email Notion had.
+ */
+export type Person = {
+	/**  The email, or Notion's user ID when it gave none. */
+	id: string,
+	name: string,
+	email: string | null,
+};
 
 /**  A block and the block shown before it. */
 export type PlacedBlock = {
@@ -622,8 +841,47 @@ export type Property = {
 	value: PropertyValue,
 };
 
+/**  A property in a database's schema. */
+export type PropertyDef = {
+	id: string,
+	name: string,
+	kind: PropertyKind,
+	/**  The choices of a select, multi-select or status property, in order. */
+	options: SelectOption[],
+	/**
+	 *  Where it comes in the schema; views have their own order.
+	 *  (A plain number for TypeScript: never NaN.)
+	 */
+	position: number,
+	/**  A description, shown as the property's tooltip. */
+	description: string | null,
+};
+
+/**  What a property holds. */
+export type PropertyKind = 
+/**  The row page's title. Every database has exactly one, with ID [`TITLE`]. */
+{ type: "title" } | { type: "text" } | { type: "number"; format: NumberFormat } | { type: "select" } | { type: "multiSelect" } | 
+/**  A select whose options each belong to one of three groups. */
+{ type: "status" } | { type: "date" } | { type: "checkbox" } | { type: "url" } | { type: "email" } | { type: "phone" } | { type: "files" } | { type: "people" } | { type: "createdTime" } | { type: "createdBy" } | { type: "editedTime" } | { type: "editedBy" } | 
+/**
+ *  Links to rows of `database`. Two-way when `twin` names the property on the other side;
+ *  of the two, the one with `mirror` set holds no values of its own and shows the other's
+ *  from the other end, so the pair can never disagree.
+ */
+{ type: "relation"; database: PageId; twin: string | null; mirror: boolean; 
+/**  At most one row (Notion's "limit 1"). */
+single: boolean } | 
+/**  Sums up `target` across the rows `relation` links to. */
+{ type: "rollup"; relation: string; target: string; function: RollupFunction } | 
+/**  A formula in Notion's formula language. */
+{ type: "formula"; expression: string } | 
+/**  A number Drusite gives each new row: 1, 2, 3…, shown with `prefix` (`TASK-12`). */
+{ type: "uniqueId"; prefix: string | null };
+
 /**  A property's value. */
 export type PropertyValue = { type: "text"; value: string } | { type: "number"; value: number | null } | { type: "checkbox"; value: boolean } | { type: "date"; value: string };
+
+export type RelativeDay = "today" | "tomorrow" | "yesterday" | "oneWeekAgo" | "oneWeekFromNow" | "oneMonthAgo" | "oneMonthFromNow";
 
 /**  The core's answer to a [`Command`]. */
 export type Response = { type: "pages"; pages: PageInfo[] } | { type: "pageCreated"; page: PageInfo } | { type: "opened"; view: PageView } | { type: "edited"; outcome: EditOutcome } | { type: "account"; status: AccountStatus } | 
@@ -636,7 +894,43 @@ activity: AgentCall[];
 /**  Why the server's activity couldn't be listed, if it couldn't. */
 serverProblem: string | null } | { type: "agentToken"; token: string; url: string } | { type: "ai"; 
 /**  Whether this build can reach AI providers. */
-available: boolean; kinds: AiKindInfo[]; providers: AiProvider[]; features: AiFeatureChoice[] } | { type: "aiProviderSaved"; provider: AiProvider } | { type: "aiModels"; models: AiModel[] } | { type: "askStatus"; status: AskStatus } | { type: "conversations"; conversations: ConversationSummary[] } | { type: "conversation"; conversation: Conversation } | { type: "aiCheck"; steps: AiCheckStep[] } | { type: "share"; share: ShareInfo } | { type: "done" };
+available: boolean; kinds: AiKindInfo[]; providers: AiProvider[]; features: AiFeatureChoice[] } | { type: "aiProviderSaved"; provider: AiProvider } | { type: "aiModels"; models: AiModel[] } | { type: "askStatus"; status: AskStatus } | { type: "conversations"; conversations: ConversationSummary[] } | { type: "conversation"; conversation: Conversation } | { type: "aiCheck"; steps: AiCheckStep[] } | { type: "share"; share: ShareInfo } | { type: "databaseCreated"; page: PageInfo; schema: Schema } | { type: "database"; schema: Schema } | { type: "view"; result: ViewResult } | { type: "rowCells"; schema: Schema | null; row: RowView | null } | { type: "formulaCheck"; check: FormulaCheck } | { type: "notionImported"; report: NotionReport } | { type: "notionToken"; saved: boolean } | { type: "done" };
+
+/**  How a rollup sums up the values it reaches. */
+export type RollupFunction = "show_original" | "show_unique" | "count_all" | "count_values" | "count_unique_values" | "count_empty" | "count_not_empty" | "percent_empty" | "percent_not_empty" | "sum" | "average" | "median" | "min" | "max" | "range" | "earliest_date" | "latest_date" | "date_range" | "checked" | "unchecked" | "percent_checked" | "percent_unchecked";
+
+/**  A group of rows: a board's column, a section of a grouped table. */
+export type RowGroup = {
+	/**  What its rows have: an option's ID, a person's ID, `"true"`; `""` for none. */
+	key: string,
+	label: string,
+	color: Color,
+	/**  The value a row dropped into this group gets; none for the empty group. */
+	value: Value | null,
+	rows: RowView[],
+	/**  Hidden by the view (still listed, so the UI can offer to show it). */
+	hidden: boolean,
+};
+
+/**  A row, ready to show. */
+export type RowView = {
+	id: PageId,
+	title: string,
+	/**  One per property, in schema order. */
+	cells: Cell[],
+};
+
+/**  A whole schema, as the Core API hands it out. */
+export type Schema = {
+	database: PageId,
+	title: string,
+	/**  In schema order, the title first. */
+	properties: PropertyDef[],
+	/**  In order. */
+	views: View[],
+	/**  Whether it sits inside another page (an inline database) rather than being one. */
+	inline: boolean,
+};
 
 /**  A page that matched a search, at the block that matched best (none when only the title did). */
 export type SearchHit = {
@@ -644,6 +938,20 @@ export type SearchHit = {
 	title: string,
 	block: BlockId | null,
 	snippet: SnippetPart[],
+};
+
+/**  A choice in a select, multi-select or status property. */
+export type SelectOption = {
+	id: string,
+	name: string,
+	color: Color,
+	/**  A status option's group; none for select options. */
+	group: StatusGroup | null,
+	/**
+	 *  Where it comes among the property's options.
+	 *  (A plain number for TypeScript: never NaN.)
+	 */
+	position: number,
 };
 
 /**  One setting's new value. */
@@ -715,6 +1023,9 @@ export type Span = {
 	marks: Marks,
 };
 
+/**  The three groups a status option belongs to. */
+export type StatusGroup = "toDo" | "inProgress" | "complete";
+
 export type SyncPhase = 
 /**  Not signed in: the notes live on this device only. */
 "signedOut" | 
@@ -728,6 +1039,13 @@ export type SyncPhase =
 "offline" | 
 /**  Stopped by something a retry won't fix (see the message). */
 "failed";
+
+/**  What a new database starts with. */
+export type Template = 
+/**  A title and a table. */
+"empty" | 
+/**  Tasks: status, due date, priority and assignee, with a board to work from. */
+"tasks";
 
 /**  A page in the trash. */
 export type TrashItem = {
@@ -744,4 +1062,61 @@ export type TrashItem = {
 	deletedAt: number,
 	/**  How many pages went with it. */
 	subpages: number,
+};
+
+/**  A stored value in a row. */
+export type Value = { type: "text"; value: string } | { type: "number"; value: number } | { type: "select"; value: string } | { type: "multiSelect"; value: string[] } | { type: "status"; value: string } | { type: "date"; value: DateValue } | { type: "checkbox"; value: boolean } | { type: "url"; value: string } | { type: "email"; value: string } | { type: "phone"; value: string } | { type: "files"; value: FileRef[] } | { type: "people"; value: Person[] } | { type: "relation"; value: PageId[] } | 
+/**  A unique ID's number. */
+{ type: "uniqueId"; value: number };
+
+/**  A view of a database: how it lays the rows out, which it shows, in what order, grouped how. */
+export type View = {
+	id: string,
+	name: string,
+	layout: Layout,
+	/**
+	 *  Where it comes among the database's views.
+	 *  (A plain number for TypeScript: never NaN.)
+	 */
+	position: number,
+	filter: Filter | null,
+	/**  The first sort decides, the next breaks ties, and so on. None: the rows' own order. */
+	sorts: ViewSort[],
+	/**
+	 *  Groups (a board's columns): by a select, status, multi-select, checkbox, person,
+	 *  relation, text or date property.
+	 */
+	group: Grouping | null,
+	/**  The properties it shows, in order; any not listed are hidden. */
+	properties: ViewProperty[],
+	/**  The date property a calendar places rows by. */
+	dateProperty: string | null,
+	/**  What a board or gallery card shows at its top. */
+	cover: Cover,
+	/**  Whether a table wraps long cells. */
+	wrap: boolean,
+};
+
+/**  A property a view shows. */
+export type ViewProperty = {
+	id: string,
+	/**  A table column's width in pixels, when it was resized. */
+	width: number | null,
+};
+
+/**  What a view shows. */
+export type ViewResult = {
+	schema: Schema,
+	view: View,
+	/**  One group, keyed `""`, when the view isn't grouped. */
+	groups: RowGroup[],
+	/**  Rows the filter let through. */
+	shown: number,
+	/**  Rows in the database. */
+	total: number,
+};
+
+export type ViewSort = {
+	property: string,
+	descending: boolean,
 };

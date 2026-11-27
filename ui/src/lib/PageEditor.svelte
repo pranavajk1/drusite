@@ -11,6 +11,8 @@
   import { focusEnd } from "../editor/commands";
   import { type Editor, createEditor } from "../editor/editor";
   import PhoneToolbar from "./PhoneToolbar.svelte";
+  import Database from "./database/Database.svelte";
+  import RowProperties from "./database/RowProperties.svelte";
 
   let {
     client,
@@ -124,7 +126,16 @@
     view.focus();
   }
 
+  // A database's page shows its views, not a document (as a full-page database in Notion).
+  // svelte-ignore state_referenced_locally
+  const isDatabase = info?.kind === "database";
+  const isRow = $derived(!!info?.parent && pages.find((p) => p.id === info?.parent)?.kind === "database");
+
   onMount(() => {
+    if (isDatabase) {
+      onopened();
+      return;
+    }
     let closed = false;
     const stop = client.subscribe((event) => {
       if (!editor) return;
@@ -185,7 +196,7 @@
   });
 </script>
 
-<article class="page" class:journal-page={info?.kind === "journal"}>
+<article class="page" class:journal-page={info?.kind === "journal"} class:database-page={isDatabase}>
   <input
     bind:this={titleInput}
     class="page-title"
@@ -195,8 +206,13 @@
     oninput={rename}
     onkeydown={titleKey}
   />
-  {#if info}
+  {#if isRow}
+    <RowProperties {client} page={id} {pages} onopen={onselect} {onerror} />
+  {:else if info && !isDatabase}
     <Properties {client} page={info} {onerror} />
+  {/if}
+  {#if isDatabase}
+    <Database {client} database={id} {pages} onopen={onselect} {onerror} />
   {/if}
   {#if settings.journalParent === id}
     <JournalViews {pages} weekStart={settings.weekStart} {onday} onselect={(p) => onselect(p.id)} />
@@ -206,6 +222,7 @@
   {/if}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
+    hidden={isDatabase}
     class="page-body"
     bind:this={mount}
     onkeydown={bodyKey}

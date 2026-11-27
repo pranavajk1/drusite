@@ -22,6 +22,11 @@ export const tauriTransport: Transport = {
     return typeof folder === "string" ? folder : null;
   },
 
+  async pickFile(title: string, extensions: string[]): Promise<string | null> {
+    const file = await open({ directory: false, title, filters: [{ name: title, extensions }] });
+    return typeof file === "string" ? file : null;
+  },
+
   subscribe(handler: (event: Event) => void): () => void {
     let stop: (() => void) | undefined;
     let stopped = false;

@@ -14,6 +14,7 @@ use crate::parse::{Binary, Expr, Unary};
 /// mixed list), and passes everywhere.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, SpectaType)]
 #[serde(tag = "type", content = "item", rename_all = "camelCase")]
+#[serde(rename = "FormulaType")]
 pub enum Type {
     Any,
     Number,
