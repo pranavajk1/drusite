@@ -1250,3 +1250,7 @@ button {
 .bridge-error {
   color: var(--danger);
 }
+
+.editor a[href^="drusite:page/"] {
+  text-decoration-style: dotted;
+}

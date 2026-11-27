@@ -189,6 +189,9 @@ impl Core {
                     status: self.bridge_status()?,
                 })
             }
+            Command::ImportFolder { folder } => Ok(Response::Imported {
+                report: self.import_folder(Path::new(&folder))?,
+            }),
             Command::EmptyTrash => {
                 let all: Vec<PageId> = self.workspace.trash()?.iter().map(|t| t.id).collect();
                 self.delete_forever(&all)?;

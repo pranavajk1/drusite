@@ -237,5 +237,5 @@
   </div>
 {/if}
 {#if showSettings}
-  <SettingsSheet {client} {settings} {pages} onclose={() => (showSettings = false)} onerror={show} />
+  <SettingsSheet {client} {settings} {pages} onclose={() => (showSettings = false)} onerror={show} onopen={select} />
 {/if}

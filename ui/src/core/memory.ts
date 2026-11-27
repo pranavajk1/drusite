@@ -355,6 +355,7 @@ export class MemoryCore {
       }
       case "bridgeStatus":
       case "setBridgeFolder":
+      case "importFolder":
         fail("unsupported", "the Markdown folder is in the desktop app");
       case "emptyTrash":
         this.deleteForever(this.trash().map((t) => t.id));

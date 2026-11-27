@@ -233,10 +233,24 @@ async fn core(state: tauri::State<'_, AppState>, command: Command) -> Result<Res
             Ok(Response::Done)
         }
         #[cfg(mobile)]
-        Command::BridgeStatus | Command::SetBridgeFolder { .. } => Err(ApiError::new(
-            ErrorCode::Unsupported,
-            "the Markdown folder is on desktops only",
-        )),
+        Command::BridgeStatus | Command::SetBridgeFolder { .. } | Command::ImportFolder { .. } => {
+            Err(ApiError::new(
+                ErrorCode::Unsupported,
+                "Markdown folders are on desktops only",
+            ))
+        }
+        #[cfg(desktop)]
+        command @ Command::ImportFolder { .. } => {
+            let core = Arc::clone(&ready.core);
+            // Reads every note and file in the folder: off the async threads.
+            tauri::async_runtime::spawn_blocking(move || {
+                core.lock()
+                    .map_err(|_| internal("the core crashed earlier; restart Drusite"))?
+                    .handle(command)
+            })
+            .await
+            .map_err(internal)?
+        }
         #[cfg(desktop)]
         Command::SetBridgeFolder { folder } => {
             ready.stop_bridge();

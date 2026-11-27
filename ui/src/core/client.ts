@@ -12,6 +12,7 @@ import type {
   Command,
   Edit,
   EditOutcome,
+  ImportReport,
   Event,
   PageId,
   PageInfo,
@@ -134,6 +135,11 @@ export class CoreClient {
   /** Turns the Markdown bridge on with `folder`, or off. */
   async setBridgeFolder(folder: string | null): Promise<BridgeStatus> {
     return (await this.call({ type: "setBridgeFolder", folder }, "bridge")).status;
+  }
+
+  /** Imports a folder of Markdown notes as new pages. */
+  async importFolder(folder: string): Promise<ImportReport> {
+    return (await this.call({ type: "importFolder", folder }, "imported")).report;
   }
 
   /** Asks for a folder; null if the person cancels or the platform can't. */

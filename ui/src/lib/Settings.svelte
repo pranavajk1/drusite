@@ -12,12 +12,15 @@
     pages,
     onclose,
     onerror,
+    onopen,
   }: {
     client: CoreClient;
     settings: Settings;
     pages: PageInfo[];
     onclose: () => void;
     onerror: (e: unknown) => void;
+    /** Opens a page (the one an import made). */
+    onopen: (id: PageId) => void;
   } = $props();
 
   const candidates = $derived(pages.filter((p) => p.kind === "page"));
@@ -57,6 +60,25 @@
   async function chooseFolder() {
     const folder = await client.pickFolder();
     if (folder) await setFolder(folder);
+  }
+
+  let imported = $state<string | null>(null);
+  async function importNotes() {
+    const folder = await client.pickFolder();
+    if (!folder) return;
+    busy = true;
+    imported = "Importing…";
+    try {
+      const r = await client.importFolder(folder);
+      const missing = r.unresolved.length ? ` ${r.unresolved.length} links or embeds pointed at nothing.` : "";
+      imported = `Imported ${r.pages} ${r.pages === 1 ? "page" : "pages"} and ${r.attachments} ${r.attachments === 1 ? "file" : "files"}.${missing}`;
+      if (r.page) onopen(r.page);
+    } catch (e) {
+      imported = null;
+      onerror(e);
+    } finally {
+      busy = false;
+    }
   }
 
   function summary(r: BridgeRound): string {
@@ -113,6 +135,15 @@
       {:else}
         <button disabled={busy} onclick={chooseFolder}>Choose a folder…</button>
       {/if}
+
+      <h3 class="settings-section">Import</h3>
+      <p class="hint">
+        Copies a folder of Markdown notes, such as an Obsidian vault, into new pages: folders become pages, wikilinks
+        become links, embedded files become attachments, and daily notes become journal entries. The folder isn't
+        changed.
+      </p>
+      <button disabled={busy} onclick={importNotes}>Import a folder…</button>
+      {#if imported}<p class="hint">{imported}</p>{/if}
     {/if}
   </div>
 </div>

@@ -83,6 +83,12 @@ pub enum Command {
     SetBridgeFolder {
         folder: Option<String>,
     },
+    /// Imports a folder of Markdown notes (an Obsidian vault, say) as new pages under a new
+    /// top-level page; the folder isn't changed. Answered with [`Response::Imported`]; desktops
+    /// only.
+    ImportFolder {
+        folder: String,
+    },
     /// Loads a page for editing. Answered with [`Response::Opened`]. Each open is matched by a
     /// [`Command::ClosePage`]; the page stays open until every view that opened it has closed it.
     OpenPage {
@@ -334,6 +340,9 @@ pub enum Response {
     },
     Bridge {
         status: BridgeStatus,
+    },
+    Imported {
+        report: crate::import::ImportReport,
     },
     Done,
 }

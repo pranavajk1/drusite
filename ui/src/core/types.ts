@@ -136,6 +136,12 @@ export type Command =
  */
 { type: "setBridgeFolder"; folder: string | null } | 
 /**
+ *  Imports a folder of Markdown notes (an Obsidian vault, say) as new pages under a new
+ *  top-level page; the folder isn't changed. Answered with [`Response::Imported`]; desktops
+ *  only.
+ */
+{ type: "importFolder"; folder: string } | 
+/**
  *  Loads a page for editing. Answered with [`Response::Opened`]. Each open is matched by a
  *  [`Command::ClosePage`]; the page stays open until every view that opened it has closed it.
  */
@@ -262,6 +268,18 @@ export type Event =
 /**  Heading levels 1 to 3, as in Notion. Serialized as `"h1"`, `"h2"`, `"h3"`. */
 export type HeadingLevel = "h1" | "h2" | "h3";
 
+/**  What an import made. */
+export type ImportReport = {
+	/**  The page everything was imported under. */
+	page: PageId | null,
+	/**  Pages made, including those for folders. */
+	pages: number,
+	/**  Files attached. */
+	attachments: number,
+	/**  Links and embeds that pointed at nothing in the folder, and files that couldn't be read. */
+	unresolved: string[],
+};
+
 /**  One mark, for adding or removing formatting on a range. */
 export type Mark = { type: "bold" } | { type: "italic" } | { type: "underline" } | { type: "strikethrough" } | { type: "code" } | { type: "link"; href: string };
 
@@ -347,7 +365,7 @@ export type Response = { type: "pages"; pages: PageInfo[] } | { type: "pageCreat
 /**  The journal entry for a day; `created` when it was made just now. */
 { type: "journalDay"; page: PageInfo; created: boolean } | { type: "settings"; settings: Settings } | { type: "searchResults"; hits: SearchHit[] } | { type: "trash"; pages: TrashItem[] } | { type: "attachment"; kind: BlockKind } | 
 /**  A file, in base64. */
-{ type: "attachmentData"; data: string } | { type: "bridge"; status: BridgeStatus } | { type: "done" };
+{ type: "attachmentData"; data: string } | { type: "bridge"; status: BridgeStatus } | { type: "imported"; report: ImportReport } | { type: "done" };
 
 /**  A page that matched a search, at the block that matched best (none when only the title did). */
 export type SearchHit = {
