@@ -69,3 +69,21 @@ backups. `DRUSITE__SEARCH__ENABLED=false` keeps them out (and turns server searc
 
 Every vector is stored with its model's ID. Changing the model embeds everything again in the
 background; searches use only vectors from the current model.
+
+## Attachments
+
+Files on pages (images, PDFs, anything) are stored in the object store you configured under
+`[storage]`, each one sealed with its workspace's key, beside the documents. Devices upload a file
+when they sync and download one when it's opened. The largest file a page can hold is 100 MiB
+unless set:
+
+```sh
+DRUSITE__ATTACHMENTS__MAX_BYTES=262144000
+```
+
+A page names each file by the BLAKE3 hash of its content. The server never stores that hash: it
+finds a file by the hash keyed with the workspace's key, so neither the database nor the bucket
+alone can confirm that a workspace holds a file someone already has.
+
+A reverse proxy in front of Drusite must accept request bodies that large too (for example
+Traefik's `buffering` middleware, or `client_max_body_size` in nginx).

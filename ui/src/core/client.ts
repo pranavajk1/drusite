@@ -7,9 +7,12 @@
 import type {
   AccountStatus,
   ApiError,
+  BlockKind,
+  BridgeStatus,
   Command,
   Edit,
   EditOutcome,
+  ImportReport,
   Event,
   PageId,
   PageInfo,
@@ -20,6 +23,7 @@ import type {
   SearchHit,
   Setting,
   Settings,
+  TrashItem,
 } from "./types";
 
 export type * from "./types";
@@ -29,6 +33,8 @@ export interface Transport {
   call(command: Command): Promise<Response>;
   /** Calls `handler` for every core event until the returned function is called. */
   subscribe(handler: (event: Event) => void): () => void;
+  /** Asks the person for a folder, where the platform can (desktops). */
+  pickFolder?: () => Promise<string | null>;
 }
 
 /** A failed command, with the core's error code. */
@@ -87,6 +93,58 @@ export class CoreClient {
 
   async deletePage(page: PageId): Promise<void> {
     await this.call({ type: "deletePage", page }, "done");
+  }
+
+  /** What's in the trash, most recent first. */
+  async trash(): Promise<TrashItem[]> {
+    return (await this.call({ type: "trash" }, "trash")).pages;
+  }
+
+  async restorePage(page: PageId): Promise<void> {
+    await this.call({ type: "restorePage", page }, "done");
+  }
+
+  async deleteForever(page: PageId): Promise<void> {
+    await this.call({ type: "deleteForever", page }, "done");
+  }
+
+  async emptyTrash(): Promise<void> {
+    await this.call({ type: "emptyTrash" }, "done");
+  }
+
+  /** Keeps a file (`data` in base64) on the device and returns the block kind for it. */
+  async addAttachment(name: string, mime: string, data: string): Promise<BlockKind> {
+    return (await this.call({ type: "addAttachment", name, mime, data }, "attachment")).kind;
+  }
+
+  /** A file, in base64. Fails with code `notHere` while it's still coming from the server. */
+  async readAttachment(blob: string): Promise<string> {
+    return (await this.call({ type: "readAttachment", blob }, "attachmentData")).data;
+  }
+
+  /** The Markdown bridge, or null where there is none (phones, the browser). */
+  async bridgeStatus(): Promise<BridgeStatus | null> {
+    try {
+      return (await this.call({ type: "bridgeStatus" }, "bridge")).status;
+    } catch (e) {
+      if (e instanceof CoreError && e.code === "unsupported") return null;
+      throw e;
+    }
+  }
+
+  /** Turns the Markdown bridge on with `folder`, or off. */
+  async setBridgeFolder(folder: string | null): Promise<BridgeStatus> {
+    return (await this.call({ type: "setBridgeFolder", folder }, "bridge")).status;
+  }
+
+  /** Imports a folder of Markdown notes as new pages. */
+  async importFolder(folder: string): Promise<ImportReport> {
+    return (await this.call({ type: "importFolder", folder }, "imported")).report;
+  }
+
+  /** Asks for a folder; null if the person cancels or the platform can't. */
+  async pickFolder(): Promise<string | null> {
+    return (await this.transport.pickFolder?.()) ?? null;
   }
 
   async openPage(page: PageId): Promise<PageView> {

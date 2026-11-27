@@ -110,3 +110,7 @@ text_config = "simple"
 # Traces, metrics and logs go over OTLP/HTTP when OTEL_EXPORTER_OTLP_ENDPOINT is set; the other
 # standard OTEL_* variables apply. otlp = false turns it off regardless.
 # service_name = "drusite-server"
+
+[attachments]
+# Files on pages, sealed in the object store ([storage]). The largest file a page can hold:
+# max_bytes = 104857600

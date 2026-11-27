@@ -49,7 +49,44 @@ export type BlockKind = { type: "paragraph" } | { type: "heading"; level: Headin
  *  Lists the pages a query matches. `query` is a [`PageQuery`] as JSON; the block has no
  *  text of its own.
  */
-{ type: "query"; query: string };
+{ type: "query"; query: string } | 
+/**
+ *  A file stored with the workspace: shown inline when it's an image, as a card otherwise.
+ *  The block's text is its caption.
+ */
+{ type: "attachment"; 
+/**  The file's address in the workspace's attachment store (64 hex digits). */
+blob: string; 
+/**  The file's name, with its extension. */
+name: string; 
+/**  Its media type, such as `image/png`. */
+mime: string; 
+/**  Its size in bytes. */
+size: number };
+
+/**  What one round of the Markdown bridge did. */
+export type BridgeRound = {
+	/**  Files whose edits came back into their pages. */
+	merged: number,
+	/**  Pages made for new files. */
+	created: number,
+	/**  Pages moved to the trash because their files were deleted. */
+	trashed: number,
+	/**  Files written. */
+	written: number,
+	/**  Files it couldn't read or write. */
+	problems: string[],
+	/**  Why the round failed, if it did. */
+	error: string | null,
+};
+
+/**  The Markdown bridge on this device. */
+export type BridgeStatus = {
+	/**  The folder pages are written to; none while the bridge is off. */
+	folder: string | null,
+	/**  How the last round went, if one has run since the app started. */
+	last: BridgeRound | null,
+};
 
 /**  Something the UI asks the core to do. */
 export type Command = 
@@ -58,7 +95,52 @@ export type Command =
 /**  Answered with [`Response::PageCreated`]. */
 { type: "createPage"; parent: PageId | null; title: string } | { type: "renamePage"; page: PageId; title: string } | 
 /**  Moves a page to position `index` among `parent`'s children (or the top-level pages). */
-{ type: "movePage"; page: PageId; parent: PageId | null; index: number } | { type: "deletePage"; page: PageId } | 
+{ type: "movePage"; page: PageId; parent: PageId | null; index: number } | 
+/**  Moves a page, with its subpages, to the trash. Answered with [`Response::Done`]. */
+{ type: "deletePage"; page: PageId } | 
+/**  What's in the trash. Answered with [`Response::Trash`]. */
+{ type: "trash" } | 
+/**
+ *  Puts a page back from the trash where it was (at the top level if the page it was under
+ *  is still in the trash).
+ */
+{ type: "restorePage"; page: PageId } | 
+/**
+ *  Deletes a page in the trash, and its subpages, for good. Refused for a page that isn't
+ *  in the trash.
+ */
+{ type: "deleteForever"; page: PageId } | 
+/**  Deletes everything in the trash for good. */
+{ type: "emptyTrash" } | 
+/**
+ *  Keeps a file on this device, to put on a page; it goes to the server when the device
+ *  syncs. `data` is the file, in base64. Answered with [`Response::Attachment`], whose kind
+ *  is the block to insert.
+ */
+{ type: "addAttachment"; name: string; mime: string; data: string } | 
+/**
+ *  A file a page's attachment block names. Answered with [`Response::AttachmentData`], or
+ *  [`ErrorCode::NotHere`] while it's being fetched from the server; then
+ *  [`Event::AttachmentArrived`] says when it's here.
+ */
+{ type: "readAttachment"; blob: string } | 
+/**
+ *  The Markdown bridge: its folder and how its last round went. Answered with
+ *  [`Response::Bridge`]; [`ErrorCode::Unsupported`] where there is no bridge (phones, the
+ *  browser).
+ */
+{ type: "bridgeStatus" } | 
+/**
+ *  Turns the Markdown bridge on with `folder` (a full path) or off. Answered with
+ *  [`Response::Bridge`] once the first round has run.
+ */
+{ type: "setBridgeFolder"; folder: string | null } | 
+/**
+ *  Imports a folder of Markdown notes (an Obsidian vault, say) as new pages under a new
+ *  top-level page; the folder isn't changed. Answered with [`Response::Imported`]; desktops
+ *  only.
+ */
+{ type: "importFolder"; folder: string } | 
 /**
  *  Loads a page for editing. Answered with [`Response::Opened`]. Each open is matched by a
  *  [`Command::ClosePage`]; the page stays open until every view that opened it has closed it.
@@ -151,7 +233,9 @@ export type ErrorCode = "unknownPage" | "unknownBlock" |
 /**  Signing in or out failed. */
 "account" | 
 /**  A value the command can't use (an empty property name, a template that isn't a page). */
-"invalid" | "internal";
+"invalid" | 
+/**  The file isn't on this device yet; it's being fetched. */
+"notHere" | "internal";
 
 /**
  *  Something that happened in the core that the UI didn't ask for, or that other views of the
@@ -160,6 +244,12 @@ export type ErrorCode = "unknownPage" | "unknownBlock" |
 export type Event = 
 /**  The page tree or a title changed. */
 { type: "pagesChanged"; pages: PageInfo[] } | 
+/**  What's in the trash changed. */
+{ type: "trashChanged"; pages: TrashItem[] } | 
+/**  A file this device was waiting for has come from the server. */
+{ type: "attachmentArrived"; blob: string } | 
+/**  The Markdown bridge ran a round that did something, or failed. */
+{ type: "bridgeChanged"; status: BridgeStatus } | 
 /**
  *  An open page changed other than through the edits just answered (another device, or the
  *  part of a batch that was applied before one edit failed).
@@ -177,6 +267,18 @@ export type Event =
 
 /**  Heading levels 1 to 3, as in Notion. Serialized as `"h1"`, `"h2"`, `"h3"`. */
 export type HeadingLevel = "h1" | "h2" | "h3";
+
+/**  What an import made. */
+export type ImportReport = {
+	/**  The page everything was imported under. */
+	page: PageId | null,
+	/**  Pages made, including those for folders. */
+	pages: number,
+	/**  Files attached. */
+	attachments: number,
+	/**  Links and embeds that pointed at nothing in the folder, and files that couldn't be read. */
+	unresolved: string[],
+};
 
 /**  One mark, for adding or removing formatting on a range. */
 export type Mark = { type: "bold" } | { type: "italic" } | { type: "underline" } | { type: "strikethrough" } | { type: "code" } | { type: "link"; href: string };
@@ -261,7 +363,9 @@ export type PropertyValue = { type: "text"; value: string } | { type: "number"; 
 /**  The core's answer to a [`Command`]. */
 export type Response = { type: "pages"; pages: PageInfo[] } | { type: "pageCreated"; page: PageInfo } | { type: "opened"; view: PageView } | { type: "edited"; outcome: EditOutcome } | { type: "account"; status: AccountStatus } | 
 /**  The journal entry for a day; `created` when it was made just now. */
-{ type: "journalDay"; page: PageInfo; created: boolean } | { type: "settings"; settings: Settings } | { type: "searchResults"; hits: SearchHit[] } | { type: "done" };
+{ type: "journalDay"; page: PageInfo; created: boolean } | { type: "settings"; settings: Settings } | { type: "searchResults"; hits: SearchHit[] } | { type: "trash"; pages: TrashItem[] } | { type: "attachment"; kind: BlockKind } | 
+/**  A file, in base64. */
+{ type: "attachmentData"; data: string } | { type: "bridge"; status: BridgeStatus } | { type: "imported"; report: ImportReport } | { type: "done" };
 
 /**  A page that matched a search, at the block that matched best (none when only the title did). */
 export type SearchHit = {
@@ -322,3 +426,20 @@ export type SyncPhase =
 "offline" | 
 /**  Stopped by something a retry won't fix (see the message). */
 "failed";
+
+/**  A page in the trash. */
+export type TrashItem = {
+	id: PageId,
+	title: string,
+	/**  The page it goes back under when restored. */
+	parent: PageId | null,
+	/**
+	 *  When it went in the trash, in Unix milliseconds. (A plain number for TypeScript: these
+	 *  are never NaN, which is what would make specta's `f64` nullable.)
+	 */
+	trashedAt: number,
+	/**  When it will be deleted for good, in Unix milliseconds. */
+	deletedAt: number,
+	/**  How many pages went with it. */
+	subpages: number,
+};

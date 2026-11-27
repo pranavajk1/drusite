@@ -42,8 +42,52 @@ pub enum Command {
         parent: Option<PageId>,
         index: u32,
     },
+    /// Moves a page, with its subpages, to the trash. Answered with [`Response::Done`].
     DeletePage {
         page: PageId,
+    },
+    /// What's in the trash. Answered with [`Response::Trash`].
+    Trash,
+    /// Puts a page back from the trash where it was (at the top level if the page it was under
+    /// is still in the trash).
+    RestorePage {
+        page: PageId,
+    },
+    /// Deletes a page in the trash, and its subpages, for good. Refused for a page that isn't
+    /// in the trash.
+    DeleteForever {
+        page: PageId,
+    },
+    /// Deletes everything in the trash for good.
+    EmptyTrash,
+    /// Keeps a file on this device, to put on a page; it goes to the server when the device
+    /// syncs. `data` is the file, in base64. Answered with [`Response::Attachment`], whose kind
+    /// is the block to insert.
+    AddAttachment {
+        name: String,
+        mime: String,
+        data: String,
+    },
+    /// A file a page's attachment block names. Answered with [`Response::AttachmentData`], or
+    /// [`ErrorCode::NotHere`] while it's being fetched from the server; then
+    /// [`Event::AttachmentArrived`] says when it's here.
+    ReadAttachment {
+        blob: String,
+    },
+    /// The Markdown bridge: its folder and how its last round went. Answered with
+    /// [`Response::Bridge`]; [`ErrorCode::Unsupported`] where there is no bridge (phones, the
+    /// browser).
+    BridgeStatus,
+    /// Turns the Markdown bridge on with `folder` (a full path) or off. Answered with
+    /// [`Response::Bridge`] once the first round has run.
+    SetBridgeFolder {
+        folder: Option<String>,
+    },
+    /// Imports a folder of Markdown notes (an Obsidian vault, say) as new pages under a new
+    /// top-level page; the folder isn't changed. Answered with [`Response::Imported`]; desktops
+    /// only.
+    ImportFolder {
+        folder: String,
     },
     /// Loads a page for editing. Answered with [`Response::Opened`]. Each open is matched by a
     /// [`Command::ClosePage`]; the page stays open until every view that opened it has closed it.
@@ -110,6 +154,53 @@ pub struct SearchHit {
     pub title: String,
     pub block: Option<BlockId>,
     pub snippet: Vec<SnippetPart>,
+}
+
+/// The Markdown bridge on this device.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct BridgeStatus {
+    /// The folder pages are written to; none while the bridge is off.
+    pub folder: Option<String>,
+    /// How the last round went, if one has run since the app started.
+    pub last: Option<BridgeRound>,
+}
+
+/// What one round of the Markdown bridge did.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct BridgeRound {
+    /// Files whose edits came back into their pages.
+    pub merged: u32,
+    /// Pages made for new files.
+    pub created: u32,
+    /// Pages moved to the trash because their files were deleted.
+    pub trashed: u32,
+    /// Files written.
+    pub written: u32,
+    /// Files it couldn't read or write.
+    pub problems: Vec<String>,
+    /// Why the round failed, if it did.
+    pub error: Option<String>,
+}
+
+/// A page in the trash.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TrashItem {
+    pub id: PageId,
+    pub title: String,
+    /// The page it goes back under when restored.
+    pub parent: Option<PageId>,
+    /// When it went in the trash, in Unix milliseconds. (A plain number for TypeScript: these
+    /// are never NaN, which is what would make specta's `f64` nullable.)
+    #[specta(type = u32)]
+    pub trashed_at: f64,
+    /// When it will be deleted for good, in Unix milliseconds.
+    #[specta(type = u32)]
+    pub deleted_at: f64,
+    /// How many pages went with it.
+    pub subpages: u32,
 }
 
 /// The settings that live in the workspace, so they sync with the account and a new device has
@@ -237,6 +328,22 @@ pub enum Response {
     SearchResults {
         hits: Vec<SearchHit>,
     },
+    Trash {
+        pages: Vec<TrashItem>,
+    },
+    Attachment {
+        kind: BlockKind,
+    },
+    /// A file, in base64.
+    AttachmentData {
+        data: String,
+    },
+    Bridge {
+        status: BridgeStatus,
+    },
+    Imported {
+        report: crate::import::ImportReport,
+    },
     Done,
 }
 
@@ -251,6 +358,12 @@ pub enum Response {
 pub enum Event {
     /// The page tree or a title changed.
     PagesChanged { pages: Vec<PageInfo> },
+    /// What's in the trash changed.
+    TrashChanged { pages: Vec<TrashItem> },
+    /// A file this device was waiting for has come from the server.
+    AttachmentArrived { blob: String },
+    /// The Markdown bridge ran a round that did something, or failed.
+    BridgeChanged { status: BridgeStatus },
     /// An open page changed other than through the edits just answered (another device, or the
     /// part of a batch that was applied before one edit failed).
     PageChanged { page: PageId, patch: PagePatch },
@@ -391,6 +504,8 @@ pub enum ErrorCode {
     Account,
     /// A value the command can't use (an empty property name, a template that isn't a page).
     Invalid,
+    /// The file isn't on this device yet; it's being fetched.
+    NotHere,
     Internal,
 }
 

@@ -17,6 +17,8 @@
 //! snapshot; every other copy comes from there.
 
 #[cfg(feature = "net")]
+mod files;
+#[cfg(feature = "net")]
 pub mod net;
 
 use std::collections::{HashMap, HashSet};
@@ -247,9 +249,9 @@ impl Core {
                 pages.insert(uuid);
             }
         }
-        // Pages another device made: in the tree, not here yet.
-        for node in self.workspace.pages()? {
-            pages.insert(*node.id.as_uuid());
+        // Pages another device made: in the tree (or its trash), not here yet.
+        for id in self.workspace.all_pages() {
+            pages.insert(*id.as_uuid());
         }
         wanted.extend(pages.into_iter().map(|p| (p, WireKind::Page)));
 
@@ -636,6 +638,9 @@ impl Core {
                 }
                 local = page.version();
                 self.store.save_page(&page, &mut at)?;
+            } else if !self.workspace.all_pages().contains(&id) {
+                // Deleted for good here while its subscription was still open: not brought back.
+                return Ok(());
             } else {
                 // New to this device: made from the server's copy.
                 let page = Page::load_all(&parts).map_err(|e| {

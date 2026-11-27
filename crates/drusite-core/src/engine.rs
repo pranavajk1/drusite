@@ -35,6 +35,14 @@ pub struct Core {
     /// Called after every local change, so a sync driver knows to push.
     pub(crate) on_change: Option<Box<dyn Fn() + Send>>,
     pub(crate) search: crate::search::Search,
+    /// Attachments the UI asked for that aren't here: the sync driver fetches them.
+    pub(crate) wanted_blobs: HashSet<String>,
+    /// Pages changed since the Markdown bridge last looked.
+    pub(crate) bridge_dirty: HashSet<PageId>,
+    /// Called when a page changes, so the bridge's watcher knows to run.
+    pub(crate) on_bridge_change: Option<Box<dyn Fn() + Send>>,
+    /// How the bridge's last round went.
+    pub(crate) bridge_last: Option<crate::api::BridgeRound>,
 }
 
 pub(crate) struct OpenPage {
@@ -69,7 +77,7 @@ impl Core {
                 (ws, at)
             }
         };
-        Ok(Self {
+        let mut core = Self {
             store,
             workspace,
             workspace_at,
@@ -78,7 +86,14 @@ impl Core {
             sync: None,
             on_change: None,
             search: crate::search::Search::default(),
-        })
+            wanted_blobs: HashSet::new(),
+            bridge_dirty: HashSet::new(),
+            on_bridge_change: None,
+            bridge_last: None,
+        };
+        core.purge_trash(crate::trash::now_ms())
+            .map_err(|e| Error::Corrupt(format!("emptying old trash: {}", e.message)))?;
+        Ok(core)
     }
 
     /// Tells the sync driver, if any, that `doc` changed locally.
@@ -96,6 +111,10 @@ impl Core {
             self.search.workspace_changed();
         } else {
             self.search.page_changed(PageId::from_uuid(doc));
+            self.bridge_dirty.insert(PageId::from_uuid(doc));
+        }
+        if let Some(notify) = &self.on_bridge_change {
+            notify();
         }
     }
 
@@ -131,9 +150,51 @@ impl Core {
                 Ok(Response::Done)
             }
             Command::DeletePage { page } => {
-                self.workspace.delete_page(page)?;
-                self.open.remove(&page);
+                self.workspace.trash_page(page, crate::trash::now_ms())?;
                 self.save_workspace()?;
+                Ok(Response::Done)
+            }
+            Command::Trash => Ok(Response::Trash {
+                pages: self.trash()?,
+            }),
+            Command::RestorePage { page } => {
+                self.workspace.restore_page(page)?;
+                self.save_workspace()?;
+                Ok(Response::Done)
+            }
+            Command::DeleteForever { page } => {
+                if !self.workspace.trash()?.iter().any(|t| t.id == page) {
+                    return Err(ApiError::new(
+                        ErrorCode::Invalid,
+                        "only a page in the trash can be deleted for good",
+                    ));
+                }
+                self.delete_forever(&[page])?;
+                Ok(Response::Done)
+            }
+            Command::AddAttachment { name, mime, data } => Ok(Response::Attachment {
+                kind: self.add_attachment(&name, &mime, &data)?,
+            }),
+            Command::ReadAttachment { blob } => Ok(Response::AttachmentData {
+                data: self.read_attachment(&blob)?,
+            }),
+            Command::BridgeStatus => Ok(Response::Bridge {
+                status: self.bridge_status()?,
+            }),
+            Command::SetBridgeFolder { folder } => {
+                let result = self.set_bridge_folder(folder.as_deref().map(Path::new));
+                self.bridge_record(result.clone());
+                result?;
+                Ok(Response::Bridge {
+                    status: self.bridge_status()?,
+                })
+            }
+            Command::ImportFolder { folder } => Ok(Response::Imported {
+                report: self.import_folder(Path::new(&folder))?,
+            }),
+            Command::EmptyTrash => {
+                let all: Vec<PageId> = self.workspace.trash()?.iter().map(|t| t.id).collect();
+                self.delete_forever(&all)?;
                 Ok(Response::Done)
             }
             Command::OpenPage { page } => {
@@ -220,6 +281,9 @@ impl Core {
         });
         (self.events)(Event::SettingsChanged {
             settings: self.settings()?,
+        });
+        (self.events)(Event::TrashChanged {
+            pages: self.trash()?,
         });
         Ok(())
     }

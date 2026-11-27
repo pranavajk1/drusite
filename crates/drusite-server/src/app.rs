@@ -111,7 +111,8 @@ const REQUEST_ID: HeaderName = HeaderName::from_static("x-request-id");
 
 pub fn router(state: AppState) -> Router {
     let timeout = Duration::from_secs(state.config().server.request_timeout_secs);
-    // Ordinary requests have a deadline; the sync WebSocket lives as long as the device stays.
+    // Ordinary requests have a deadline; the sync WebSocket lives as long as the device stays,
+    // and attachments take as long as their size needs.
     let requests = Router::new()
         .merge(health::routes())
         .merge(auth::routes(&state))
@@ -123,6 +124,9 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .merge(requests)
         .merge(sync::routes())
+        // A big file on a slow network takes longer than an ordinary request may; its size is
+        // bounded instead ([attachments] max_bytes).
+        .merge(crate::attachments::routes(&state))
         .layer(axum::middleware::from_fn(telemetry::record_request))
         .layer(
             ServiceBuilder::new()

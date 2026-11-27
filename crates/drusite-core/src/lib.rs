@@ -6,9 +6,15 @@
 #[cfg(feature = "net")]
 pub mod account;
 pub mod api;
+#[cfg(feature = "sqlite")]
+pub mod attachments;
 pub mod auth;
 #[cfg(feature = "sqlite")]
+pub mod bridge;
+#[cfg(feature = "sqlite")]
 mod engine;
+#[cfg(feature = "sqlite")]
+pub mod import;
 #[cfg(feature = "sqlite")]
 pub mod journal;
 pub mod key;
@@ -18,6 +24,8 @@ pub mod search;
 pub mod store;
 #[cfg(feature = "sqlite")]
 pub mod sync;
+#[cfg(feature = "sqlite")]
+mod trash;
 
 #[cfg(feature = "sqlite")]
 pub use engine::{Core, EventSink};

@@ -143,6 +143,38 @@ impl Page {
         self.inner.id
     }
 
+    /// A copy of the page as it was at `version`, writing as a new peer. Edits made to the copy
+    /// are concurrent with everything this page has had since `version`: exporting them (from
+    /// `version`) and importing them here merges them, as if another device had made them then.
+    /// That is how a Markdown file edited on disk comes back without losing what changed in
+    /// the app meanwhile.
+    pub fn fork_at(&self, version: &VersionVector) -> Result<Self> {
+        let guard = Guard::default();
+        let inner = guard.run(|| {
+            if !self.inner.doc.oplog_vv().includes_vv(version) {
+                return Err(Error::Invalid(
+                    "that version isn't in this page's history".into(),
+                ));
+            }
+            let frontiers = self.inner.doc.vv_to_frontiers(version);
+            let doc = self.inner.doc.fork_at(&frontiers)?;
+            attrs::configure_styles(&doc);
+            // Never the original's peer: its counters there may already be taken. A fresh one
+            // from the top of the range: where the copy and the page inserted at the same spot,
+            // Loro puts the lower peer's insert first, so text typed in the app at the end of a
+            // block stays in it when the copy adds a block after it.
+            doc.set_peer_id(u64::MAX - (LoroDoc::new().peer_id() >> 16))?;
+            let layout = Layout::compute(&doc, Some(self.inner.genesis));
+            Ok(Inner {
+                doc,
+                id: self.inner.id,
+                genesis: self.inner.genesis,
+                layout,
+            })
+        })?;
+        Ok(Self { guard, inner })
+    }
+
     /// Whether Loro panicked inside this page. A poisoned page refuses every call; reload it.
     pub fn is_poisoned(&self) -> bool {
         self.guard.is_poisoned()

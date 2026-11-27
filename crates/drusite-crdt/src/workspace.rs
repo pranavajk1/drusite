@@ -30,6 +30,23 @@ pub struct PageNode {
     pub properties: Vec<Property>,
 }
 
+/// A page in the trash.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrashedPage {
+    pub id: PageId,
+    pub title: String,
+    /// The page it was under, which it goes back to when restored.
+    pub parent: Option<PageId>,
+    /// When it was put in the trash, in Unix milliseconds.
+    pub trashed_at: i64,
+    /// How many pages went with it.
+    pub subpages: usize,
+}
+
+/// The tree entry key that marks a page as in the trash; its value is when, in Unix
+/// milliseconds.
+const TRASHED: &str = "trashed";
+
 /// A setting's value, as the workspace document stores it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SettingValue {
@@ -188,6 +205,11 @@ impl Workspace {
             {
                 return Err(Error::Cycle);
             }
+            if let Some(p) = parent
+                && self.is_trashed(p)?
+            {
+                return Err(Error::Invalid("that page is in the trash".into()));
+            }
             let tree = self.tree();
             let parent = self.parent_of(parent)?;
             let siblings = tree.children_num(parent).unwrap_or(0);
@@ -203,15 +225,115 @@ impl Workspace {
         })
     }
 
-    /// Takes a page, and its subpages, out of the tree. Their documents stay in the store.
-    pub fn delete_page(&mut self, id: PageId) -> Result<()> {
-        self.guard.run(|| {
+    /// Takes a page, and its subpages, out of the tree for good. Returns every page that went,
+    /// so the caller can drop their documents. Pages reach this through the trash
+    /// ([`Self::trash_page`]); this is "delete forever".
+    pub fn delete_page(&mut self, id: PageId) -> Result<Vec<PageId>> {
+        let gone = self.guard.run(|| {
+            let mut gone = vec![id];
+            gone.extend(self.descendants(self.node(id)?));
             self.tree().delete(self.node(id)?)?;
             self.doc.commit();
-            Ok(())
+            Ok(gone)
         })?;
         self.reindex();
-        Ok(())
+        Ok(gone)
+    }
+
+    /// Moves a page, and its subpages with it, to the trash, at `now` (Unix milliseconds). It
+    /// keeps its place in the tree, hidden, so [`Self::restore_page`] puts it back where it
+    /// was, and a concurrent edit or move on another device is kept.
+    pub fn trash_page(&mut self, id: PageId, now: i64) -> Result<()> {
+        self.guard.run(|| {
+            let meta = self.tree().get_meta(self.node(id)?)?;
+            if attrs::get_int(&meta, TRASHED) == 0 {
+                meta.insert(TRASHED, now)?;
+                self.doc.commit();
+            }
+            Ok(())
+        })
+    }
+
+    /// Takes a page out of the trash. If the page it was under is still in the trash, it comes
+    /// back at the top level instead.
+    pub fn restore_page(&mut self, id: PageId) -> Result<()> {
+        self.guard.run(|| {
+            let node = self.node(id)?;
+            let tree = self.tree();
+            tree.get_meta(node)?.delete(TRASHED)?;
+            if self.hidden_above(node) {
+                let index = tree.children_num(TreeParentId::Root).unwrap_or(0);
+                tree.mov_to(node, TreeParentId::Root, index)?;
+            }
+            self.doc.commit();
+            Ok(())
+        })
+    }
+
+    /// The pages put in the trash, most recent first. Subpages that went with their parent
+    /// aren't listed on their own.
+    pub fn trash(&self) -> Result<Vec<TrashedPage>> {
+        self.guard.run(|| {
+            let tree = self.tree();
+            let mut out = Vec::new();
+            for (&id, &node) in &self.nodes {
+                let meta = tree.get_meta(node)?;
+                let at = attrs::get_int(&meta, TRASHED);
+                if at == 0 {
+                    continue;
+                }
+                let parent = match tree.parent(node) {
+                    Some(TreeParentId::Node(p)) => self.page_of(p),
+                    _ => None,
+                };
+                out.push(TrashedPage {
+                    id,
+                    title: self.title_text(id)?.to_string(),
+                    parent,
+                    trashed_at: at,
+                    subpages: self.descendants(node).len(),
+                });
+            }
+            out.sort_by(|a, b| b.trashed_at.cmp(&a.trashed_at).then(a.id.cmp(&b.id)));
+            Ok(out)
+        })
+    }
+
+    /// Whether a page is in the trash, itself or under a page that is.
+    pub fn is_trashed(&self, id: PageId) -> Result<bool> {
+        self.guard.run(|| {
+            let node = self.node(id)?;
+            let meta = self.tree().get_meta(node)?;
+            Ok(attrs::get_int(&meta, TRASHED) != 0 || self.hidden_above(node))
+        })
+    }
+
+    /// Whether some page above `node` is in the trash.
+    fn hidden_above(&self, node: TreeID) -> bool {
+        let tree = self.tree();
+        let mut at = tree.parent(node);
+        while let Some(TreeParentId::Node(n)) = at {
+            if tree
+                .get_meta(n)
+                .is_ok_and(|m| attrs::get_int(&m, TRASHED) != 0)
+            {
+                return true;
+            }
+            at = tree.parent(n);
+        }
+        false
+    }
+
+    /// Every page below `node`, at any depth.
+    fn descendants(&self, node: TreeID) -> Vec<PageId> {
+        let tree = self.tree();
+        let mut out = Vec::new();
+        let mut stack = tree.children(TreeParentId::Node(node)).unwrap_or_default();
+        while let Some(n) = stack.pop() {
+            out.extend(self.page_of(n));
+            stack.extend(tree.children(TreeParentId::Node(n)).unwrap_or_default());
+        }
+        out
     }
 
     pub fn title(&self, id: PageId) -> Result<String> {
@@ -354,16 +476,27 @@ impl Workspace {
         Ok(false)
     }
 
+    /// Every page the workspace holds, the ones in the trash included (they still sync, so
+    /// they can be restored), in no particular order.
+    pub fn all_pages(&self) -> Vec<PageId> {
+        self.nodes.keys().copied().collect()
+    }
+
     /// The top-level pages, in order.
     pub fn roots(&self) -> Vec<PageId> {
         self.children_of(TreeParentId::Root)
     }
 
+    /// The pages directly under `parent`, in order, leaving out those in the trash.
     fn children_of(&self, parent: TreeParentId) -> Vec<PageId> {
-        self.tree()
-            .children(parent)
+        let tree = self.tree();
+        tree.children(parent)
             .unwrap_or_default()
             .into_iter()
+            .filter(|&n| {
+                tree.get_meta(n)
+                    .is_ok_and(|m| attrs::get_int(&m, TRASHED) == 0)
+            })
             .filter_map(|n| self.page_of(n))
             .collect()
     }
@@ -376,9 +509,13 @@ impl Workspace {
                 self.roots().into_iter().rev().map(|r| (None, r)).collect();
             while let Some((parent, id)) = stack.pop() {
                 let node = self.node(id)?;
+                let meta = self.tree().get_meta(node)?;
+                // A page in the trash is hidden, and its subpages with it.
+                if attrs::get_int(&meta, TRASHED) != 0 {
+                    continue;
+                }
                 let children = self.children_of(TreeParentId::Node(node));
                 stack.extend(children.iter().rev().map(|&c| (Some(id), c)));
-                let meta = self.tree().get_meta(node)?;
                 out.push(PageNode {
                     id,
                     parent,

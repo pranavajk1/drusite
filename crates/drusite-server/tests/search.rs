@@ -271,8 +271,19 @@ async fn finds_by_words_and_meaning_for_the_owner_only() {
     let theirs = other.search(&server.url, "dog").await;
     assert!(theirs["hits"].as_array().unwrap().is_empty(), "{theirs}");
 
-    // A deleted page leaves the index.
+    // A page in the trash leaves the index, and comes back when restored.
     mac.handle(Command::DeletePage { page: trips });
+    until(&mac, &server.url, "lake", |r| {
+        r["hits"].as_array().unwrap().is_empty()
+    })
+    .await;
+    mac.handle(Command::RestorePage { page: trips });
+    until(&mac, &server.url, "lake", |r| {
+        !r["hits"].as_array().unwrap().is_empty()
+    })
+    .await;
+    mac.handle(Command::DeletePage { page: trips });
+    mac.handle(Command::DeleteForever { page: trips });
     until(&mac, &server.url, "lake", |r| {
         r["hits"].as_array().unwrap().is_empty()
     })

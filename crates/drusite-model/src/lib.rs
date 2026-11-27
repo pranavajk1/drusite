@@ -158,6 +158,18 @@ pub enum BlockKind {
     Query {
         query: String,
     },
+    /// A file stored with the workspace: shown inline when it's an image, as a card otherwise.
+    /// The block's text is its caption.
+    Attachment {
+        /// The file's address in the workspace's attachment store (64 hex digits).
+        blob: String,
+        /// The file's name, with its extension.
+        name: String,
+        /// Its media type, such as `image/png`.
+        mime: String,
+        /// Its size in bytes.
+        size: u32,
+    },
 }
 
 impl BlockKind {
@@ -175,6 +187,7 @@ impl BlockKind {
             Self::Callout { .. } => "callout",
             Self::Toggle => "toggle",
             Self::Query { .. } => "query",
+            Self::Attachment { .. } => "attachment",
         }
     }
 }

@@ -143,7 +143,7 @@
             return;
           }
           arriving = false;
-          editor = createEditor(mount, client, view, onerror);
+          editor = createEditor(mount, client, view, onerror, onselect);
           editorView = editor.view;
           if (view.title === "") titleInput.focus();
           else editor.view.focus();

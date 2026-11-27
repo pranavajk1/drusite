@@ -1,0 +1,22 @@
+[package]
+name = "drusite-markdown"
+description = "Pages as Markdown and back: the dialect the Markdown bridge and import read and write."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+drusite-model.workspace = true
+pulldown-cmark.workspace = true
+yaml-rust2.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

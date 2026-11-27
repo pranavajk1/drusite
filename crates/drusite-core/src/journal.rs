@@ -18,7 +18,8 @@ pub const JOURNAL_TITLE: &str = "Journal";
 impl Core {
     pub(crate) fn settings(&self) -> Result<Settings, ApiError> {
         let mut settings = Settings::default();
-        let exists = |id: PageId| self.workspace.title(id).is_ok();
+        // A page in the trash no longer counts.
+        let exists = |id: PageId| self.workspace.is_trashed(id).is_ok_and(|t| !t);
         for (key, value) in self.workspace.settings()? {
             match (key.as_str(), value) {
                 (JOURNAL_PARENT, SettingValue::Text(id)) => {
