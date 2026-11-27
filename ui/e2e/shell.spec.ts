@@ -70,11 +70,16 @@ test("dragging the sidebar's edge resizes it, within limits, and the width is ke
   await page.keyboard.press("ArrowLeft");
   await expect.poll(width).toBeCloseTo(464, 0);
 
-  // Dragging well past the narrowest closes it; a click on the edge does too.
+  // Dragging well past the narrowest stops there: the sidebar stays open.
   await drag(-450);
+  await expect(sidebar).toBeVisible();
+  await expect.poll(width).toBeCloseTo(200, 0);
+
+  // A click on the edge closes it, and it opens again as wide as it was.
+  await edge.click();
   await expect(sidebar).toBeHidden();
   await page.getByRole("button", { name: "Open sidebar" }).click();
-  await expect.poll(width).toBeCloseTo(464, 0);
+  await expect.poll(width).toBeCloseTo(200, 0);
   await edge.click();
   await expect(sidebar).toBeHidden();
 });

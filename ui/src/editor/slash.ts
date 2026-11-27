@@ -160,10 +160,10 @@ class MenuView {
     window.visualViewport?.addEventListener("resize", this.onMove);
     // The phone's formatting bar can show after the menu opened (once the keyboard is up): make
     // room for it then.
-    this.barWatch = new ResizeObserver(this.onMove);
+    this.barWatch = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(this.onMove);
   }
 
-  private barWatch: ResizeObserver;
+  private barWatch: ResizeObserver | null;
   private watched: Element | null = null;
 
   private onMove: () => void;
@@ -201,7 +201,7 @@ class MenuView {
    */
   private place() {
     const bar = document.querySelector(".phone-toolbar");
-    if (bar && bar !== this.watched) {
+    if (bar && bar !== this.watched && this.barWatch) {
       this.barWatch.disconnect();
       this.barWatch.observe(bar);
       this.watched = bar;
@@ -267,6 +267,10 @@ class MenuView {
   destroy() {
     this.view.dom.removeEventListener("focus", this.onFocus);
     this.view.dom.removeEventListener("blur", this.onBlur);
+    window.removeEventListener("scroll", this.onMove, true);
+    window.removeEventListener("resize", this.onMove);
+    window.visualViewport?.removeEventListener("resize", this.onMove);
+    this.barWatch?.disconnect();
     this.dom.remove();
   }
 }

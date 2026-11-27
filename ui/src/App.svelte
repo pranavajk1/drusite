@@ -171,8 +171,8 @@
   }
 
   /**
-   * Dragging the sidebar's edge resizes it; dragging it well past the narrowest closes it, and
-   * a click without a drag closes it too, as in Notion.
+   * Dragging the sidebar's edge resizes it, no narrower than the narrowest; a click without a
+   * drag closes it, as in Notion.
    */
   function startResize(e: PointerEvent) {
     if (e.button !== 0) return;
@@ -185,15 +185,7 @@
       const dx = ev.clientX - startX;
       if (Math.abs(dx) > 3) moved = true;
       if (!moved) return;
-      const w = startW + dx;
-      if (w < WIDTH.min - 80) {
-        if (!collapsed) setCollapsed(true);
-        // Opened again, it comes back as wide as it was.
-        sidebarWidth = startW;
-      } else {
-        if (collapsed) setCollapsed(false);
-        sidebarWidth = clampWidth(w);
-      }
+      sidebarWidth = clampWidth(startW + dx);
     };
     const up = () => {
       window.removeEventListener("pointermove", move);

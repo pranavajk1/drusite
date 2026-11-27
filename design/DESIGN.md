@@ -232,8 +232,8 @@ Moods use Lucide faces (angry, frown, meh, smile, laugh) in the mood colours.
     Trash, a line, and Sign out (or "Sign in to sync", which opens Settings at Account). The same
     button and menu are at the foot of the phone drawer.
 - **Resizing**: the sidebar's right edge (6 px, `col-resize`) shows a 2 px `--border-strong` line on
-  hover. Dragging it sets the width (200–480 px, kept per device); dragging well past the narrowest,
-  or a click without a drag, closes the sidebar, as in Notion. With the focus on the edge, ← and →
+  hover. Dragging it sets the width (200–480 px, kept per device); a drag stops at the narrowest and
+  never closes the sidebar. A click without a drag closes it, as in Notion. With the focus on the edge, ← and →
   step 16 px. Closing and opening animate the column unless reduced motion is on. When closed, the
   top bar shows an "open sidebar" button.
 - **Tree rows** are 28 px. Indent is 16 px per level. The page icon becomes a chevron on hover when the
