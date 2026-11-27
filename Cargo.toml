@@ -56,6 +56,7 @@ reqwest = { version = "0.13.5", default-features = false }
 sqlx = { version = "0.9.1", default-features = false }
 time = "0.3.55"
 tokio = "1.54.1"
+tantivy = { version = "0.27.0", default-features = false, features = ["lz4-compression"] }
 toml = "1.2.3"
 tower = "0.5.3"
 tower-http = "0.7.1"

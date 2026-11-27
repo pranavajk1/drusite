@@ -93,6 +93,30 @@ pub enum Command {
     SetSetting {
         setting: Setting,
     },
+    /// Full-text search of this device's pages: every word must match, the last as a prefix.
+    /// Answered with [`Response::SearchResults`], best first, one hit per page.
+    Search {
+        query: String,
+        limit: u32,
+    },
+}
+
+/// A page that matched a search, at the block that matched best (none when only the title did).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchHit {
+    pub page: PageId,
+    pub title: String,
+    pub block: Option<BlockId>,
+    pub snippet: Vec<SnippetPart>,
+}
+
+/// A piece of a search snippet; `highlight` marks the words that matched.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SnippetPart {
+    pub text: String,
+    pub highlight: bool,
 }
 
 /// The settings that live in the workspace, so they sync with the account and a new device has
@@ -216,6 +240,9 @@ pub enum Response {
     },
     Settings {
         settings: Settings,
+    },
+    SearchResults {
+        hits: Vec<SearchHit>,
     },
     Done,
 }

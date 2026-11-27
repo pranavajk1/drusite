@@ -4,7 +4,8 @@
   import { TextSelection } from "prosemirror-state";
 
   import { CoreError, type CoreClient } from "../core/client";
-  import type { PageId, PageInfo, Settings } from "../core/types";
+  import type { BlockId, PageId, PageInfo, Settings } from "../core/types";
+  import { attrsOf } from "../editor/convert";
   import JournalViews from "./JournalViews.svelte";
   import Properties from "./Properties.svelte";
   import { focusEnd } from "../editor/commands";
@@ -19,6 +20,7 @@
     pages,
     settings,
     onday,
+    reveal = null,
     onselect,
     onopened,
     onerror,
@@ -31,6 +33,8 @@
     pages: PageInfo[];
     settings: Settings;
     onday: (date: string) => void;
+    /** A block to scroll to and put the cursor in (from a search hit). */
+    reveal?: { block: BlockId; seq: number } | null;
     onselect: (id: PageId) => void;
     onopened: () => void;
     onerror: (e: unknown) => void;
@@ -79,6 +83,26 @@
   }
 
   let titleInput: HTMLInputElement;
+
+  /** Puts the cursor at the start of `block` and scrolls it into view. */
+  function showBlock(block: BlockId): boolean {
+    if (!editor) return false;
+    const { view } = editor;
+    let at = -1;
+    view.state.doc.forEach((node, offset) => {
+      if (at < 0 && attrsOf(node).id === block) at = offset;
+    });
+    if (at < 0) return false;
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, at + 1)).scrollIntoView());
+    view.focus();
+    view.nodeDOM(at)?.parentElement?.querySelector(`[data-block-id="${block}"]`)?.classList.add("revealed");
+    return true;
+  }
+
+  let revealed = 0;
+  $effect(() => {
+    if (reveal && reveal.seq !== revealed && editorView && showBlock(reveal.block)) revealed = reveal.seq;
+  });
 
   /** Arrow Up on the first line of the page goes to the title. */
   function bodyKey(e: KeyboardEvent) {

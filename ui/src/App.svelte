@@ -3,12 +3,13 @@
   import { onMount } from "svelte";
 
   import type { CoreClient } from "./core/client";
-  import type { AccountStatus, PageId, PageInfo, Settings } from "./core/types";
+  import type { AccountStatus, BlockId, PageId, PageInfo, SearchHit, Settings } from "./core/types";
   import { setQueryHost } from "./editor/query";
   import { today } from "./journal/dates";
   import Account, { phaseLabel } from "./lib/Account.svelte";
   import PageEditor from "./lib/PageEditor.svelte";
   import PageTree from "./lib/PageTree.svelte";
+  import SearchPalette from "./lib/Search.svelte";
   import SettingsSheet from "./lib/Settings.svelte";
 
   let { client }: { client: CoreClient } = $props();
@@ -20,6 +21,9 @@
   let account = $state<AccountStatus>({ server: null, email: null, phase: "signedOut", message: null });
   let showAccount = $state(false);
   let showSettings = $state(false);
+  let showSearch = $state(false);
+  /** The block a search hit points at, for the editor to show; bumped so the same one can repeat. */
+  let reveal = $state<{ block: BlockId; seq: number } | null>(null);
   let settings = $state<Settings>({ journalParent: null, journalTemplate: null, weekStart: 1 });
   /** On phones, the page list is a drawer over the page. */
   let drawer = $state(false);
@@ -81,6 +85,19 @@
     }
   }
 
+  function openHit(hit: SearchHit) {
+    showSearch = false;
+    select(hit.page);
+    reveal = hit.block ? { block: hit.block, seq: (reveal?.seq ?? 0) + 1 } : null;
+  }
+
+  function globalKey(e: KeyboardEvent) {
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "k") {
+      e.preventDefault();
+      showSearch = true;
+    }
+  }
+
   /** Opens the journal entry for `date`, making it from the template if it's new. */
   async function openDay(date: string) {
     try {
@@ -126,6 +143,8 @@
   const title = $derived(info?.title ?? "");
 </script>
 
+<svelte:window onkeydown={globalKey} />
+
 <div class="app" class:drawer-open={drawer}>
   <header class="topbar">
     <button class="topbar-menu" aria-label="Pages" aria-expanded={drawer} onclick={() => (drawer = !drawer)}>☰</button>
@@ -137,6 +156,7 @@
   <aside class="sidebar">
     <div class="sidebar-head">Drusite</div>
     <div class="sidebar-actions">
+      <button class="sidebar-action" aria-keyshortcuts="Meta+K Control+K" onclick={() => (showSearch = true)}>🔍 Search</button>
       <button class="sidebar-action" onclick={() => openDay(today())}>📅 Today</button>
       {#if settings.journalParent}
         <button class="sidebar-action" onclick={() => select(settings.journalParent!)}>📖 Journal</button>
@@ -168,6 +188,7 @@
           {pages}
           {settings}
           onday={openDay}
+          {reveal}
           onselect={select}
           onopened={opened}
           onerror={show}
@@ -178,6 +199,9 @@
 </div>
 {#if showAccount}
   <Account {client} status={account} onclose={() => (showAccount = false)} />
+{/if}
+{#if showSearch}
+  <SearchPalette {client} onopen={openHit} onclose={() => (showSearch = false)} />
 {/if}
 {#if showSettings}
   <SettingsSheet {client} {settings} {pages} onclose={() => (showSettings = false)} onerror={show} />

@@ -154,6 +154,7 @@ impl Core {
         };
         self.store.set_sync_state(&id.to_string(), &state)?;
         self.workspace = workspace;
+        self.search.reset();
         self.announce_workspace()
             .map_err(|e| Error::Corrupt(e.message))?;
         Ok(())
@@ -601,6 +602,7 @@ impl Core {
         // The version this device holds once the entries are in. An update that needs another
         // writer's changes not here yet waits in memory, unapplied: see `keep_waiting`.
         let local: VersionVector;
+        self.search_changed(doc);
         if doc == *self.workspace.id().as_uuid() {
             for part in &parts {
                 self.workspace.import(part)?;

@@ -17,6 +17,7 @@ import type {
   PageView,
   PropertyValue,
   Response,
+  SearchHit,
   Setting,
   Settings,
 } from "./types";
@@ -137,6 +138,11 @@ export class CoreClient {
 
   async setSetting(setting: Setting): Promise<Settings> {
     return (await this.call({ type: "setSetting", setting }, "settings")).settings;
+  }
+
+  /** Full-text search of this device's pages, best first, one hit per page. */
+  async search(query: string, limit = 20): Promise<SearchHit[]> {
+    return (await this.call({ type: "search", query, limit }, "searchResults")).hits;
   }
 
   /** Tells the core the UI is showing what it opened (benchmarks wait for this). */

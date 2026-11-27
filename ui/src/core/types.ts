@@ -95,7 +95,12 @@ export type Command =
 /**  The settings that sync with the account. Answered with [`Response::Settings`]. */
 { type: "settings" } | 
 /**  Changes one setting. Answered with [`Response::Settings`]. */
-{ type: "setSetting"; setting: Setting };
+{ type: "setSetting"; setting: Setting } | 
+/**
+ *  Full-text search of this device's pages: every word must match, the last as a prefix.
+ *  Answered with [`Response::SearchResults`], best first, one hit per page.
+ */
+{ type: "search"; query: string; limit: number };
 
 /**  How a condition compares a property. */
 export type Comparison = 
@@ -256,7 +261,15 @@ export type PropertyValue = { type: "text"; value: string } | { type: "number"; 
 /**  The core's answer to a [`Command`]. */
 export type Response = { type: "pages"; pages: PageInfo[] } | { type: "pageCreated"; page: PageInfo } | { type: "opened"; view: PageView } | { type: "edited"; outcome: EditOutcome } | { type: "account"; status: AccountStatus } | 
 /**  The journal entry for a day; `created` when it was made just now. */
-{ type: "journalDay"; page: PageInfo; created: boolean } | { type: "settings"; settings: Settings } | { type: "done" };
+{ type: "journalDay"; page: PageInfo; created: boolean } | { type: "settings"; settings: Settings } | { type: "searchResults"; hits: SearchHit[] } | { type: "done" };
+
+/**  A page that matched a search, at the block that matched best (none when only the title did). */
+export type SearchHit = {
+	page: PageId,
+	title: string,
+	block: BlockId | null,
+	snippet: SnippetPart[],
+};
 
 /**  One setting's new value. */
 export type Setting = { type: "journalParent"; value?: PageId | null } | { type: "journalTemplate"; value?: PageId | null } | { type: "weekStart"; value: number };
@@ -275,6 +288,12 @@ export type Settings = {
 	journalTemplate: PageId | null,
 	/**  The first day of the week in calendars: 0 is Sunday, 1 Monday. */
 	weekStart: number,
+};
+
+/**  A piece of a search snippet; `highlight` marks the words that matched. */
+export type SnippetPart = {
+	text: string,
+	highlight: boolean,
 };
 
 /**  How a query orders its pages. */

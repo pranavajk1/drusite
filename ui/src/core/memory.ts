@@ -22,6 +22,7 @@ import type {
   PagePatch,
   Property,
   Response,
+  SearchHit,
   Settings,
   Span,
 } from "./types";
@@ -182,6 +183,25 @@ export class MemoryCore {
     return { page: this.info().find((p) => p.id === page.id)!, created: true };
   }
 
+  /** A plain stand-in for the core's index: every word must start a word in the text. */
+  private search(query: string, limit: number): SearchHit[] {
+    const fold = (t: string) => t.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+    const words = fold(query).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+    if (words.length === 0) return [];
+    const matches = (text: string) => {
+      const have = fold(text).split(/[^\p{L}\p{N}]+/u);
+      return words.every((w, i) => have.some((h) => (i === words.length - 1 ? h.startsWith(w) : h === w)));
+    };
+    const hits: SearchHit[] = [];
+    for (const p of this.info()) {
+      const block = this.page(p.id).blocks.find((b) => matches(b.text));
+      if (block) hits.push({ page: p.id, title: p.title, block: block.id, snippet: [{ text: block.text, highlight: false }] });
+      else if (matches(p.title)) hits.push({ page: p.id, title: p.title, block: null, snippet: [{ text: p.title, highlight: false }] });
+      if (hits.length === limit) break;
+    }
+    return hits;
+  }
+
   private emit(event: Event): void {
     for (const l of this.listeners) l(event);
   }
@@ -314,6 +334,8 @@ export class MemoryCore {
         this.workspaceChanged();
         return { type: "settings", settings: this.currentSettings() };
       }
+      case "search":
+        return { type: "searchResults", hits: this.search(command.query, command.limit) };
       case "ready":
         return { type: "done" };
       case "edit":
