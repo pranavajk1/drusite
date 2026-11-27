@@ -9,6 +9,10 @@ import { dayTitle } from "../journal/dates";
 import type { Transport } from "./client";
 import type {
   AgentToken,
+  AiChoice,
+  AiFeature,
+  AiKindInfo,
+  AiProvider,
   ApiError,
   Block,
   BlockId,
@@ -100,6 +104,16 @@ function checkPos(b: MemBlock, pos: number): void {
   if (pos > 0 && pos < b.text.length && c >= 0xd800 && c <= 0xdbff) fail("invalidPosition", `position ${pos} is inside a character`);
 }
 
+/** The kinds of provider, as the native core describes them. */
+const AI_KINDS: AiKindInfo[] = [
+  { kind: "anthropic", label: "Anthropic", defaultBaseUrl: "https://api.anthropic.com/v1", needsKey: true, embeds: false },
+  { kind: "openAi", label: "OpenAI", defaultBaseUrl: "https://api.openai.com/v1", needsKey: true, embeds: true },
+  { kind: "google", label: "Google Gemini", defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta", needsKey: true, embeds: true },
+  { kind: "mistral", label: "Mistral", defaultBaseUrl: "https://api.mistral.ai/v1", needsKey: true, embeds: true },
+  { kind: "openRouter", label: "OpenRouter", defaultBaseUrl: "https://openrouter.ai/api/v1", needsKey: true, embeds: true },
+  { kind: "openAiCompatible", label: "OpenAI-compatible", defaultBaseUrl: null, needsKey: false, embeds: true },
+];
+
 export class MemoryCore {
   private pages: MemPage[] = [];
   /** How many views have each page open, as the core counts them. */
@@ -110,6 +124,9 @@ export class MemoryCore {
   /** Agents on "this computer": a stand-in, since nothing here can listen on a port. */
   private localAgents = { enabled: false, port: 47321 };
   private agentTokens: AgentToken[] = [];
+  /** AI providers: kept, but never reached (nothing here makes requests). */
+  private aiProviders: (AiProvider & { key: string | null })[] = [];
+  private aiFeatures = new Map<AiFeature, AiChoice>();
 
   readonly transport: Transport = {
     call: async (command) => this.handle(command),
@@ -400,6 +417,67 @@ export class MemoryCore {
         return { type: "done" };
       case "undoAgentCall":
         fail("invalid", "no such agent call");
+      case "ai":
+        return {
+          type: "ai",
+          available: true,
+          kinds: AI_KINDS,
+          providers: this.aiProviders.map(({ key: _, ...p }) => p),
+          features: (["chat", "embeddings"] as const).map((feature) => ({
+            feature,
+            choice: this.aiFeatures.get(feature) ?? null,
+          })),
+        };
+      case "saveAiProvider": {
+        const info = AI_KINDS.find((k) => k.kind === command.kind) ?? fail("invalid", "unknown kind");
+        const old = command.id ? this.aiProviders.find((p) => p.id === command.id) : undefined;
+        if (command.id && !old) fail("invalid", "no such provider");
+        const key = command.apiKey === null ? (old?.key ?? null) : command.apiKey.trim() || null;
+        const baseUrl = command.baseUrl?.trim() || null;
+        if (baseUrl && !/^https?:\/\/\S+$/.test(baseUrl)) fail("invalid", `“${baseUrl}” isn't an address (http://…)`);
+        if (!baseUrl && !info.defaultBaseUrl) fail("invalid", "an OpenAI-compatible endpoint needs its address, such as http://localhost:11434/v1");
+        if (info.needsKey && !key) fail("invalid", `${info.label} needs an API key`);
+        const provider = {
+          id: old?.id ?? newId(),
+          kind: command.kind,
+          name: command.name.trim() || info.label,
+          baseUrl,
+          keyHint: key ? `…${key.slice(-4)}` : null,
+          key,
+        };
+        this.aiProviders = old ? this.aiProviders.map((p) => (p.id === old.id ? provider : p)) : [...this.aiProviders, provider];
+        if (!info.embeds && this.aiFeatures.get("embeddings")?.provider === provider.id) this.aiFeatures.delete("embeddings");
+        this.emit({ type: "aiChanged" });
+        const { key: _, ...shown } = provider;
+        return { type: "aiProviderSaved", provider: shown };
+      }
+      case "deleteAiProvider":
+        if (!this.aiProviders.some((p) => p.id === command.id)) fail("invalid", "no such provider");
+        this.aiProviders = this.aiProviders.filter((p) => p.id !== command.id);
+        for (const [f, c] of this.aiFeatures) if (c.provider === command.id) this.aiFeatures.delete(f);
+        this.emit({ type: "aiChanged" });
+        return { type: "done" };
+      case "setAiFeature": {
+        const c = command.choice;
+        if (c) {
+          const p = this.aiProviders.find((x) => x.id === c.provider) ?? fail("invalid", "no such provider");
+          const info = AI_KINDS.find((k) => k.kind === p.kind);
+          if (command.feature === "embeddings" && !info?.embeds) fail("invalid", `${info?.label} doesn't make embeddings`);
+          if (!c.model.trim()) fail("invalid", "pick a model");
+          this.aiFeatures.set(command.feature, { provider: c.provider, model: c.model.trim() });
+        } else {
+          this.aiFeatures.delete(command.feature);
+        }
+        this.emit({ type: "aiChanged" });
+        return { type: "done" };
+      }
+      case "aiModels":
+        return { type: "aiModels", models: [] };
+      case "testAiProvider":
+        return {
+          type: "aiCheck",
+          steps: [{ what: "Models", ok: false, detail: "This preview can't reach providers", millis: 0 }],
+        };
       case "emptyTrash":
         this.deleteForever(this.trash().map((t) => t.id));
         return { type: "done" };

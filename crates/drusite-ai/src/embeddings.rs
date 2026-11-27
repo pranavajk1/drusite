@@ -6,21 +6,11 @@
 //! vectors from different models live in different spaces and can't be compared, so changing
 //! the model means embedding everything again.
 
-use std::time::Duration;
+use reqwest::Method;
+use serde_json::{Value, json};
 
-use serde::{Deserialize, Serialize};
-use url::Url;
-use zeroize::Zeroizing;
-
-#[derive(Debug, thiserror::Error)]
-pub enum EmbeddingError {
-    #[error("can't reach the embedding endpoint: {0}")]
-    Network(String),
-    #[error("the embedding endpoint refused the request ({status}): {message}")]
-    Refused { status: u16, message: String },
-    #[error("the embedding endpoint answered oddly: {0}")]
-    Malformed(String),
-}
+use crate::error::AiError;
+use crate::provider::{Kind, Provider};
 
 /// Something that turns texts into vectors.
 pub trait Embeddings: Send + Sync {
@@ -31,192 +21,172 @@ pub trait Embeddings: Send + Sync {
     fn embed(
         &self,
         texts: &[String],
-    ) -> impl std::future::Future<Output = Result<Vec<Vec<f32>>, EmbeddingError>> + Send;
+    ) -> impl std::future::Future<Output = Result<Vec<Vec<f32>>, AiError>> + Send;
 }
 
-/// An OpenAI-compatible `/embeddings` endpoint.
-#[derive(Clone)]
-pub struct OpenAiCompatible {
-    http: reqwest::Client,
-    url: Url,
-    key: Option<Zeroizing<String>>,
+impl Provider {
+    /// One vector per text, in order. `dimensions` asks models that can shorten their vectors
+    /// for that many.
+    pub async fn embed(
+        &self,
+        model: &str,
+        texts: &[String],
+        dimensions: Option<u32>,
+    ) -> Result<Vec<Vec<f32>>, AiError> {
+        if texts.is_empty() {
+            return Ok(Vec::new());
+        }
+        if model.trim().is_empty() {
+            return Err(AiError::Invalid("pick an embedding model".to_owned()));
+        }
+        let vectors = match self.kind() {
+            Kind::Anthropic => {
+                return Err(AiError::Unsupported(
+                    "Anthropic doesn't make embeddings; pick another provider for them".to_owned(),
+                ));
+            }
+            Kind::Google => {
+                let model = model.strip_prefix("models/").unwrap_or(model);
+                let requests: Vec<_> = texts
+                    .iter()
+                    .map(|t| {
+                        let mut r = json!({
+                            "model": format!("models/{model}"),
+                            "content": { "parts": [{ "text": t }] },
+                        });
+                        if let Some(d) = dimensions {
+                            r["outputDimensionality"] = json!(d);
+                        }
+                        r
+                    })
+                    .collect();
+                let url = self.url(&format!("models/{model}:batchEmbedContents"))?;
+                let v = self
+                    .json(
+                        self.request(Method::POST, url)
+                            .json(&json!({ "requests": requests })),
+                    )
+                    .await?;
+                v["embeddings"]
+                    .as_array()
+                    .ok_or_else(|| AiError::Malformed("no “embeddings” list".to_owned()))?
+                    .iter()
+                    .map(|e| floats(&e["values"]))
+                    .collect::<Result<Vec<_>, _>>()?
+            }
+            Kind::OpenAi | Kind::Mistral | Kind::OpenRouter | Kind::OpenAiCompatible => {
+                let mut body = json!({ "model": model, "input": texts });
+                if let Some(d) = dimensions {
+                    // Mistral calls it differently.
+                    let field = if self.kind() == Kind::Mistral {
+                        "output_dimension"
+                    } else {
+                        "dimensions"
+                    };
+                    body[field] = json!(d);
+                }
+                let v = self
+                    .json(
+                        self.request(Method::POST, self.url("embeddings")?)
+                            .json(&body),
+                    )
+                    .await?;
+                let data = v["data"]
+                    .as_array()
+                    .ok_or_else(|| AiError::Malformed("no “data” list".to_owned()))?;
+                let mut out = vec![None; data.len()];
+                for (n, item) in data.iter().enumerate() {
+                    // The API allows any order; a few servers leave the index out.
+                    let i = item["index"]
+                        .as_u64()
+                        .and_then(|i| usize::try_from(i).ok())
+                        .unwrap_or(n);
+                    let slot = out
+                        .get_mut(i)
+                        .ok_or_else(|| AiError::Malformed(format!("index {i}")))?;
+                    *slot = Some(floats(&item["embedding"])?);
+                }
+                out.into_iter()
+                    .map(|v| v.ok_or_else(|| AiError::Malformed("a vector is missing".to_owned())))
+                    .collect::<Result<Vec<_>, _>>()?
+            }
+        };
+        if vectors.len() != texts.len() {
+            return Err(AiError::Malformed(format!(
+                "{} vectors for {} texts",
+                vectors.len(),
+                texts.len()
+            )));
+        }
+        let dims = vectors[0].len();
+        if dims == 0 || vectors.iter().any(|v| v.len() != dims) {
+            return Err(AiError::Malformed("vectors of different lengths".into()));
+        }
+        Ok(vectors)
+    }
+}
+
+fn floats(v: &Value) -> Result<Vec<f32>, AiError> {
+    v.as_array()
+        .ok_or_else(|| {
+            AiError::Malformed(
+                "a vector isn't a list of numbers (base64 vectors aren't supported)".to_owned(),
+            )
+        })?
+        .iter()
+        .map(|x| {
+            #[allow(clippy::cast_possible_truncation)]
+            x.as_f64()
+                .map(|f| f as f32)
+                .ok_or_else(|| AiError::Malformed("a vector holds something not a number".into()))
+        })
+        .collect()
+}
+
+/// An embedding model on a provider: what search indexes with.
+#[derive(Debug, Clone)]
+pub struct EmbeddingModel {
+    provider: Provider,
     model: String,
     id: String,
     dimensions: Option<u32>,
 }
 
-impl std::fmt::Debug for OpenAiCompatible {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("OpenAiCompatible")
-            .field("url", &self.url.as_str())
-            .field("model", &self.model)
-            .field("id", &self.id)
-            .finish_non_exhaustive()
-    }
-}
-
-#[derive(Serialize)]
-struct Request<'a> {
-    model: &'a str,
-    input: &'a [String],
-    #[serde(skip_serializing_if = "Option::is_none")]
-    dimensions: Option<u32>,
-    encoding_format: &'static str,
-}
-
-#[derive(Deserialize)]
-struct Answer {
-    data: Vec<Item>,
-}
-
-#[derive(Deserialize)]
-struct Item {
-    index: usize,
-    embedding: Vec<f32>,
-}
-
-impl OpenAiCompatible {
-    /// `base` is the API's base URL (`https://api.openai.com/v1`, `http://litellm:4000/v1`, …).
+impl EmbeddingModel {
     /// `id` names the vector space; by default it's the model name.
     pub fn new(
-        base: &Url,
+        provider: Provider,
         model: impl Into<String>,
-        key: Option<Zeroizing<String>>,
         id: Option<String>,
         dimensions: Option<u32>,
-    ) -> Result<Self, EmbeddingError> {
-        let mut url = base.clone();
-        if !url.path().ends_with('/') {
-            url.set_path(&format!("{}/", url.path()));
+    ) -> Result<Self, AiError> {
+        if !provider.kind().embeds() {
+            return Err(AiError::Unsupported(format!(
+                "{} doesn't make embeddings",
+                provider.kind().label()
+            )));
         }
-        let url = url
-            .join("embeddings")
-            .map_err(|e| EmbeddingError::Malformed(e.to_string()))?;
-        let http = reqwest::Client::builder()
-            .timeout(Duration::from_secs(60))
-            .build()
-            .map_err(|e| EmbeddingError::Network(e.to_string()))?;
         let model = model.into();
+        if model.trim().is_empty() {
+            return Err(AiError::Invalid("pick an embedding model".to_owned()));
+        }
         Ok(Self {
-            http,
-            url,
-            key,
             id: id.unwrap_or_else(|| model.clone()),
+            provider,
             model,
             dimensions,
         })
     }
 }
 
-impl Embeddings for OpenAiCompatible {
+impl Embeddings for EmbeddingModel {
     fn model_id(&self) -> &str {
         &self.id
     }
 
-    async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, EmbeddingError> {
-        if texts.is_empty() {
-            return Ok(Vec::new());
-        }
-        let mut request = self.http.post(self.url.clone()).json(&Request {
-            model: &self.model,
-            input: texts,
-            dimensions: self.dimensions,
-            encoding_format: "float",
-        });
-        if let Some(key) = &self.key {
-            request = request.bearer_auth(key.as_str());
-        }
-        let response = request
-            .send()
+    async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, AiError> {
+        self.provider
+            .embed(&self.model, texts, self.dimensions)
             .await
-            .map_err(|e| EmbeddingError::Network(e.without_url().to_string()))?;
-        let status = response.status();
-        if !status.is_success() {
-            let mut message = response.text().await.unwrap_or_default();
-            message.truncate(500);
-            return Err(EmbeddingError::Refused {
-                status: status.as_u16(),
-                message,
-            });
-        }
-        let answer: Answer = response
-            .json()
-            .await
-            .map_err(|e| EmbeddingError::Malformed(e.without_url().to_string()))?;
-        if answer.data.len() != texts.len() {
-            return Err(EmbeddingError::Malformed(format!(
-                "{} vectors for {} texts",
-                answer.data.len(),
-                texts.len()
-            )));
-        }
-        let mut out = vec![Vec::new(); texts.len()];
-        for item in answer.data {
-            let slot = out
-                .get_mut(item.index)
-                .ok_or_else(|| EmbeddingError::Malformed(format!("index {}", item.index)))?;
-            *slot = item.embedding;
-        }
-        let dims = out[0].len();
-        if dims == 0 || out.iter().any(|v| v.len() != dims) {
-            return Err(EmbeddingError::Malformed(
-                "vectors of different lengths".into(),
-            ));
-        }
-        Ok(out)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #![allow(clippy::unwrap_used)]
-
-    use axum::{Json, Router, routing::post};
-
-    use super::*;
-
-    #[tokio::test]
-    async fn embeds_in_order_through_a_compatible_endpoint() {
-        async fn handler(
-            headers: axum::http::HeaderMap,
-            Json(body): Json<serde_json::Value>,
-        ) -> Json<serde_json::Value> {
-            assert_eq!(headers["authorization"], "Bearer sk-test");
-            assert_eq!(body["model"], "tiny");
-            let inputs = body["input"].as_array().unwrap();
-            // Answer out of order, as the API allows.
-            let data: Vec<_> = inputs
-                .iter()
-                .enumerate()
-                .rev()
-                .map(|(i, t)| {
-                    let len = t.as_str().unwrap().len() as f32;
-                    serde_json::json!({"index": i, "embedding": [len, 1.0]})
-                })
-                .collect();
-            Json(serde_json::json!({"data": data}))
-        }
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let base = format!("http://{}/v1", listener.local_addr().unwrap());
-        tokio::spawn(async move {
-            axum::serve(
-                listener,
-                Router::new().route("/v1/embeddings", post(handler)),
-            )
-            .await
-            .unwrap();
-        });
-        let client = OpenAiCompatible::new(
-            &Url::parse(&base).unwrap(),
-            "tiny",
-            Some(Zeroizing::new("sk-test".into())),
-            None,
-            None,
-        )
-        .unwrap();
-        assert_eq!(client.model_id(), "tiny");
-        let v = client.embed(&["a".into(), "abc".into()]).await.unwrap();
-        assert_eq!(v, vec![vec![1.0, 1.0], vec![3.0, 1.0]]);
-        assert!(client.embed(&[]).await.unwrap().is_empty());
     }
 }

@@ -15,7 +15,7 @@ use std::sync::atomic::AtomicBool;
 
 use axum::Router;
 use axum::routing::get;
-use drusite_ai::{EmbeddingError, Embeddings, OpenAiCompatible};
+use drusite_ai::{AiError, EmbeddingModel, Embeddings, Provider};
 
 use crate::app::AppState;
 use crate::config::Config;
@@ -28,25 +28,29 @@ pub const TITLE_BLOCK: uuid::Uuid = uuid::Uuid::nil();
 /// The embedding model, when one is configured.
 #[derive(Debug)]
 pub struct Embedder {
-    client: OpenAiCompatible,
+    client: EmbeddingModel,
     /// Whether this process has made sure the model's vector index exists.
     ann_index: AtomicBool,
 }
 
 impl Embedder {
-    pub fn from_config(config: &Config) -> Result<Option<Self>, EmbeddingError> {
+    pub fn from_config(config: &Config) -> Result<Option<Self>, AiError> {
         let Some(e) = &config.search.embeddings else {
             return Ok(None);
         };
-        let client = OpenAiCompatible::new(
-            &e.base_url,
-            e.model.clone(),
+        let http = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .build()
+            .map_err(|e| AiError::Network(e.to_string()))?;
+        let provider = Provider::new(
+            http,
+            e.provider,
+            e.base_url.as_ref(),
             e.api_key
                 .as_ref()
                 .map(|k| zeroize::Zeroizing::new(k.expose().to_owned())),
-            e.id.clone(),
-            e.dimensions,
         )?;
+        let client = EmbeddingModel::new(provider, e.model.clone(), e.id.clone(), e.dimensions)?;
         Ok(Some(Self {
             client,
             ann_index: AtomicBool::new(false),
@@ -57,7 +61,7 @@ impl Embedder {
         self.client.model_id()
     }
 
-    pub async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, EmbeddingError> {
+    pub async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, AiError> {
         self.client.embed(texts).await
     }
 }

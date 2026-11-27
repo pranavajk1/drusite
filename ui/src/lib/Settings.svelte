@@ -4,6 +4,7 @@
 
   import type { CoreClient } from "../core/client";
   import Agents from "./Agents.svelte";
+  import Ai from "./Ai.svelte";
   import type { BridgeRound, BridgeStatus, PageId, PageInfo, Setting, Settings } from "../core/types";
   import { WEEKDAYS } from "../journal/dates";
 
@@ -149,6 +150,8 @@
       <button disabled={busy} onclick={importNotes}>Import a folder…</button>
       {#if imported}<p class="hint">{imported}</p>{/if}
     {/if}
+
+    <Ai {client} {onerror} />
 
     <Agents {client} {server} {onerror} />
   </div>

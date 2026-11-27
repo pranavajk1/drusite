@@ -98,7 +98,9 @@ enabled = true
 text_config = "simple"
 
 # [search.embeddings]
-# Any OpenAI-compatible endpoint: OpenAI, LiteLLM, Ollama, vLLM, …
+# provider = "openai-compatible"   # the default: LiteLLM, Ollama, vLLM, …; it needs base_url.
+#                                  # Or "openai", "google", "mistral", "openrouter": a key, no
+#                                  # base_url (which, if set, replaces the vendor's address).
 # base_url = "http://litellm:4000/v1"
 # model = "text-embedding-3-small"
 # api_key_file = "/run/secrets/embeddings"

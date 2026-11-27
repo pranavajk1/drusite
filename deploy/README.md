@@ -54,13 +54,28 @@ it.
 
 Server search is on by default: Postgres full-text search over every block, kept up to date by
 a background indexer a couple of seconds after each change. Add an embedding model to search by
-meaning too; any OpenAI-compatible endpoint works (OpenAI, LiteLLM, Ollama, vLLM, …):
+meaning too. By default it's an OpenAI-compatible endpoint (LiteLLM, Ollama, vLLM, SGLang, LM
+Studio, llama.cpp, …), which needs its address:
 
 ```sh
 DRUSITE__SEARCH__EMBEDDINGS__BASE_URL=http://litellm:4000/v1
 DRUSITE__SEARCH__EMBEDDINGS__MODEL=text-embedding-3-small
 DRUSITE__SEARCH__EMBEDDINGS__API_KEY_FILE=/run/secrets/embeddings
 ```
+
+Or a vendor, through its own API: `PROVIDER` is `openai`, `google`, `mistral` or `openrouter`
+(Anthropic makes no embeddings). A vendor needs a key and no address; `BASE_URL` replaces its
+address if set (a proxy, a regional endpoint).
+
+```sh
+DRUSITE__SEARCH__EMBEDDINGS__PROVIDER=google
+DRUSITE__SEARCH__EMBEDDINGS__MODEL=gemini-embedding-001
+DRUSITE__SEARCH__EMBEDDINGS__API_KEY_FILE=/run/secrets/gemini
+DRUSITE__SEARCH__EMBEDDINGS__DIMENSIONS=768
+```
+
+The apps' AI features (chat, and embeddings on the device) are set up in each app's Settings →
+AI, with keys kept on that device; the server's config covers only what the server does.
 
 The database holds each block's words (a `tsvector`) and its embedding, never its text: snippets
 are made by opening the sealed document when someone searches. Words and embeddings are still

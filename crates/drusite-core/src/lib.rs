@@ -7,6 +7,8 @@
 pub mod account;
 #[cfg(feature = "mcp")]
 pub mod agents;
+#[cfg(feature = "ai")]
+pub mod ai;
 pub mod api;
 #[cfg(feature = "sqlite")]
 pub mod attachments;

@@ -29,7 +29,7 @@ use crate::{Error, Result};
 pub const STORE_FILE: &str = "workspace.drusite";
 
 /// The layout of the database itself (not of the documents in it).
-const STORE_SCHEMA: i32 = 6;
+const STORE_SCHEMA: i32 = 7;
 
 /// A token the person made for an agent on this computer (the token itself isn't kept).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,6 +40,41 @@ pub struct AgentTokenRow {
     pub access: String,
     pub created_at: i64,
     pub last_used_at: Option<i64>,
+}
+
+/// An AI provider set up on this device.
+#[derive(Clone, PartialEq, Eq)]
+pub struct AiProviderRow {
+    pub id: String,
+    /// `drusite_ai::Kind`, as its config name (`openai-compatible`, …).
+    pub kind: String,
+    pub name: String,
+    pub base_url: Option<String>,
+    pub api_key: Option<zeroize::Zeroizing<String>>,
+    pub created_at: i64,
+}
+
+impl std::fmt::Debug for AiProviderRow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AiProviderRow")
+            .field("id", &self.id)
+            .field("kind", &self.kind)
+            .field("name", &self.name)
+            .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key.as_ref().map(|_| "…"))
+            .finish_non_exhaustive()
+    }
+}
+
+fn ai_provider_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<AiProviderRow> {
+    Ok(AiProviderRow {
+        id: r.get(0)?,
+        kind: r.get(1)?,
+        name: r.get(2)?,
+        base_url: r.get(3)?,
+        api_key: r.get::<_, Option<String>>(4)?.map(zeroize::Zeroizing::new),
+        created_at: r.get(5)?,
+    })
 }
 
 /// One agent call that changed something, on this computer.
@@ -295,6 +330,28 @@ impl Store {
                      undone_at INTEGER
                  ) STRICT;
                  PRAGMA user_version = 6;",
+            )?;
+            tx.commit()?;
+        }
+        if version < 7 {
+            // AI providers on this device, their keys included (the store is encrypted, and
+            // never synced), and which provider and model each feature uses.
+            let tx = self.conn.transaction()?;
+            tx.execute_batch(
+                "CREATE TABLE ai_providers (
+                     id         TEXT PRIMARY KEY,
+                     kind       TEXT NOT NULL,
+                     name       TEXT NOT NULL,
+                     base_url   TEXT,
+                     api_key    TEXT,
+                     created_at INTEGER NOT NULL
+                 ) STRICT;
+                 CREATE TABLE ai_features (
+                     feature  TEXT PRIMARY KEY,
+                     provider TEXT NOT NULL REFERENCES ai_providers (id) ON DELETE CASCADE,
+                     model    TEXT NOT NULL
+                 ) STRICT;
+                 PRAGMA user_version = 7;",
             )?;
             tx.commit()?;
         }
@@ -698,6 +755,81 @@ impl Store {
             "UPDATE agent_activity SET undone_at = ?2 WHERE id = ?1 AND undone_at IS NULL",
             params![id, now],
         )?;
+        Ok(())
+    }
+
+    // ---- AI providers ----
+
+    pub fn ai_providers(&self) -> Result<Vec<AiProviderRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, kind, name, base_url, api_key, created_at FROM ai_providers
+             ORDER BY created_at, id",
+        )?;
+        let rows = stmt.query_map([], ai_provider_row)?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub fn ai_provider(&self, id: &str) -> Result<Option<AiProviderRow>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT id, kind, name, base_url, api_key, created_at FROM ai_providers
+                 WHERE id = ?1",
+                [id],
+                ai_provider_row,
+            )
+            .optional()?)
+    }
+
+    /// Adds a provider, or replaces the one with its ID.
+    pub fn put_ai_provider(&mut self, row: &AiProviderRow) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO ai_providers (id, kind, name, base_url, api_key, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT (id) DO UPDATE SET kind = excluded.kind, name = excluded.name,
+                 base_url = excluded.base_url, api_key = excluded.api_key",
+            params![
+                row.id,
+                row.kind,
+                row.name,
+                row.base_url,
+                row.api_key.as_ref().map(|k| k.as_str()),
+                row.created_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Removes a provider, and the features that used it.
+    pub fn remove_ai_provider(&mut self, id: &str) -> Result<bool> {
+        let tx = self.conn.transaction()?;
+        tx.execute("DELETE FROM ai_features WHERE provider = ?1", [id])?;
+        let removed = tx.execute("DELETE FROM ai_providers WHERE id = ?1", [id])? > 0;
+        tx.commit()?;
+        Ok(removed)
+    }
+
+    /// Each feature's provider and model: `(feature, provider, model)`.
+    pub fn ai_features(&self) -> Result<Vec<(String, String, String)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT feature, provider, model FROM ai_features ORDER BY feature")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub fn set_ai_feature(&mut self, feature: &str, choice: Option<(&str, &str)>) -> Result<()> {
+        match choice {
+            Some((provider, model)) => self.conn.execute(
+                "INSERT INTO ai_features (feature, provider, model) VALUES (?1, ?2, ?3)
+                 ON CONFLICT (feature) DO UPDATE SET provider = excluded.provider,
+                     model = excluded.model",
+                params![feature, provider, model],
+            )?,
+            None => self
+                .conn
+                .execute("DELETE FROM ai_features WHERE feature = ?1", [feature])?,
+        };
         Ok(())
     }
 

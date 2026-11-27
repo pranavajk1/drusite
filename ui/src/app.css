@@ -1302,6 +1302,65 @@ button {
   color: var(--muted);
 }
 
+/* AI providers in Settings. */
+.ai-providers {
+  margin-bottom: 8px;
+}
+
+.ai-provider .trash-item {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* The name and address get the whole line; the buttons go under them. */
+.ai-provider .trash-title {
+  flex: 1 1 100%;
+  overflow-wrap: anywhere;
+}
+
+.ai-check {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0 0 0 4px;
+  font-size: 13px;
+}
+
+.ai-check li {
+  display: flex;
+  gap: 6px;
+  margin: 2px 0;
+  overflow-wrap: anywhere;
+}
+
+.ai-check .ai-ok > span:first-child {
+  color: var(--mood-5);
+}
+
+.ai-check .ai-fail > span:first-child {
+  color: var(--danger);
+}
+
+.ai-check small {
+  color: var(--muted);
+}
+
+.ai-form .field-row {
+  margin-top: 10px;
+  gap: 8px;
+}
+
+.ai-feature {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ai-feature select,
+.ai-feature input {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
 .editor a[href^="drusite:page/"] {
   text-decoration-style: dotted;
 }
