@@ -78,7 +78,11 @@ pub async fn serve(overrides: &[(&str, &str)]) -> Option<Server> {
     // localhost rather than the address: passkeys need a domain name.
     let port = listener.local_addr().unwrap().port();
     let url = Url::parse(&format!("http://localhost:{port}/")).unwrap();
-    let mut all = vec![("DRUSITE__PUBLIC_URL", url.as_str())];
+    // A test may give the server another public URL than the one it listens on.
+    let mut all = vec![];
+    if !overrides.iter().any(|(k, _)| *k == "DRUSITE__PUBLIC_URL") {
+        all.push(("DRUSITE__PUBLIC_URL", url.as_str()));
+    }
     all.extend_from_slice(overrides);
     let (config, keys) = config(&db.app_url, &all);
     let (state, sent) = state(config, db.db.clone());

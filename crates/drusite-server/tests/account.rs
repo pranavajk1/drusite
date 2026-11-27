@@ -358,6 +358,18 @@ async fn signing_in_checks_the_server_and_the_answer() {
         "{err}"
     );
 
+    // Reached under another name: sign-in moves to the server's own address (its issuer)…
+    let by_ip = server.url.as_str().replace("localhost", "127.0.0.1");
+    let url = phone
+        .supervisor
+        .begin_sign_in(&by_ip, APP_REDIRECT)
+        .await
+        .unwrap();
+    assert_eq!(url.host_str(), Some("localhost"), "{url}");
+    phone.wait_for(SyncPhase::SigningIn).await;
+    phone.supervisor.cancel_sign_in();
+    phone.wait_for(SyncPhase::SignedOut).await;
+
     // An answer for another sign-in is refused, and says so.
     phone
         .supervisor
@@ -383,4 +395,24 @@ async fn signing_in_checks_the_server_and_the_answer() {
     phone.wait_for(SyncPhase::SigningIn).await;
     phone.supervisor.cancel_sign_in();
     phone.wait_for(SyncPhase::SignedOut).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_server_whose_own_address_cant_be_reached_says_so() {
+    // Configured with a public URL nothing answers at, as when it's set to localhost on a server
+    // a phone reaches by IP address.
+    let mut overrides = password_server();
+    overrides.push(("DRUSITE__PUBLIC_URL", "http://127.0.0.1:1"));
+    let Some(server) = common::serve(&overrides).await else {
+        return;
+    };
+    let phone = Device::new();
+    let err = phone
+        .supervisor
+        .begin_sign_in(server.url.as_str(), APP_REDIRECT)
+        .await
+        .unwrap_err();
+    let text = err.to_string();
+    assert!(text.contains("can't reach http://127.0.0.1:1/"), "{text}");
+    assert!(text.contains("public_url"), "{text}");
 }
