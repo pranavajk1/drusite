@@ -11,7 +11,11 @@ publish.workspace = true
 
 
 [dependencies]
-reqwest = { workspace = true, features = ["json", "rustls"] }
+# No TLS provider of its own: the server's build brings aws-lc, the apps install ring (which
+# cross-compiles to phones) and hand in their own client.
+reqwest = { workspace = true, features = ["json", "stream", "rustls-no-provider"] }
+bytes.workspace = true
+futures-util = { workspace = true, features = ["std"] }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -21,6 +25,7 @@ zeroize.workspace = true
 [dev-dependencies]
 axum.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net"] }
+rustls = { workspace = true, features = ["ring", "std"] }
 
 [lints]
 workspace = true

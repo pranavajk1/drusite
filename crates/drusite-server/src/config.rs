@@ -188,12 +188,18 @@ fn default_text_config() -> String {
     "simple".to_owned()
 }
 
-/// An OpenAI-compatible embeddings endpoint: OpenAI, LiteLLM, Ollama, vLLM and others.
+/// The embedding model search indexes with, on any provider that makes embeddings: OpenAI,
+/// Google, Mistral, OpenRouter, or an OpenAI-compatible endpoint (LiteLLM, Ollama, vLLM, …).
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EmbeddingsConfig {
-    /// The API's base URL, e.g. `https://api.openai.com/v1` or `http://litellm:4000/v1`.
-    pub base_url: Url,
+    /// `openai`, `google`, `mistral`, `openrouter` or `openai-compatible` (the default).
+    #[serde(default = "default_embeddings_provider")]
+    pub provider: drusite_ai::Kind,
+    /// The API's base URL, e.g. `http://litellm:4000/v1`. Needed for `openai-compatible`; for a
+    /// vendor it replaces the vendor's own address (a proxy, a regional endpoint).
+    #[serde(default)]
+    pub base_url: Option<Url>,
     pub model: String,
     /// Names the vector space stored with every vector; the model name unless set. Changing it
     /// (or the model) embeds everything again.
@@ -212,6 +218,10 @@ pub struct EmbeddingsConfig {
     /// if searches return unrelated pages, lower it if they miss related ones.
     #[serde(default = "default_min_similarity")]
     pub min_similarity: f64,
+}
+
+const fn default_embeddings_provider() -> drusite_ai::Kind {
+    drusite_ai::Kind::OpenAiCompatible
 }
 
 const fn default_min_similarity() -> f64 {
@@ -659,6 +669,26 @@ impl Config {
                     .into(),
             );
         }
+        if let Some(e) = &search.embeddings {
+            if !e.provider.embeds() {
+                return invalid(format!(
+                    "[search.embeddings] provider {} doesn't make embeddings",
+                    e.provider.label()
+                ));
+            }
+            if e.base_url.is_none() && e.provider.default_base().is_none() {
+                return invalid(
+                    "[search.embeddings] base_url is needed for an openai-compatible provider"
+                        .into(),
+                );
+            }
+            if e.provider.needs_key() && e.api_key.is_none() {
+                return invalid(format!(
+                    "[search.embeddings] api_key is needed for {}",
+                    e.provider.label()
+                ));
+            }
+        }
 
         let auth = &self.auth;
         if auth.enabled_methods().is_empty() {
@@ -887,6 +917,60 @@ mod tests {
              issuer = \"https://idp.example.com\"\nclient_id = \"drusite\"\n"
         );
         assert!(load(&toml, &[]).is_err());
+    }
+
+    #[test]
+    fn embeddings_take_any_provider_that_makes_them() {
+        let env = |extra: &[(&'static str, &'static str)]| {
+            let mut v = vec![
+                ("DRUSITE__AUTH__PASSWORD__ENABLED", "true"),
+                ("DRUSITE__SEARCH__EMBEDDINGS__MODEL", "m"),
+            ];
+            v.extend_from_slice(extra);
+            v
+        };
+        // A custom endpoint, as before: the default provider.
+        let c = load(
+            MINIMAL,
+            &env(&[(
+                "DRUSITE__SEARCH__EMBEDDINGS__BASE_URL",
+                "http://litellm:4000/v1",
+            )]),
+        )
+        .unwrap();
+        let e = c.search.embeddings.unwrap();
+        assert_eq!(e.provider, drusite_ai::Kind::OpenAiCompatible);
+        // A vendor, with a key and no address.
+        let c = load(
+            MINIMAL,
+            &env(&[
+                ("DRUSITE__SEARCH__EMBEDDINGS__PROVIDER", "google"),
+                ("DRUSITE__SEARCH__EMBEDDINGS__API_KEY", "g"),
+            ]),
+        )
+        .unwrap();
+        assert_eq!(
+            c.search.embeddings.unwrap().provider,
+            drusite_ai::Kind::Google
+        );
+        // What can't work is refused at start.
+        for (extra, says) in [
+            (vec![], "base_url is needed"),
+            (
+                vec![("DRUSITE__SEARCH__EMBEDDINGS__PROVIDER", "openai")],
+                "api_key is needed",
+            ),
+            (
+                vec![
+                    ("DRUSITE__SEARCH__EMBEDDINGS__PROVIDER", "anthropic"),
+                    ("DRUSITE__SEARCH__EMBEDDINGS__API_KEY", "a"),
+                ],
+                "doesn't make embeddings",
+            ),
+        ] {
+            let err = load(MINIMAL, &env(&extra)).unwrap_err();
+            assert!(err.to_string().contains(says), "{err}");
+        }
     }
 
     #[test]

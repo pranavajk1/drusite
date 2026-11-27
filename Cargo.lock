@@ -1822,7 +1822,10 @@ name = "drusite-ai"
 version = "0.1.0-alpha.2"
 dependencies = [
  "axum",
+ "bytes",
+ "futures-util",
  "reqwest",
+ "rustls",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -1853,6 +1856,7 @@ dependencies = [
  "axum",
  "base64 0.23.1",
  "blake3",
+ "drusite-ai",
  "drusite-crdt",
  "drusite-dpop",
  "drusite-markdown",
@@ -1867,6 +1871,7 @@ dependencies = [
  "notify",
  "notify-debouncer-full",
  "prost",
+ "reqwest",
  "rmcp",
  "rusqlite",
  "rustls",
@@ -1885,6 +1890,7 @@ dependencies = [
  "ureq",
  "url",
  "uuid",
+ "webpki-roots 1.0.12",
  "zeroize",
 ]
 
