@@ -10,6 +10,7 @@
   import { today } from "./journal/dates";
   import { phaseLabel } from "./lib/Account.svelte";
   import AskPanel from "./lib/Ask.svelte";
+  import { openLayer, pushPage, replacePage, startHistory } from "./lib/back";
   import PageEditor from "./lib/PageEditor.svelte";
   import PageTree from "./lib/PageTree.svelte";
   import SearchPalette from "./lib/Search.svelte";
@@ -129,8 +130,8 @@
         // empty first page given up for the account's notes.
         if (current !== null && !pages.some((p) => p.id === current)) {
           const first = pages[0];
-          if (first) select(first.id);
-          else void createPage(null);
+          if (first) select(first.id, "replace");
+          else void createPage(null, "replace");
         }
       }
       if (event.type === "accountChanged") account = event.status;
@@ -151,23 +152,42 @@
           const last = localStorage.getItem(LAST);
           current = pages.find((p) => p.id === last)?.id ?? pages[0]!.id;
         }
+        stopHistory = startHistory(current, (id) => {
+          if (byId.has(id)) select(id, "none");
+        });
       } catch (e) {
         show(e);
       }
     })();
-    return stop;
+    return () => {
+      stop();
+      stopHistory?.();
+    };
   });
 
-  function select(id: PageId) {
+  let stopHistory: (() => void) | undefined;
+
+  /** Opens a page. `push` lets Back return to the one before; `replace` doesn't (it went away). */
+  function select(id: PageId, how: "push" | "replace" | "none" = "push") {
+    if (how === "push") pushPage(id);
+    else if (how === "replace") replacePage(id);
     current = id;
     drawer = false;
     localStorage.setItem(LAST, id);
   }
 
-  async function createPage(parent: PageId | null) {
+  // What's open over the page closes with Back: the pages drawer, and Ask where it fills a phone.
+  $effect(() => {
+    if (drawer) return openLayer(() => (drawer = false));
+  });
+  $effect(() => {
+    if (showAsk && phone()) return openLayer(() => (showAsk = false));
+  });
+
+  async function createPage(parent: PageId | null, how: "push" | "replace" = "push") {
     try {
       const page = await client.createPage(parent, "");
-      select(page.id);
+      select(page.id, how);
     } catch (e) {
       show(e);
     }
@@ -294,8 +314,8 @@
       const rest = await client.listPages();
       if (current === null || !rest.some((p) => p.id === current)) {
         const next = rest.find((p) => p.id === parent)?.id ?? rest[0]?.id;
-        if (next) select(next);
-        else await createPage(null);
+        if (next) select(next, "replace");
+        else await createPage(null, "replace");
       }
     } catch (e) {
       show(e);

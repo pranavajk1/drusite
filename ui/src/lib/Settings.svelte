@@ -37,6 +37,7 @@
   import Account from "./Account.svelte";
   import Agents from "./Agents.svelte";
   import Ai from "./Ai.svelte";
+  import { openLayer } from "./back";
   import NotionImport from "./NotionImport.svelte";
   import Icon from "./ui/Icon.svelte";
   import Modal from "./ui/Modal.svelte";
@@ -86,6 +87,12 @@
 
   // Importing from Notion works everywhere; the Markdown folder only where there's a bridge.
   const shown = $derived(SECTIONS.filter((s) => s.id !== "markdown" || bridge !== null));
+  // On phones a section is a screen of its own: Back goes to the list.
+  $effect(() => {
+    if (section !== "home" && (window.matchMedia?.("(max-width: 700px)").matches ?? false))
+      return openLayer(() => onsection("home"));
+  });
+
   /** The section on screen. On phones "home" is the list; on desktops, the first section. */
   const current = $derived<Section>(section === "home" ? "account" : section);
   const info = $derived(SECTIONS.find((s) => s.id === current)!);

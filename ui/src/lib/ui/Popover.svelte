@@ -6,6 +6,7 @@
 <script lang="ts">
   import { onMount, tick, type Snippet } from "svelte";
 
+  import { openLayer } from "../back";
   import { dismissable, placeBelow, portal, type Place } from "./floating";
 
   let {
@@ -44,7 +45,10 @@
     const undo = dismissable(() => [box, from, ...document.querySelectorAll(".popover:not(.db-popover)")], onclose);
     const observer = new ResizeObserver(position);
     if (box) observer.observe(box);
+    // The device's Back closes it.
+    const dismiss = openLayer(() => onclose());
     return () => {
+      dismiss();
       undo();
       observer.disconnect();
     };

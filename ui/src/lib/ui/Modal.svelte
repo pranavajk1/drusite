@@ -7,6 +7,7 @@
 <script lang="ts">
   import { onMount, type Snippet } from "svelte";
 
+  import { openLayer } from "../back";
   import Icon from "./Icon.svelte";
 
   let {
@@ -37,7 +38,12 @@
   onMount(() => {
     const before = document.activeElement as HTMLElement | null;
     if (!dialog.contains(document.activeElement)) dialog.focus({ preventScroll: true });
-    return () => before?.focus?.({ preventScroll: true });
+    // The device's Back closes it.
+    const dismiss = openLayer(() => onclose());
+    return () => {
+      dismiss();
+      before?.focus?.({ preventScroll: true });
+    };
   });
 
   function key(e: KeyboardEvent) {
