@@ -185,3 +185,15 @@
     display: none;
   }
 }
+
+/* A ghost button's grey would win over danger's red (same specificity, later rule). */
+.share-foot .btn.danger {
+  color: var(--danger);
+}
+
+@media (pointer: coarse) {
+  .share-row {
+    min-height: 56px;
+    padding: var(--space-1) 0;
+  }
+}
