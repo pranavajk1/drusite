@@ -1,0 +1,113 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+// Databases on the in-memory core: a task board made from the sidebar, cards added, dragged
+// between columns and opened; a property added; the table, calendar and list views; a filter;
+// and an inline database from the slash menu.
+
+import { type Page, expect, test } from "@playwright/test";
+
+import { openApp } from "./helpers";
+
+async function newBoard(page: Page) {
+  await openApp(page);
+  await page.getByRole("button", { name: "New task board" }).click();
+  await expect(page.getByRole("tab", { name: "Board" })).toHaveAttribute("aria-selected", "true");
+}
+
+function column(page: Page, name: string) {
+  return page.locator(".board-col", { has: page.locator(".board-col-head", { hasText: name }) });
+}
+
+async function addCard(page: Page, col: string, title: string) {
+  await column(page, col).getByRole("button", { name: "New" }).click();
+  await expect(page.getByLabel("Page title")).toBeFocused();
+  await page.keyboard.type(title);
+  // Back to the board, through the breadcrumb.
+  await page.locator(".breadcrumb .crumb").first().click();
+  await expect(column(page, col).locator(".card", { hasText: title })).toBeVisible();
+}
+
+/** Drags with pointer events, a step at a time, as a hand would. */
+async function drag(page: Page, from: string, toColumn: string) {
+  const card = page.locator(".card", { hasText: from });
+  const target = column(page, toColumn);
+  const a = (await card.boundingBox())!;
+  const b = (await target.boundingBox())!;
+  await page.mouse.move(a.x + 20, a.y + 10);
+  await page.mouse.down();
+  for (let i = 1; i <= 8; i++) await page.mouse.move(a.x + 20 + ((b.x + 40 - a.x - 20) * i) / 8, a.y + 10 + ((b.y + 60 - a.y - 10) * i) / 8);
+  await page.mouse.up();
+}
+
+test("a task board: cards are added to columns and dragged between them", async ({ page }) => {
+  await newBoard(page);
+  await addCard(page, "Not started", "Sow the seeds");
+  await addCard(page, "In progress", "Water the beds");
+  await drag(page, "Sow the seeds", "Done");
+  await expect(column(page, "Done").locator(".card", { hasText: "Sow the seeds" })).toBeVisible();
+  await expect(column(page, "Not started").locator(".card")).toHaveCount(0);
+  // The core holds the new status.
+  const statuses = await page.evaluate(async () => {
+    const core = window.drusiteMemoryCore!;
+    const pages = await core.handle({ type: "listPages" });
+    if (pages.type !== "pages") return [];
+    const db = pages.pages.find((p) => p.kind === "database")!;
+    const r = await core.handle({ type: "queryView", database: db.id, view: null, clock: { now: "2026-11-27T12:00", utcOffset: 0 } });
+    return r.type === "view" ? r.result.groups.filter((g) => g.rows.length).map((g) => `${g.label}: ${g.rows.map((x) => x.title).join(", ")}`) : [];
+  });
+  expect(statuses).toEqual(["In progress: Water the beds", "Done: Sow the seeds"]);
+});
+
+test("a card opens its page, whose properties edit in place", async ({ page }) => {
+  await newBoard(page);
+  await addCard(page, "Not started", "Order compost");
+  await page.locator(".card", { hasText: "Order compost" }).click();
+  await expect(page.getByLabel("Page title")).toHaveValue("Order compost");
+  await page.getByRole("button", { name: /^Priority:/ }).click();
+  await page.getByRole("option", { name: "High" }).click();
+  await expect(page.locator(".row-props .chip", { hasText: "High" })).toBeVisible();
+  // A new option, made by typing.
+  await page.getByRole("button", { name: /^Priority:/ }).click();
+  await page.getByPlaceholder("Search for an option…").fill("Someday");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".row-props .chip", { hasText: "Someday" })).toBeVisible();
+});
+
+test("a property is added, and the table, list and calendar show the rows", async ({ page }) => {
+  await newBoard(page);
+  await addCard(page, "Not started", "Mulch");
+  await page.getByRole("tab", { name: "All tasks" }).click();
+  await expect(page.locator(".db-table")).toBeVisible();
+  await page.getByRole("button", { name: "Add a property" }).last().click();
+  await page.getByLabel("Property name").fill("Points");
+  await page.getByRole("button", { name: "Type" }).click();
+  await page.getByRole("option", { name: "Number" }).click();
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(page.locator(".db-table th", { hasText: "Points" })).toBeVisible();
+  await page.getByRole("button", { name: "Points: Empty" }).click();
+  await page.keyboard.type("5");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".db-table td", { hasText: "5" })).toBeVisible();
+
+  // A filter that hides it, then a list view.
+  await page.getByRole("button", { name: "Filter" }).click();
+  await page.getByRole("button", { name: "Add a filter" }).click();
+  await expect(page.locator(".db-foot")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Add a view" }).click();
+  await page.getByRole("button", { name: "List" }).click();
+  await expect(page.locator(".db-list-row", { hasText: "Mulch" })).toBeVisible();
+  await page.getByRole("tab", { name: "Calendar" }).click();
+  await expect(page.locator(".cal-grid")).toBeVisible();
+});
+
+test("a task board goes inline in a page from the slash menu", async ({ page }) => {
+  await openApp(page);
+  await page.keyboard.type("/kanban");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".block-database .board")).toBeVisible();
+  await expect(page.locator(".block-database .db-inline-title")).toHaveText("Tasks");
+  // The database is a subpage, and its block says so.
+  const kinds = await page.evaluate(() => [...document.querySelectorAll(".editor > [data-kind]")].map((e) => JSON.parse(e.getAttribute("data-kind")!).type));
+  expect(kinds).toContain("database");
+});

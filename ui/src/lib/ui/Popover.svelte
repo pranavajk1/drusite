@@ -39,7 +39,9 @@
       const first = box?.querySelector<HTMLElement>("input, textarea, button, [tabindex]");
       first?.focus({ preventScroll: true });
     });
-    const undo = dismissable(() => [box, from], onclose);
+    // A select's list or a menu opened from inside it is outside it in the DOM (portalled), but
+    // a click there is still a click inside.
+    const undo = dismissable(() => [box, from, ...document.querySelectorAll(".popover:not(.db-popover)")], onclose);
     const observer = new ResizeObserver(position);
     if (box) observer.observe(box);
     return () => {

@@ -10,13 +10,18 @@ import { mount, unmount } from "svelte";
 import type { PageId, PageInfo, Template } from "../core/types";
 import Database from "../lib/database/Database.svelte";
 import { attrsOf } from "./convert";
+import { blockDom } from "./schema";
 import { queryHost } from "./query";
 
 /** Set on a transaction to make a database in the block the cursor is in. */
 export const MAKE_DATABASE = "drusite.makeDatabase";
 
-export function databaseView(node: Node, view: EditorView, getPos: () => number | undefined, setAttrs: (n: Node) => void): NodeView {
+export function databaseView(node: Node, view: EditorView, getPos: () => number | undefined): NodeView {
   const dom = document.createElement("div");
+  const setAttrs = (n: Node) => {
+    const spec = blockDom(n) as [string, Record<string, string>];
+    for (const [k, v] of Object.entries(spec[1])) dom.setAttribute(k, v);
+  };
   const contentDOM = document.createElement("div");
   contentDOM.hidden = true;
   const widget = document.createElement("div");

@@ -42,7 +42,7 @@ export const SLASH_ITEMS: Item[] = [
   { label: "Divider", icon: "minus", hint: "---", keywords: "rule line hr separator", kind: "divider" },
   { label: "Filter", icon: "list-filter", keywords: "query journal view", kind: "filter" },
   { label: "Database", icon: "table", keywords: "table inline database view rows", kind: "database" },
-  { label: "Task board", icon: "square-kanban", keywords: "tasks kanban board todo status", kind: "tasks" },
+  { label: "Task board", icon: "square-kanban", keywords: "tasks kanban board status", kind: "tasks" },
   { label: "File or image", icon: "paperclip", keywords: "attachment upload image picture photo", kind: "file" },
 ];
 

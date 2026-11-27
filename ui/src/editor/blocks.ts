@@ -213,7 +213,7 @@ export function blockView(node: Node, view: EditorView, getPos: () => number | u
   }
 
   if (kind.type === "query") return queryView(node, view, getPos, setAttrs);
-  if (kind.type === "database") return databaseView(node, view, getPos, setAttrs);
+  if (kind.type === "database") return databaseView(node, view, getPos);
   if (kind.type === "attachment") return attachmentView(node, setAttrs, dom, contentDOM);
 
   if (kind.type === "toggle") {
