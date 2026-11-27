@@ -8,6 +8,12 @@ import type {
   AccountStatus,
   AgentAccess,
   AgentSource,
+  AiCheckStep,
+  AiChoice,
+  AiFeature,
+  AiKind,
+  AiModel,
+  AiProvider,
   ApiError,
   BlockKind,
   BridgeStatus,
@@ -167,6 +173,40 @@ export class CoreClient {
   /** Takes back one agent call; whatever changed since stays. */
   async undoAgentCall(id: string, source: AgentSource): Promise<void> {
     await this.call({ type: "undoAgentCall", id, source }, "done");
+  }
+
+  /** AI: the kinds of provider there are, the ones set up on this device, and each feature's choice. */
+  async ai(): Promise<Omit<Extract<Response, { type: "ai" }>, "type">> {
+    const { type: _, ...rest } = await this.call({ type: "ai" }, "ai");
+    return rest;
+  }
+
+  /** Adds a provider (no `id`) or changes one. A null key keeps the saved one; "" removes it. */
+  async saveAiProvider(p: {
+    id: string | null;
+    kind: AiKind;
+    name: string;
+    baseUrl: string | null;
+    apiKey: string | null;
+  }): Promise<AiProvider> {
+    return (await this.call({ type: "saveAiProvider", ...p }, "aiProviderSaved")).provider;
+  }
+
+  async deleteAiProvider(id: string): Promise<void> {
+    await this.call({ type: "deleteAiProvider", id }, "done");
+  }
+
+  async setAiFeature(feature: AiFeature, choice: AiChoice | null): Promise<void> {
+    await this.call({ type: "setAiFeature", feature, choice }, "done");
+  }
+
+  async aiModels(provider: string): Promise<AiModel[]> {
+    return (await this.call({ type: "aiModels", provider }, "aiModels")).models;
+  }
+
+  /** Test connection: the models, then a tiny request to each model given. */
+  async testAiProvider(provider: string, chatModel: string | null, embeddingModel: string | null): Promise<AiCheckStep[]> {
+    return (await this.call({ type: "testAiProvider", provider, chatModel, embeddingModel }, "aiCheck")).steps;
   }
 
   /** Asks for a folder; null if the person cancels or the platform can't. */

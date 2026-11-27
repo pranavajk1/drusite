@@ -53,6 +53,60 @@ export type AgentToken = {
 	lastUsedAt: number | null,
 };
 
+/**  One step of *Test connection*. */
+export type AiCheckStep = {
+	what: string,
+	ok: boolean,
+	detail: string,
+	millis: number,
+};
+
+export type AiChoice = {
+	provider: string,
+	model: string,
+};
+
+/**  Something AI does, each with its own provider and model. */
+export type AiFeature = "chat" | "embeddings";
+
+export type AiFeatureChoice = {
+	feature: AiFeature,
+	choice: AiChoice | null,
+};
+
+/**  Which API an AI provider speaks. */
+export type AiKind = "anthropic" | "openAi" | "google" | "mistral" | "openRouter" | 
+/**  Any server speaking the OpenAI-compatible API: LiteLLM, Ollama, vLLM, LM Studio, … */
+"openAiCompatible";
+
+/**  What the UI needs to know about a kind of provider. */
+export type AiKindInfo = {
+	kind: AiKind,
+	label: string,
+	/**  The vendor's address; none for a custom endpoint, which must be given one. */
+	defaultBaseUrl: string | null,
+	needsKey: boolean,
+	/**  Whether it makes embeddings (Anthropic doesn't). */
+	embeds: boolean,
+};
+
+export type AiModel = {
+	id: string,
+	name: string | null,
+	/**  Whether it looks like an embedding model. */
+	embeddings: boolean,
+};
+
+/**  A provider set up on this device. Its key is never sent back, only whether there is one. */
+export type AiProvider = {
+	id: string,
+	kind: AiKind,
+	name: string,
+	baseUrl: string | null,
+	/**  The key's last four characters, when there is one. */
+	keyHint: string | null,
+};
+
 /**  Why a command failed. */
 export type ApiError = {
 	code: ErrorCode,
@@ -239,7 +293,28 @@ export type Command =
 /**  Disconnects an agent on this computer. */
 { type: "revokeAgentToken"; id: string } | 
 /**  Takes back what one agent call changed, as a new edit. */
-{ type: "undoAgentCall"; id: string; source: AgentSource };
+{ type: "undoAgentCall"; id: string; source: AgentSource } | 
+/**
+ *  The AI providers on this device and what each feature uses. Answered with
+ *  [`Response::Ai`].
+ */
+{ type: "ai" } | 
+/**
+ *  Adds a provider (`id` none) or changes one. A `None` key keeps the one already saved; an
+ *  empty one removes it. Answered with [`Response::AiProviderSaved`].
+ */
+{ type: "saveAiProvider"; id: string | null; kind: AiKind; name: string; baseUrl: string | null; apiKey: string | null } | 
+/**  Removes a provider; the features that used it are left without one. */
+{ type: "deleteAiProvider"; id: string } | 
+/**  Picks the provider and model a feature uses, or none. */
+{ type: "setAiFeature"; feature: AiFeature; choice: AiChoice | null } | 
+/**  The models a provider offers. Answered with [`Response::AiModels`]. */
+{ type: "aiModels"; provider: string } | 
+/**
+ *  *Test connection*: lists the models, then tries each model given with a tiny request.
+ *  Answered with [`Response::AiCheck`].
+ */
+{ type: "testAiProvider"; provider: string; chatModel: string | null; embeddingModel: string | null };
 
 /**  How a condition compares a property. */
 export type Comparison = 
@@ -305,6 +380,8 @@ export type Event =
 { type: "trashChanged"; pages: TrashItem[] } | 
 /**  An agent on this computer changed something, or the agents' list changed. */
 { type: "agentsChanged" } | 
+/**  The AI providers or the features' choices changed. */
+{ type: "aiChanged" } | 
 /**  A file this device was waiting for has come from the server. */
 { type: "attachmentArrived"; blob: string } | 
 /**  The Markdown bridge ran a round that did something, or failed. */
@@ -440,7 +517,9 @@ export type Response = { type: "pages"; pages: PageInfo[] } | { type: "pageCreat
 /**  Newest first. */
 activity: AgentCall[]; 
 /**  Why the server's activity couldn't be listed, if it couldn't. */
-serverProblem: string | null } | { type: "agentToken"; token: string; url: string } | { type: "done" };
+serverProblem: string | null } | { type: "agentToken"; token: string; url: string } | { type: "ai"; 
+/**  Whether this build can reach AI providers. */
+available: boolean; kinds: AiKindInfo[]; providers: AiProvider[]; features: AiFeatureChoice[] } | { type: "aiProviderSaved"; provider: AiProvider } | { type: "aiModels"; models: AiModel[] } | { type: "aiCheck"; steps: AiCheckStep[] } | { type: "done" };
 
 /**  A page that matched a search, at the block that matched best (none when only the title did). */
 export type SearchHit = {
