@@ -16,6 +16,9 @@ ENV RUSTUP_TOOLCHAIN=1.100.0 CARGO_TERM_COLOR=always \
     CARGO_PROFILE_RELEASE_DEBUG=false CARGO_PROFILE_RELEASE_STRIP=symbols
 WORKDIR /src
 COPY . .
+# The commit the image is built from, which the server logs next to its version.
+ARG DRUSITE_COMMIT
+ENV DRUSITE_COMMIT=${DRUSITE_COMMIT}
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
     cargo build --release --locked --package drusite-server \

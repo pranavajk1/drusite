@@ -1725,11 +1725,11 @@ dependencies = [
 
 [[package]]
 name = "drusite-ai"
-version = "0.0.0"
+version = "0.1.0-alpha.2"
 
 [[package]]
 name = "drusite-app"
-version = "0.0.0"
+version = "0.1.0-alpha.2"
 dependencies = [
  "drusite-core",
  "drusite-dpop",
@@ -1743,7 +1743,7 @@ dependencies = [
 
 [[package]]
 name = "drusite-core"
-version = "0.0.0"
+version = "0.1.0-alpha.2"
 dependencies = [
  "base64 0.23.1",
  "drusite-crdt",
@@ -1776,7 +1776,7 @@ dependencies = [
 
 [[package]]
 name = "drusite-crdt"
-version = "0.0.0"
+version = "0.1.0-alpha.2"
 dependencies = [
  "drusite-model",
  "fastrand",
@@ -1787,7 +1787,7 @@ dependencies = [
 
 [[package]]
 name = "drusite-dpop"
-version = "0.0.0"
+version = "0.1.0-alpha.2"
 dependencies = [
  "base64 0.23.1",
  "getrandom 0.4.3",
@@ -1801,7 +1801,7 @@ dependencies = [
 
 [[package]]
 name = "drusite-model"
-version = "0.0.0"
+version = "0.1.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -1812,7 +1812,7 @@ dependencies = [
 
 [[package]]
 name = "drusite-proto"
-version = "0.0.0"
+version = "0.1.0-alpha.2"
 dependencies = [
  "prost",
  "thiserror 2.0.21",
@@ -1821,7 +1821,7 @@ dependencies = [
 
 [[package]]
 name = "drusite-server"
-version = "0.0.0"
+version = "0.1.0-alpha.2"
 dependencies = [
  "anyhow",
  "argon2",
@@ -1875,7 +1875,7 @@ dependencies = [
 
 [[package]]
 name = "drusite-wasm"
-version = "0.0.0"
+version = "0.1.0-alpha.2"
 
 [[package]]
 name = "dtoa"
@@ -7434,7 +7434,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-drusite"
-version = "0.0.0"
+version = "0.1.0-alpha.2"
 dependencies = [
  "base64 0.23.1",
  "drusite-core",
@@ -9221,7 +9221,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.0.0"
+version = "0.1.0-alpha.2"
 dependencies = [
  "anyhow",
  "drusite-core",

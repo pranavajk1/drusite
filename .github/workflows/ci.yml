@@ -44,6 +44,8 @@ jobs:
         with:
           persist-credentials: false
       - run: cargo fmt --all --check
+      - name: The versions agree
+        run: .github/scripts/version.sh
 
   check:
     name: clippy and tests (${{ matrix.os }})

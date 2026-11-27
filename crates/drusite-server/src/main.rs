@@ -163,6 +163,9 @@ async fn serve(config: Config) -> anyhow::Result<()> {
     let methods = config.auth.enabled_methods();
     tracing::info!(
         version = env!("CARGO_PKG_VERSION"),
+        commit = option_env!("DRUSITE_COMMIT")
+            .filter(|c| !c.is_empty())
+            .unwrap_or("unknown"),
         ?methods,
         "starting drusite-server"
     );
