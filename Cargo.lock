@@ -1858,6 +1858,7 @@ dependencies = [
  "blake3",
  "drusite-ai",
  "drusite-crdt",
+ "drusite-db",
  "drusite-dpop",
  "drusite-formula",
  "drusite-markdown",
@@ -1913,6 +1914,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "drusite-db"
+version = "0.1.0-alpha.4"
+dependencies = [
+ "drusite-crdt",
+ "drusite-formula",
+ "drusite-model",
+ "serde",
+ "specta",
+ "time",
+ "uuid",
+]
+
+[[package]]
 name = "drusite-dpop"
 version = "0.1.0-alpha.4"
 dependencies = [
@@ -1955,6 +1969,7 @@ version = "0.1.0-alpha.4"
 dependencies = [
  "base64 0.23.1",
  "drusite-crdt",
+ "drusite-db",
  "drusite-markdown",
  "drusite-model",
  "http",

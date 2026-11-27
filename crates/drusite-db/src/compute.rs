@@ -15,8 +15,7 @@ use drusite_crdt::{RowData, Workspace};
 use drusite_formula::{self as formula, PageRef, Value as F};
 use drusite_model::database::{
     Color, DateTime, DateUnit, DateValue, Filter, FilterCondition, FilterOp, FilterValue, Grouping,
-    Layout, Person, PropertyDef, PropertyKind, RelativeDay, RollupFunction, Schema, TITLE, Value,
-    View,
+    Layout, Person, PropertyDef, PropertyKind, RelativeDay, RollupFunction, Schema, Value, View,
 };
 use drusite_model::{Day, PageId};
 use serde::{Deserialize, Serialize};
@@ -78,7 +77,8 @@ pub struct ViewResult {
     pub total: u32,
 }
 
-struct Loaded {
+/// One database, loaded for a computation.
+pub struct Loaded {
     schema: Schema,
     rows: Vec<PageId>,
     data: HashMap<PageId, RowData>,
@@ -87,19 +87,48 @@ struct Loaded {
 
 /// One computation over the workspace: it loads the databases it needs once, and remembers each
 /// computed cell.
-pub(crate) struct Db<'a> {
+impl std::fmt::Debug for Loaded {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Loaded")
+            .field("rows", &self.rows.len())
+            .finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Debug for Db<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Db")
+            .field("now", &self.now)
+            .finish_non_exhaustive()
+    }
+}
+
+/// The time now in UTC, for computations without a person's clock (agents).
+pub fn utc_now() -> DateTime {
+    let now = time::OffsetDateTime::now_utc();
+    let day = Day::new(now.year(), now.month().into(), now.day()).unwrap_or_else(|| {
+        Day::new(1970, 1, 1).unwrap_or_else(|| unreachable!("1970-01-01 is a day"))
+    });
+    DateTime {
+        day,
+        minutes: Some(u16::from(now.hour()) * 60 + u16::from(now.minute())),
+    }
+}
+
+/// One computation over a workspace.
+pub struct Db<'a> {
     ws: &'a Workspace,
     loaded: RefCell<HashMap<PageId, Rc<Loaded>>>,
     memo: RefCell<HashMap<(PageId, String), Result<F, String>>>,
     busy: RefCell<HashSet<(PageId, String)>>,
     /// `twin` index: (database, property) → row → the rows that link to it.
     back: RefCell<HashMap<(PageId, String), Rc<HashMap<PageId, Vec<PageId>>>>>,
-    pub(crate) now: DateTime,
-    pub(crate) utc_offset: i32,
+    pub now: DateTime,
+    pub utc_offset: i32,
 }
 
 /// When a page was made, from its ID (a UUIDv7 holds its creation time).
-pub(crate) fn id_time(id: PageId) -> i64 {
+pub fn id_time(id: PageId) -> i64 {
     id.as_uuid().get_timestamp().map_or(0, |t| {
         let (s, n) = t.to_unix();
         i64::try_from(s).unwrap_or(0) * 1000 + i64::from(n / 1_000_000)
@@ -120,7 +149,7 @@ fn local(ms: i64, offset: i32) -> DateTime {
 }
 
 impl<'a> Db<'a> {
-    pub(crate) fn new(ws: &'a Workspace, now: DateTime, utc_offset: i32) -> Self {
+    pub fn new(ws: &'a Workspace, now: DateTime, utc_offset: i32) -> Self {
         Self {
             ws,
             loaded: RefCell::default(),
@@ -154,7 +183,7 @@ impl<'a> Db<'a> {
         Some(l)
     }
 
-    pub(crate) fn schema(&self, db: PageId) -> Option<Schema> {
+    pub fn schema(&self, db: PageId) -> Option<Schema> {
         self.load(db).map(|l| l.schema.clone())
     }
 
@@ -199,7 +228,7 @@ impl<'a> Db<'a> {
     }
 
     /// The rows of `db` whose `prop` links to `row`.
-    pub(crate) fn far_side(&self, row: PageId, db: PageId, prop: &str) -> Vec<PageId> {
+    pub fn far_side(&self, row: PageId, db: PageId, prop: &str) -> Vec<PageId> {
         self.backlinks(db, prop)
             .get(&row)
             .cloned()
@@ -457,7 +486,7 @@ impl<'a> Db<'a> {
     }
 
     /// What `view` of `db` shows, on `today`.
-    pub(crate) fn query(&self, db: PageId, view: &View, today: Day) -> Option<ViewResult> {
+    pub fn query(&self, db: PageId, view: &View, today: Day) -> Option<ViewResult> {
         let l = self.load(db)?;
         let total = l.rows.len();
         let mut rows: Vec<PageId> = l
@@ -683,14 +712,14 @@ impl<'a> Db<'a> {
     }
 
     /// One row's cells, for its page.
-    pub(crate) fn row(&self, row: PageId) -> Option<(Schema, RowView)> {
+    pub fn row(&self, row: PageId) -> Option<(Schema, RowView)> {
         let db = self.ws.database_of(row)?;
         let l = self.load(db)?;
         Some((l.schema.clone(), self.row_view(row, &l)))
     }
 
     /// Every row's cells, for the search index and the Markdown folder.
-    pub(crate) fn all_rows(&self, db: PageId) -> Vec<RowView> {
+    pub fn all_rows(&self, db: PageId) -> Vec<RowView> {
         let Some(l) = self.load(db) else {
             return Vec::new();
         };
@@ -723,7 +752,7 @@ fn is_percent(f: RollupFunction) -> bool {
 }
 
 /// A rollup's function over the values it reached.
-pub(crate) fn roll(function: RollupFunction, values: &[F]) -> F {
+pub fn roll(function: RollupFunction, values: &[F]) -> F {
     use RollupFunction as R;
     let flat: Vec<F> = values
         .iter()
@@ -835,7 +864,7 @@ pub(crate) fn roll(function: RollupFunction, values: &[F]) -> F {
 }
 
 /// A stored value as its cell shows it.
-pub(crate) fn show_value(v: &Value, def: &PropertyDef, db: &Db<'_>) -> String {
+pub fn show_value(v: &Value, def: &PropertyDef, db: &Db<'_>) -> String {
     let opt = |id: &str| {
         def.options
             .iter()
@@ -899,7 +928,7 @@ fn date_group(day: Day, unit: DateUnit) -> (String, String) {
     }
 }
 
-pub(crate) fn shift(day: Day, days: i64) -> Day {
+pub fn shift(day: Day, days: i64) -> Day {
     let d = DateTime::day(day);
     drusite_formula::parse(&format!("dateAdd(parseDate(\"{d}\"), {days}, \"days\")"))
         .ok()
@@ -1149,7 +1178,8 @@ impl formula::Context for NoCtx {
 }
 
 /// The formula types of a database's properties, for the checker.
-pub(crate) struct Types<'a>(pub(crate) &'a Schema);
+#[derive(Debug)]
+pub struct Types<'a>(pub &'a Schema);
 
 impl formula::TypeEnv for Types<'_> {
     fn prop(&self, name: &str) -> Option<formula::Type> {
@@ -1189,6 +1219,7 @@ impl formula::TypeEnv for Types<'_> {
 }
 
 /// Like [`Types`], but formulas are `Any`, so formulas naming each other can't loop.
+#[derive(Debug)]
 struct NoFormulas<'a>(&'a Schema);
 
 impl formula::TypeEnv for NoFormulas<'_> {

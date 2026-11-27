@@ -23,6 +23,7 @@ drusite-ai = { path = "crates/drusite-ai" }
 drusite-markdown = { path = "crates/drusite-markdown" }
 drusite-mcp = { path = "crates/drusite-mcp" }
 drusite-formula = { path = "crates/drusite-formula" }
+drusite-db = { path = "crates/drusite-db" }
 tauri-plugin-drusite = { path = "crates/tauri-plugin-drusite" }
 
 # Third-party. Each is the newest stable release when added; bump them together.

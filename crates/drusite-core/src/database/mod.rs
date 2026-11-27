@@ -3,8 +3,7 @@
 //! Databases through the Core API: making them (from a template, for tasks), changing their
 //! schemas and views, setting cells, and showing views ([`compute`]).
 
-pub mod compute;
-pub mod markdown;
+pub use drusite_db::{compute, markdown};
 pub mod notion;
 #[cfg(feature = "net")]
 pub mod notion_api;

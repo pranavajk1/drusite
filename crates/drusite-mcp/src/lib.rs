@@ -19,6 +19,7 @@
 //! Pages go to agents as Markdown, in the same dialect as the Markdown bridge: each block ends
 //! with its ID (`^…`), so an agent can cite a block, and an edited page keeps its blocks.
 
+mod databases;
 mod handler;
 mod markdown;
 mod tools;

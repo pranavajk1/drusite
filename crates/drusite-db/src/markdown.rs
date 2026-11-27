@@ -20,7 +20,7 @@ use drusite_model::database::{
 };
 use drusite_model::{PageId, Property, PropertyValue};
 
-use super::compute::{Cell, RowView};
+use crate::compute::{Cell, RowView};
 
 /// A row's values as frontmatter properties, in schema order (the title is the file's name).
 pub fn row_properties(schema: &Schema, row: &RowView) -> Vec<Property> {

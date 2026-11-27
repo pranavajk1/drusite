@@ -30,6 +30,7 @@ drusite-dpop.workspace = true
 sha2.workspace = true
 url.workspace = true
 drusite-crdt.workspace = true
+drusite-db.workspace = true
 drusite-formula.workspace = true
 time.workspace = true
 miniz_oxide.workspace = true
