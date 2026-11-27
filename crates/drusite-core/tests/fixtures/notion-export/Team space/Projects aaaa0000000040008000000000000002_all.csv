@@ -1,0 +1,3 @@
+﻿Name,Budget,Done %,Lead,Site,Stage,Task count,Tasks,Total points
+Garden app,"$1,250.00",0.5,Ada Lovelace,https://example.com/garden,Active,2,"Water the seedlings (Tasks/Water%20the%20seedlings%20cccc0000000040008000000000000001.csv), Write recipes, part one (Tasks/Write%20recipes,%20part%20one%20cccc0000000040008000000000000003.csv)",8
+Recipe site,$300.00,0,,,Planning,2,"Design the logo (Tasks/Design%20the%20logo%20cccc0000000040008000000000000002.csv), Pick a domain (Tasks/Pick%20a%20domain%20cccc0000000040008000000000000004.csv)",7

@@ -16,6 +16,8 @@ pub mod auth;
 #[cfg(feature = "sqlite")]
 pub mod bridge;
 #[cfg(feature = "sqlite")]
+pub mod database;
+#[cfg(feature = "sqlite")]
 mod engine;
 #[cfg(feature = "sqlite")]
 pub mod import;

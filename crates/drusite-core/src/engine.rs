@@ -138,6 +138,7 @@ impl Core {
             Command::RenamePage { page, title } => {
                 self.workspace.set_title(page, &title)?;
                 self.save_workspace()?;
+                self.row_touched(page);
                 Ok(Response::Done)
             }
             Command::MovePage {
@@ -369,6 +370,88 @@ impl Core {
                 ErrorCode::Unsupported,
                 "publishing to the web needs a Drusite server, through the app",
             )),
+            Command::CreateDatabase {
+                parent,
+                title,
+                inline,
+                template,
+            } => {
+                let (page, schema) = self.create_database(parent, &title, inline, template)?;
+                Ok(Response::DatabaseCreated { page, schema })
+            }
+            Command::Database { database } => Ok(Response::Database {
+                schema: self.workspace.schema(database)?,
+            }),
+            Command::QueryView {
+                database,
+                view,
+                clock,
+            } => Ok(Response::View {
+                result: self.query_view(database, view.as_deref(), clock)?,
+            }),
+            Command::RowCells { row, clock } => {
+                let (schema, row) = match self.row_cells(row, clock)? {
+                    Some((s, r)) => (Some(s), Some(r)),
+                    None => (None, None),
+                };
+                Ok(Response::RowCells { schema, row })
+            }
+            Command::PutProperty {
+                database,
+                property,
+                twin_name,
+            } => Ok(Response::Database {
+                schema: self.put_property(database, property, twin_name)?,
+            }),
+            Command::DeleteProperty { database, property } => Ok(Response::Database {
+                schema: self.delete_property(database, &property)?,
+            }),
+            Command::PutView { database, view } => Ok(Response::Database {
+                schema: self.put_view(database, &view)?,
+            }),
+            Command::DeleteView { database, view } => Ok(Response::Database {
+                schema: self.delete_view(database, &view)?,
+            }),
+            Command::SetCell {
+                row,
+                property,
+                value,
+            } => {
+                self.set_cell(row, &property, value)?;
+                Ok(Response::Done)
+            }
+            Command::CreateRow {
+                database,
+                title,
+                values,
+                after,
+            } => Ok(Response::PageCreated {
+                page: self.create_row(
+                    database,
+                    &title,
+                    values.into_iter().map(|c| (c.property, c.value)).collect(),
+                    after,
+                )?,
+            }),
+            Command::CheckFormula {
+                database,
+                expression,
+            } => Ok(Response::FormulaCheck {
+                check: self.check_formula(database, &expression)?,
+            }),
+            Command::ImportNotion { path } => Ok(Response::NotionImported {
+                report: self.import_notion_path(Path::new(&path))?,
+            }),
+            Command::ImportNotionData { name, data } => Ok(Response::NotionImported {
+                report: self.import_notion_data(&name, &data)?,
+            }),
+            // These need the network and the device's key store: the app runs them.
+            Command::ImportNotionApi { .. } | Command::NotionToken | Command::ForgetNotionToken => {
+                Err(ApiError::new(
+                    ErrorCode::Unsupported,
+                    "importing from Notion's API needs the Drusite app",
+                ))
+            }
             Command::SetSetting { setting } => {
                 self.set_setting(setting)?;
                 Ok(Response::Settings {
@@ -509,6 +592,7 @@ impl Core {
         self.store.save_page(&open.page, &mut open.at)?;
         let patch = patch_for(&open.page, &touched, &removed)?;
         self.changed(*id.as_uuid());
+        self.row_touched(id);
         match failure {
             None => Ok(EditOutcome { created, patch }),
             Some(err) => {

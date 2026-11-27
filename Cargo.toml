@@ -82,6 +82,7 @@ tracing-subscriber = "0.3.23"
 url = "2.5.9"
 fastrand = "2.5.0"
 regex = { version = "1.13.2", default-features = false }
+miniz_oxide = { version = "0.9.1", default-features = false, features = ["with-alloc"] }
 getrandom = "0.4.3"
 libc = "0.2.191"
 loro = "1.19.1"

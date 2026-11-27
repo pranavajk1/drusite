@@ -9,7 +9,7 @@ use pulldown_cmark::{CodeBlockKind, Event, LinkType, Options, Parser, Tag, TagEn
 
 use crate::front::{Frontmatter, split_frontmatter};
 use crate::ids::decode_block_id;
-use crate::write::{CALLOUTS, QUERY_LANG};
+use crate::write::{CALLOUTS, DATABASE_LANG, QUERY_LANG};
 use crate::{BlockRef, MdBlock, MdPage, Resolver};
 
 /// Reads a Markdown file: its frontmatter and its blocks.
@@ -289,6 +289,11 @@ impl Reader<'_> {
                     if let BlockKind::Query { query } = &mut block.kind {
                         *query = code;
                         block.spans.clear();
+                    } else if matches!(&block.kind, BlockKind::Code { language } if language == DATABASE_LANG)
+                        && let Some(kind) = database_block(&code)
+                    {
+                        block.kind = kind;
+                        block.spans.clear();
                     } else {
                         block.spans = if code.is_empty() {
                             Vec::new()
@@ -563,7 +568,10 @@ impl Reader<'_> {
             }
             let holds_text = !matches!(
                 b.kind,
-                BlockKind::Code { .. } | BlockKind::Query { .. } | BlockKind::Divider
+                BlockKind::Code { .. }
+                    | BlockKind::Query { .. }
+                    | BlockKind::Database { .. }
+                    | BlockKind::Divider
             );
             if holds_text {
                 b.id = take_ref(&mut b.spans, src, extra.tail);
@@ -577,7 +585,10 @@ impl Reader<'_> {
                 && prev.indent >= b.indent
                 && matches!(
                     prev.kind,
-                    BlockKind::Code { .. } | BlockKind::Query { .. } | BlockKind::Divider
+                    BlockKind::Code { .. }
+                        | BlockKind::Query { .. }
+                        | BlockKind::Database { .. }
+                        | BlockKind::Divider
                 )
             {
                 prev.id = b.id;
@@ -675,4 +686,23 @@ pub(crate) fn normalise(spans: &[Span]) -> Vec<Span> {
 /// What a block's spans mean once read back, for tests and the bridge's comparisons.
 pub fn normalise_spans(spans: &[Span]) -> Vec<Span> {
     normalise(spans)
+}
+
+/// An inline database block's fence: `database: <id>` and, optionally, `view: <id>`.
+fn database_block(code: &str) -> Option<BlockKind> {
+    let mut database = None;
+    let mut view = None;
+    for line in code.lines() {
+        if let Some((k, v)) = line.split_once(':') {
+            match k.trim() {
+                "database" => database = v.trim().parse().ok(),
+                "view" => view = Some(v.trim().to_owned()).filter(|v| !v.is_empty()),
+                _ => {}
+            }
+        }
+    }
+    Some(BlockKind::Database {
+        database: database?,
+        view,
+    })
 }
