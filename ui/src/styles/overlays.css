@@ -235,6 +235,7 @@
 }
 
 .search-where {
+  margin-left: 0.4em;
   color: var(--text-3);
   font-weight: var(--weight-regular);
 }

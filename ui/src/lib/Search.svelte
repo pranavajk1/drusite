@@ -96,7 +96,7 @@
           <button class="search-hit" class:active={i === active} onmouseenter={() => (active = i)} onclick={() => onopen(hit)}>
             <Icon name={byId.get(hit.page)?.kind === "journal" ? "calendar-days" : "file-text"} size={18} />
             <span class="search-text">
-              <span class="search-title">{hit.title || "Untitled"}{#if place}<span class="search-where"> — {place}</span>{/if}</span>
+              <span class="search-title">{hit.title || "Untitled"}{#if place}<span class="search-where">— {place}</span>{/if}</span>
               {#if hit.block}
                 <span class="search-snippet">
                   {#each hit.snippet as part, j (j)}{#if part.highlight}<mark>{part.text}</mark>{:else}{part.text}{/if}{/each}
