@@ -220,12 +220,57 @@ async fn serve(config: Config) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(listen)
         .await
         .with_context(|| format!("listening on {listen}"))?;
+    let _public = serve_public(&state).await?;
     tracing::info!(%listen, "ready");
-    axum::serve(listener, app::router(state))
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    axum::serve(
+        listener,
+        app::router(state).into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await?;
     tracing::info!("stopped");
     Ok(())
+}
+
+/// The public host's own listener, when `[publish] listen` is set: published pages and their
+/// files only, over TLS when a certificate is configured.
+async fn serve_public(state: &AppState) -> anyhow::Result<Option<tokio::task::JoinHandle<()>>> {
+    let publish = &state.config().publish;
+    let Some(listen) = publish.listen.filter(|_| publish.enabled) else {
+        return Ok(None);
+    };
+    let listener = tokio::net::TcpListener::bind(listen)
+        .await
+        .with_context(|| format!("listening for the public host on {listen}"))?;
+    let app = drusite_server::publish::public_router(state.clone());
+    let base = state.config().publish_base();
+    let task = match (&publish.tls_cert, &publish.tls_key) {
+        (Some(cert), Some(key)) => {
+            let acceptor = drusite_server::publish::tls::acceptor(cert, key)?;
+            tracing::info!(%listen, %base, "public host ready (TLS)");
+            tokio::spawn(drusite_server::publish::tls::serve_tls(
+                listener,
+                acceptor,
+                app,
+                shutdown_signal(),
+            ))
+        }
+        _ => {
+            tracing::info!(%listen, %base, "public host ready");
+            tokio::spawn(async move {
+                let served = axum::serve(
+                    listener,
+                    app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+                )
+                .with_graceful_shutdown(shutdown_signal())
+                .await;
+                if let Err(error) = served {
+                    tracing::error!(%error, "the public host stopped");
+                }
+            })
+        }
+    };
+    Ok(Some(task))
 }
 
 async fn shutdown_signal() {

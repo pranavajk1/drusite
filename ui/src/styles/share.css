@@ -1,0 +1,187 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+
+/* Share to web (lib/Share.svelte, design/DESIGN.md §7.10). */
+
+.share-popover {
+  width: 380px;
+  max-width: calc(100vw - 16px);
+  max-height: min(600px, 80vh);
+  padding: 0;
+  transform-origin: top right;
+}
+
+.share-head {
+  padding: var(--space-3) var(--space-4) var(--space-2);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  box-shadow: inset 0 -1px 0 var(--divider);
+}
+
+.share {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  font-size: var(--text-md);
+}
+
+.share-sheet .share {
+  padding: 0 var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom));
+}
+
+.share-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 44px;
+}
+
+.share-row-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.share-label {
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-ui);
+}
+
+.share-desc {
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  line-height: var(--leading-ui);
+}
+
+.share-globe {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  background: var(--bg-subtle);
+  color: var(--text-2);
+}
+
+.share-globe.on {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.share-problem,
+.share-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+
+.share-problem .icon {
+  flex: none;
+  margin-top: 2px;
+}
+
+.share-link {
+  display: flex;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 var(--space-1);
+}
+
+.share-url {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  text-overflow: ellipsis;
+}
+
+.share-copy {
+  flex: none;
+  gap: var(--space-1);
+}
+
+.share-options {
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--space-1);
+  padding-top: var(--space-1);
+  box-shadow: inset 0 1px 0 var(--divider);
+}
+
+.share-sub {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+}
+
+.share-sub-label {
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+
+.share-date,
+.share-password {
+  flex: 1;
+  min-width: 0;
+}
+
+.share-lock {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.share-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding-top: var(--space-3);
+  box-shadow: inset 0 1px 0 var(--divider);
+}
+
+.share-foot .share-desc {
+  flex: 1;
+}
+
+.share-foot .btn {
+  gap: var(--space-1);
+}
+
+/* The top bar's button, and the tree's mark for a published page. */
+
+.topbar-share {
+  gap: var(--space-1);
+  height: var(--row);
+  padding: 0 var(--space-2);
+  color: var(--text-2);
+  font-size: var(--text-md);
+}
+
+.topbar-share.published {
+  color: var(--accent-text);
+}
+
+.tree-published {
+  display: inline-flex;
+  flex: none;
+  margin-left: var(--space-1);
+  color: var(--text-3);
+}
+
+@media (max-width: 700px) {
+  .topbar-share {
+    display: none;
+  }
+}

@@ -14,6 +14,7 @@
   import PageTree from "./lib/PageTree.svelte";
   import SearchPalette from "./lib/Search.svelte";
   import SettingsSheet, { type Opening } from "./lib/Settings.svelte";
+  import ShareSheet from "./lib/Share.svelte";
   import TrashSheet from "./lib/Trash.svelte";
   import Icon from "./lib/ui/Icon.svelte";
   import Menu, { type MenuItem } from "./lib/ui/Menu.svelte";
@@ -92,6 +93,9 @@
   });
 
   let pageMenu = $state<HTMLElement | null>(null);
+  let shareButton = $state<HTMLElement | null>(null);
+  /** Share to web: open, from the top bar's button (desktops) or the page actions (phones). */
+  let sharing = $state<{ anchor: HTMLElement | null } | null>(null);
 
   const LAST = "drusite.lastPage";
 
@@ -303,6 +307,11 @@
   function pageActions(id: PageId): MenuItem[] {
     return [
       { label: "Add a page inside", icon: "plus", run: () => createPage(id) },
+      {
+        label: byId.get(id)?.published ? "Published to web" : "Share to web",
+        icon: "globe",
+        run: () => (sharing = { anchor: phone() ? null : shareButton }),
+      },
       { label: "Search", icon: "search", hint: "⌘K", run: () => (showSearch = true) },
       { label: "Move to Trash", icon: "trash-2", danger: true, run: () => deletePage(id) },
     ];
@@ -465,6 +474,17 @@
         {@render syncDot()}<span class="topbar-sync-label">{syncLabel}</span>
       </button>
       <button
+        bind:this={shareButton}
+        class="btn ghost small topbar-share"
+        class:published={info?.published}
+        aria-haspopup="dialog"
+        aria-expanded={sharing !== null}
+        title={info?.published ? "Published to web" : "Share to web"}
+        onclick={(e) => (sharing = sharing ? null : { anchor: e.currentTarget })}
+      >
+        {#if info?.published}<Icon name="globe" size={14} />{/if}Share
+      </button>
+      <button
         class="icon-btn topbar-ask"
         class:active={showAsk}
         aria-label="Ask your notes"
@@ -547,6 +567,18 @@
 {/if}
 {#if pageMenu && current}
   <Menu anchor={pageMenu} label="Page actions" onclose={() => (pageMenu = null)} items={pageActions(current)} />
+{/if}
+{#if sharing && current}
+  {#key current}
+    <ShareSheet
+      {client}
+      page={current}
+      {title}
+      anchor={sharing.anchor}
+      phone={sharing.anchor === null}
+      onclose={() => (sharing = null)}
+    />
+  {/key}
 {/if}
 {#if showSearch}
   <SearchPalette {client} {pages} onopen={openHit} onclose={() => (showSearch = false)} />

@@ -124,6 +124,8 @@ pub(super) fn consent_page(
          Read, add and edit pages</label>\
          <label class=\"choice\"><input type=\"checkbox\" name=\"journal\"> \
          Edit journal entries too (otherwise it can only read them)</label>\
+         <label class=\"choice\"><input type=\"checkbox\" name=\"publish\"> \
+         Publish pages to the web (anyone with the link can read them)</label>\
          <p class=\"muted\">Agents can never delete pages.</p></fieldset>\
          <div class=\"actions\"><button type=\"submit\" name=\"decision\" value=\"deny\">Don't allow\
          </button> <button type=\"submit\" name=\"decision\" value=\"allow\" class=\"primary\">\

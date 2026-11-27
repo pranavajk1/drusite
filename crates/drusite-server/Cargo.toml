@@ -17,6 +17,10 @@ drusite-mcp.workspace = true
 rmcp = { workspace = true, features = ["server", "transport-streamable-http-server"] }
 drusite-dpop.workspace = true
 http.workspace = true
+hyper = { workspace = true, features = ["server", "http1", "http2"] }
+hyper-util = { workspace = true, features = ["server-auto", "tokio", "service"] }
+rustls = { workspace = true, features = ["aws_lc_rs", "std", "tls12"] }
+tokio-rustls = { workspace = true, features = ["aws_lc_rs", "tls12"] }
 lettre = { workspace = true, features = ["builder", "smtp-transport", "pool", "hostname", "tokio1-rustls", "aws-lc-rs", "webpki-roots"] }
 openidconnect.workspace = true
 subtle.workspace = true
@@ -62,6 +66,7 @@ zeroize.workspace = true
 [dev-dependencies]
 drusite-core = { workspace = true, features = ["net"] }
 fastrand.workspace = true
+proptest.workspace = true
 p256 = { workspace = true, features = ["ecdsa"] }
 reqwest = { workspace = true, features = ["json", "form", "rustls"] }
 tempfile.workspace = true

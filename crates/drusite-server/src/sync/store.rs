@@ -85,6 +85,7 @@ fn allowed(
             user,
             disabled: false,
             role,
+            agent: None,
         },
         action,
         &resource,

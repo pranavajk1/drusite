@@ -293,6 +293,8 @@ struct AgentTokenBody {
     write: bool,
     #[serde(default)]
     journal: bool,
+    #[serde(default)]
+    publish: bool,
     /// Leave out for every workspace the account is in now.
     workspaces: Option<Vec<Uuid>>,
     days: u32,
@@ -339,6 +341,7 @@ async fn make_agent_token(
     let access = drusite_mcp::Access {
         write: body.write,
         journal: body.write && body.journal,
+        publish: body.write && body.publish,
         workspaces: Some(
             chosen
                 .into_iter()

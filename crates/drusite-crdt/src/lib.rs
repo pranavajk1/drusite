@@ -46,7 +46,7 @@ mod workspace;
 
 pub use error::{Error, Result};
 pub use page::{JoinOutcome, Page, Patch};
-pub use workspace::{PageNode, SettingValue, TrashedPage, Workspace};
+pub use workspace::{PageNode, SettingValue, ShareMirror, TrashedPage, Workspace};
 
 /// The character that starts every block in a page's `body` text. From Unicode's private use
 /// area; text written to a page has any copies of it replaced with U+FFFD first.

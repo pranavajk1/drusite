@@ -47,6 +47,24 @@ pub struct TrashedPage {
 /// milliseconds.
 const TRASHED: &str = "trashed";
 
+/// The tree entry key that holds a page's share-to-web state, as the server last wrote it.
+const SHARE: &str = "share";
+
+/// How a page is shared to the web, as the workspace document mirrors it so every device shows
+/// it. The server's own record is what counts: it writes this after every change, and a link
+/// works only while the server says so. The password itself is never here, only whether there
+/// is one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShareMirror {
+    /// The public link.
+    pub url: String,
+    pub include_subpages: bool,
+    pub allow_indexing: bool,
+    /// When the link stops working, in Unix milliseconds.
+    pub expires_at: Option<i64>,
+    pub has_password: bool,
+}
+
 /// A setting's value, as the workspace document stores it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SettingValue {
@@ -530,6 +548,48 @@ impl Workspace {
         })
     }
 
+    /// How a page is shared to the web, if it is (see [`ShareMirror`]).
+    pub fn share(&self, id: PageId) -> Result<Option<ShareMirror>> {
+        self.guard.run(|| {
+            let meta = self.tree().get_meta(self.node(id)?)?;
+            Ok(match meta.get(SHARE) {
+                Some(ValueOrContainer::Value(v)) => decode_share(&v),
+                _ => None,
+            })
+        })
+    }
+
+    /// The pages shared to the web, whether or not they're in the trash.
+    pub fn shared_pages(&self) -> Vec<PageId> {
+        let tree = self.tree();
+        let mut out: Vec<PageId> = self
+            .nodes
+            .iter()
+            .filter(|(_, n)| {
+                tree.get_meta(**n).is_ok_and(|m| {
+                    matches!(m.get(SHARE), Some(ValueOrContainer::Value(v)) if decode_share(&v).is_some())
+                })
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        out.sort();
+        out
+    }
+
+    /// Records how a page is shared, or that it isn't (`None`). The server calls this after
+    /// it changes its own record.
+    pub fn set_share(&mut self, id: PageId, share: Option<&ShareMirror>) -> Result<()> {
+        self.guard.run(|| {
+            let meta = self.tree().get_meta(self.node(id)?)?;
+            match share {
+                Some(s) => meta.insert(SHARE, encode_share(s))?,
+                None => meta.delete(SHARE)?,
+            }
+            self.doc.commit();
+            Ok(())
+        })
+    }
+
     pub fn import(&mut self, bytes: &[u8]) -> Result<()> {
         let result = self.guard.run(|| {
             crate::guard::import_checked(&self.doc, bytes)?;
@@ -620,6 +680,36 @@ fn decode_value(value: &LoroValue) -> Option<PropertyValue> {
             PropertyValue::Date(s.parse().ok()?)
         }
         _ => return None,
+    })
+}
+
+fn encode_share(s: &ShareMirror) -> LoroValue {
+    let mut map = std::collections::HashMap::new();
+    map.insert("url".to_owned(), s.url.as_str().into());
+    map.insert("subpages".to_owned(), s.include_subpages.into());
+    map.insert("indexing".to_owned(), s.allow_indexing.into());
+    map.insert("expires".to_owned(), s.expires_at.unwrap_or(0).into());
+    map.insert("password".to_owned(), s.has_password.into());
+    map.into()
+}
+
+fn decode_share(value: &LoroValue) -> Option<ShareMirror> {
+    let LoroValue::Map(map) = value else {
+        return None;
+    };
+    let flag = |k: &str| matches!(map.get(k), Some(LoroValue::Bool(true)));
+    let LoroValue::String(url) = map.get("url")? else {
+        return None;
+    };
+    Some(ShareMirror {
+        url: url.to_string(),
+        include_subpages: flag("subpages"),
+        allow_indexing: flag("indexing"),
+        expires_at: match map.get("expires") {
+            Some(LoroValue::I64(n)) if *n > 0 => Some(*n),
+            _ => None,
+        },
+        has_password: flag("password"),
     })
 }
 

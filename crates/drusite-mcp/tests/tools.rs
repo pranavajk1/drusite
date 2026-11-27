@@ -89,6 +89,16 @@ impl Memory {
 }
 
 impl Notes for Memory {
+    async fn share(
+        &self,
+        _: &Agent,
+        _: WorkspaceId,
+        page: PageId,
+        request: drusite_mcp::ShareRequest,
+    ) -> ToolResult<String> {
+        Ok(format!("{request:?} {page}"))
+    }
+
     async fn workspaces(&self, _: &Agent) -> ToolResult<Vec<WorkspaceInfo>> {
         Ok(vec![WorkspaceInfo {
             id: self.id(),
@@ -168,6 +178,7 @@ fn agent(write: bool, journal: bool) -> Agent {
         access: Access {
             write,
             journal,
+            publish: false,
             workspaces: None,
         },
         user: None,

@@ -172,6 +172,9 @@
           {#if page.children.length > 0}<Icon name="chevron-right" class="tree-chevron" />{/if}
         </button>
         <span class="tree-title">{page.title || "Untitled"}</span>
+        {#if page.published}
+          <span class="tree-published" title="Published to web" aria-label="Published to web" role="img"><Icon name="globe" size={12} /></span>
+        {/if}
         <button
           class="icon-btn tree-action"
           title="Delete, and more"

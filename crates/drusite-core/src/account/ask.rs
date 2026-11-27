@@ -103,9 +103,9 @@ fn not_signed_in() -> AskStatus {
 }
 
 /// A failed call: the server's error code when it gave one, and words for the person.
-struct Failure {
-    code: Option<String>,
-    message: String,
+pub(super) struct Failure {
+    pub(super) code: Option<String>,
+    pub(super) message: String,
 }
 
 impl From<HttpError> for Failure {
@@ -146,7 +146,7 @@ impl Supervisor {
         self.call(method, path, body).await.map_err(|f| f.message)
     }
 
-    async fn call<T: serde::de::DeserializeOwned + Send + 'static>(
+    pub(super) async fn call<T: serde::de::DeserializeOwned + Send + 'static>(
         &self,
         method: &'static str,
         path: &str,
@@ -179,7 +179,7 @@ impl Supervisor {
         .map_err(Failure::from)
     }
 
-    fn ws_path(&self, rest: &str) -> Result<String, String> {
+    pub(super) fn ws_path(&self, rest: &str) -> Result<String, String> {
         Ok(format!("api/v1/workspaces/{}/{rest}", self.workspace()?))
     }
 

@@ -354,6 +354,21 @@ impl Core {
                 ErrorCode::Unsupported,
                 "Ask your notes needs a Drusite server, through the app",
             )),
+            Command::LocalShare { page } => Ok(Response::Share {
+                share: self.local_share(page)?,
+            }),
+            // Without the app's connection there's no server to ask: what the workspace heard.
+            Command::Share { page } => {
+                let mut share = self.local_share(page)?;
+                share.message = Some("Sign in to a Drusite server to publish pages.".to_owned());
+                Ok(Response::Share { share })
+            }
+            Command::Publish { .. }
+            | Command::Unpublish { .. }
+            | Command::RegenerateShareLink { .. } => Err(ApiError::new(
+                ErrorCode::Unsupported,
+                "publishing to the web needs a Drusite server, through the app",
+            )),
             Command::SetSetting { setting } => {
                 self.set_setting(setting)?;
                 Ok(Response::Settings {
@@ -364,11 +379,14 @@ impl Core {
     }
 
     pub(crate) fn pages(&self) -> Result<Vec<PageInfo>, ApiError> {
+        let shared: std::collections::HashSet<PageId> =
+            self.workspace.shared_pages().into_iter().collect();
         Ok(self
             .workspace
             .pages()?
             .into_iter()
             .map(|n| PageInfo {
+                published: shared.contains(&n.id),
                 id: n.id,
                 parent: n.parent,
                 title: n.title,
@@ -377,6 +395,40 @@ impl Core {
                 properties: n.properties,
             })
             .collect())
+    }
+
+    /// How a page is shared, as the workspace document last heard from the server.
+    pub fn local_share(&self, page: PageId) -> Result<crate::api::ShareInfo, ApiError> {
+        let mirror = self.workspace.share(page)?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX));
+        Ok(match mirror {
+            Some(m) => crate::api::ShareInfo {
+                published: true,
+                url: Some(m.url),
+                include_subpages: m.include_subpages,
+                allow_indexing: m.allow_indexing,
+                expired: m.expires_at.is_some_and(|e| e <= now),
+                expires_at: m.expires_at,
+                has_password: m.has_password,
+                can_publish: false,
+                available: false,
+                message: None,
+            },
+            None => crate::api::ShareInfo {
+                published: false,
+                url: None,
+                include_subpages: false,
+                allow_indexing: false,
+                expires_at: None,
+                expired: false,
+                has_password: false,
+                can_publish: false,
+                available: false,
+                message: None,
+            },
+        })
     }
 
     pub(crate) fn save_workspace(&mut self) -> Result<(), ApiError> {

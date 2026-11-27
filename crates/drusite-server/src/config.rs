@@ -107,6 +107,94 @@ pub struct Config {
     pub agents: AgentsConfig,
     #[serde(default)]
     pub ask: AskConfig,
+    #[serde(default)]
+    pub publish: PublishConfig,
+}
+
+/// Publish to web: pages shared as read-only links, rendered by this server as plain HTML.
+///
+/// With `public_url` set, published pages live only there, and that host serves nothing else:
+/// a deployment can put just that on the internet and keep the app, the API and sign-in
+/// private. It's served on `listen` if set (its own port, optionally with TLS), and also on the
+/// main port to requests for its host name. Without it, pages are under `/p/` on `public_url`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PublishConfig {
+    /// Pages can be published. On unless set.
+    #[serde(default = "yes")]
+    pub enabled: bool,
+    /// Where published pages are read, e.g. `https://pages.example.com`. Only its scheme, host
+    /// and port are used; links are `<public_url>/p/<token>`.
+    #[serde(default)]
+    pub public_url: Option<Url>,
+    /// A listener of its own for the public host, e.g. `0.0.0.0:8443`. It serves published
+    /// pages whatever host name a request names.
+    #[serde(default)]
+    pub listen: Option<SocketAddr>,
+    /// A PEM certificate chain and key for `listen`, to serve TLS without a reverse proxy.
+    /// Both or neither; they're read again when the files change.
+    #[serde(default)]
+    pub tls_cert: Option<PathBuf>,
+    #[serde(default)]
+    pub tls_key: Option<PathBuf>,
+    /// How long a reader's browser may keep a page before asking again (an ETag makes that
+    /// cheap). Unpublishing takes a page down at once on the server; a browser that has it may
+    /// show it this much longer.
+    #[serde(default = "default_publish_cache")]
+    pub cache_secs: u32,
+    /// Requests a minute one address may make to published pages.
+    #[serde(default = "default_publish_rate")]
+    pub per_minute: u32,
+    /// Behind a reverse proxy: take the reader's address from this header (the last entry of
+    /// `X-Forwarded-For`, say) for the rate limits. Only set it when the proxy always sets it.
+    #[serde(default)]
+    pub client_ip_header: Option<String>,
+}
+
+impl Default for PublishConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            public_url: None,
+            listen: None,
+            tls_cert: None,
+            tls_key: None,
+            cache_secs: default_publish_cache(),
+            per_minute: default_publish_rate(),
+            client_ip_header: None,
+        }
+    }
+}
+
+const fn default_publish_cache() -> u32 {
+    15
+}
+
+const fn default_publish_rate() -> u32 {
+    300
+}
+
+impl Config {
+    /// The origin published pages are read at: `[publish] public_url`, or the server's own.
+    pub fn publish_base(&self) -> Url {
+        let mut base = self
+            .publish
+            .public_url
+            .clone()
+            .unwrap_or_else(|| self.public_url.clone());
+        base.set_path("/");
+        base.set_query(None);
+        base.set_fragment(None);
+        base
+    }
+
+    /// Whether published pages have a host of their own, apart from the app.
+    pub fn publish_separate(&self) -> bool {
+        self.publish.public_url.as_ref().is_some_and(|u| {
+            u.host_str() != self.public_url.host_str()
+                || u.port_or_known_default() != self.public_url.port_or_known_default()
+        })
+    }
 }
 
 /// Ask your notes: answers from the asker's pages, made by a chat model, with citations to the
@@ -755,6 +843,33 @@ impl Config {
                 ));
             }
             other => return invalid(format!("public_url has unsupported scheme {other:?}")),
+        }
+
+        let publish = &self.publish;
+        if let Some(url) = &publish.public_url {
+            match url.scheme() {
+                "https" => {}
+                "http" if is_loopback(url) => {}
+                _ => {
+                    return invalid(format!(
+                        "[publish] public_url {url} must use https (plain http only for localhost)"
+                    ));
+                }
+            }
+            if url.host_str().is_none() || url.path() != "/" {
+                return invalid(format!(
+                    "[publish] public_url {url} must be an origin, like https://pages.example.com"
+                ));
+            }
+        }
+        if publish.tls_cert.is_some() != publish.tls_key.is_some() {
+            return invalid("[publish] needs both tls_cert and tls_key, or neither".into());
+        }
+        if publish.tls_cert.is_some() && publish.listen.is_none() {
+            return invalid("[publish] tls_cert is for the public listener; set listen too".into());
+        }
+        if publish.per_minute == 0 {
+            return invalid("[publish] per_minute must be at least 1".into());
         }
 
         let search = &self.search;

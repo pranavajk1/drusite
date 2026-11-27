@@ -33,6 +33,7 @@ import type {
   Response,
   SearchHit,
   Settings,
+  ShareInfo,
   Span,
   TrashItem,
 } from "./types";
@@ -140,6 +141,33 @@ export class MemoryCore {
     },
   };
 
+  /** Pages shared to the web, as the server would keep them. */
+  private readonly shares = new Map<
+    PageId,
+    { token: string; includeSubpages: boolean; allowIndexing: boolean; expiresAt: number | null; password: string | null }
+  >();
+
+  private shareInfo(id: PageId): ShareInfo {
+    const s = this.shares.get(id);
+    return {
+      published: !!s,
+      url: s ? `https://pages.example.test/p/${s.token}` : null,
+      includeSubpages: s?.includeSubpages ?? false,
+      allowIndexing: s?.allowIndexing ?? false,
+      expiresAt: s?.expiresAt ?? null,
+      expired: !!s?.expiresAt && s.expiresAt <= Date.now(),
+      hasPassword: !!s?.password,
+      canPublish: true,
+      available: true,
+      message: null,
+    };
+  }
+
+  private newToken(): string {
+    const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    return Array.from({ length: 43 }, () => abc[Math.floor(Math.random() * abc.length)]).join("");
+  }
+
   private page(id: PageId): MemPage {
     return this.pages.find((p) => p.id === id) ?? fail("unknownPage", `no page ${id}`);
   }
@@ -155,6 +183,7 @@ export class MemoryCore {
         children: p.children.filter(shown),
         kind: p.kind,
         properties: [...p.properties].sort((a, b) => (a.name < b.name ? -1 : 1)),
+        published: this.shares.has(p.id),
       });
       for (const c of p.children.filter(shown)) walk(this.page(c));
     };
@@ -666,6 +695,41 @@ export class MemoryCore {
       case "cancelAsk":
         this.asking.delete(command.request);
         return { type: "done" };
+      case "share":
+      case "localShare":
+        this.page(command.page);
+        return { type: "share", share: this.shareInfo(command.page) };
+      case "publish": {
+        if (this.trashed(command.page)) fail("account", "this page is in the trash; restore it to publish it");
+        const c = command.change;
+        if (c.expiry?.type === "set" && c.expiry.at <= Date.now()) fail("account", "the expiry date must be in the future");
+        if (c.password?.type === "set" && c.password.password.length < 4)
+          fail("account", "a page's password needs 4 to 256 characters");
+        const s = this.shares.get(command.page) ?? {
+          token: this.newToken(),
+          includeSubpages: false,
+          allowIndexing: false,
+          expiresAt: null,
+          password: null,
+        };
+        if (c.includeSubpages !== null) s.includeSubpages = c.includeSubpages;
+        if (c.allowIndexing !== null) s.allowIndexing = c.allowIndexing;
+        if (c.expiry) s.expiresAt = c.expiry.type === "set" ? c.expiry.at : null;
+        if (c.password) s.password = c.password.type === "set" ? c.password.password : null;
+        this.shares.set(command.page, s);
+        this.emit({ type: "pagesChanged", pages: this.info() });
+        return { type: "share", share: this.shareInfo(command.page) };
+      }
+      case "unpublish":
+        this.shares.delete(command.page);
+        this.emit({ type: "pagesChanged", pages: this.info() });
+        return { type: "share", share: this.shareInfo(command.page) };
+      case "regenerateShareLink": {
+        const s = this.shares.get(command.page) ?? fail("account", "this page isn't published");
+        s.token = this.newToken();
+        this.emit({ type: "pagesChanged", pages: this.info() });
+        return { type: "share", share: this.shareInfo(command.page) };
+      }
       case "ready":
         return { type: "done" };
       case "edit":

@@ -363,6 +363,44 @@ async fn core(state: tauri::State<'_, AppState>, command: Command) -> Result<Res
             Supervisor::cancel_ask(&request);
             Ok(Response::Done)
         }
+        // Publishing goes to the server; when it can't be asked, the workspace's last word.
+        Command::Share { page } => match ready.supervisor.share(page).await {
+            Ok(share) => Ok(Response::Share { share }),
+            Err(message) => {
+                let mut share = ready
+                    .core
+                    .lock()
+                    .map_err(|_| internal("the core crashed earlier; restart Drusite"))?
+                    .local_share(page)?;
+                share.message = Some(if ready.supervisor.status().server.is_some() {
+                    message
+                } else {
+                    "Sign in to a Drusite server to publish pages.".to_owned()
+                });
+                Ok(Response::Share { share })
+            }
+        },
+        Command::Publish { page, change } => Ok(Response::Share {
+            share: ready
+                .supervisor
+                .publish(page, &change)
+                .await
+                .map_err(account_error)?,
+        }),
+        Command::Unpublish { page } => Ok(Response::Share {
+            share: ready
+                .supervisor
+                .unpublish(page)
+                .await
+                .map_err(account_error)?,
+        }),
+        Command::RegenerateShareLink { page } => Ok(Response::Share {
+            share: ready
+                .supervisor
+                .regenerate_share_link(page)
+                .await
+                .map_err(account_error)?,
+        }),
         command if drusite_core::ai::is_network(&command) => {
             drusite_core::ai::run(&ready.core, command).await
         }

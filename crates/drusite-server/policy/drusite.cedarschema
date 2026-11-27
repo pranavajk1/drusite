@@ -28,4 +28,14 @@ namespace Drusite {
 
     action read_document, write_document, delete_document
         appliesTo { principal: User, resource: Document };
+
+    // Sharing a page to the web as a read-only link, changing how, or taking it down.
+    // `via_agent`: an agent (MCP client) is asking for its person; `agent_may_publish`: the
+    // person allowed that agent to publish when they connected it.
+    action publish_document
+        appliesTo {
+            principal: User,
+            resource: Document,
+            context: { via_agent: Bool, agent_may_publish: Bool },
+        };
 }

@@ -36,6 +36,7 @@ struct Inner {
     hub: Hub,
     embedder: Option<Embedder>,
     chat: Option<crate::ask::Chat>,
+    publish: crate::publish::PublicState,
 }
 
 /// Everything a request handler needs. Cheap to clone.
@@ -68,6 +69,7 @@ impl AppState {
         Self(Arc::new(Inner {
             embedder,
             chat,
+            publish: crate::publish::PublicState::new(&config),
             config,
             db,
             blobs,
@@ -115,6 +117,11 @@ impl AppState {
         self.0.embedder.as_ref()
     }
 
+    /// The public host's limits.
+    pub fn publish(&self) -> &crate::publish::PublicState {
+        &self.0.publish
+    }
+
     /// The chat model Ask answers with, when one is configured.
     pub fn chat(&self) -> Option<&crate::ask::Chat> {
         self.0.chat.as_ref()
@@ -122,6 +129,58 @@ impl AppState {
 }
 
 const REQUEST_ID: HeaderName = HeaderName::from_static("x-request-id");
+
+/// Published pages on the server's own address, when they have no host of their own; and the
+/// robots.txt that goes with that.
+fn published_here(state: &AppState) -> Router<AppState> {
+    if state.config().publish_separate() {
+        Router::new().route(
+            "/robots.txt",
+            axum::routing::get(|| async { "User-agent: *\nDisallow: /\n" }),
+        )
+    } else {
+        crate::publish::public::public_routes(state)
+    }
+}
+
+/// A request for the public host's name on the main listener gets the public host, which
+/// serves published pages and nothing else.
+async fn public_host(
+    axum::extract::State(state): axum::extract::State<AppState>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use tower::ServiceExt as _;
+    let config = state.config();
+    let public = config
+        .publish
+        .public_url
+        .as_ref()
+        .and_then(|u| u.host_str())
+        .filter(|_| config.publish_separate());
+    if let Some(public) = public {
+        let asked = request.uri().host().map(str::to_owned).or_else(|| {
+            request
+                .headers()
+                .get(header::HOST)
+                .and_then(|h| h.to_str().ok())
+                .map(|h| match h.rsplit_once(':') {
+                    Some((name, port)) if port.bytes().all(|b| b.is_ascii_digit()) => {
+                        name.to_owned()
+                    }
+                    _ => h.to_owned(),
+                })
+        });
+        if asked.is_some_and(|a| a.trim_end_matches('.').eq_ignore_ascii_case(public)) {
+            let app = crate::publish::public_router(state.clone());
+            return match app.oneshot(request).await {
+                Ok(r) => r,
+                Err(never) => match never {},
+            };
+        }
+    }
+    next.run(request).await
+}
 
 pub fn router(state: AppState) -> Router {
     let timeout = Duration::from_secs(state.config().server.request_timeout_secs);
@@ -133,6 +192,8 @@ pub fn router(state: AppState) -> Router {
         .merge(search::routes())
         .merge(crate::ask::routes())
         .merge(crate::mcp::routes(&state))
+        .merge(crate::publish::routes())
+        .merge(published_here(&state))
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
             timeout,
@@ -145,6 +206,10 @@ pub fn router(state: AppState) -> Router {
         // A big file on a slow network takes longer than an ordinary request may; its size is
         // bounded instead ([attachments] max_bytes).
         .merge(crate::attachments::routes(&state))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            public_host,
+        ))
         .layer(axum::middleware::from_fn(telemetry::record_request))
         .layer(
             ServiceBuilder::new()
