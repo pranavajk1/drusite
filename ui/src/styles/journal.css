@@ -161,7 +161,7 @@
   grid-column: 1 / -1;
 }
 
-.jv-mood svg {
+.jv-chart {
   width: 100%;
   height: auto;
   overflow: visible;
@@ -186,11 +186,16 @@
   stroke-width: 2;
 }
 
-.jv-dot.mood-1, .jv-axis.mood-1 { fill: var(--mood-1); color: var(--mood-1); }
-.jv-dot.mood-2, .jv-axis.mood-2 { fill: var(--mood-2); color: var(--mood-2); }
-.jv-dot.mood-3, .jv-axis.mood-3 { fill: var(--mood-3); color: var(--mood-3); }
-.jv-dot.mood-4, .jv-axis.mood-4 { fill: var(--mood-4); color: var(--mood-4); }
-.jv-dot.mood-5, .jv-axis.mood-5 { fill: var(--mood-5); color: var(--mood-5); }
+.jv-dot.mood-1 { fill: var(--mood-1); }
+.jv-axis.mood-1 { color: var(--mood-1); }
+.jv-dot.mood-2 { fill: var(--mood-2); }
+.jv-axis.mood-2 { color: var(--mood-2); }
+.jv-dot.mood-3 { fill: var(--mood-3); }
+.jv-axis.mood-3 { color: var(--mood-3); }
+.jv-dot.mood-4 { fill: var(--mood-4); }
+.jv-axis.mood-4 { color: var(--mood-4); }
+.jv-dot.mood-5 { fill: var(--mood-5); }
+.jv-axis.mood-5 { color: var(--mood-5); }
 
 .jv-axis {
   fill: none;

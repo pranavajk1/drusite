@@ -158,7 +158,7 @@
     {#if points.length === 0}
       <p class="hint">Pick a mood on your entries to see it here.</p>
     {:else}
-      <svg viewBox="-30 -8 {W + 38} {H + 16}" role="img" aria-label="Mood over the last {range} days, averaging {average?.toFixed(1)} out of 5">
+      <svg class="jv-chart" viewBox="-30 -8 {W + 38} {H + 16}" role="img" aria-label="Mood over the last {range} days, averaging {average?.toFixed(1)} out of 5">
         {#each MOODS as m (m.score)}
           <line class="jv-grid" x1="0" x2={W} y1={H - ((m.score - 1) / 4) * H} y2={H - ((m.score - 1) / 4) * H} />
           <svg
