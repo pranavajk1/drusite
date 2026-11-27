@@ -91,6 +91,24 @@
       window.removeEventListener("resize", focusChanged);
     };
   });
+  // How much of the window the keyboard covers (iOS, and Android 15+, which draw it over the
+  // window instead of shrinking it), so bottom sheets can sit above it: `--keyboard-cover`.
+  onMount(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const cover = () => {
+      const px = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+      document.documentElement.style.setProperty("--keyboard-cover", `${px}px`);
+    };
+    cover();
+    vv.addEventListener("resize", cover);
+    vv.addEventListener("scroll", cover);
+    return () => {
+      vv.removeEventListener("resize", cover);
+      vv.removeEventListener("scroll", cover);
+      document.documentElement.style.removeProperty("--keyboard-cover");
+    };
+  });
 
   let pageMenu = $state<HTMLElement | null>(null);
   let shareButton = $state<HTMLElement | null>(null);

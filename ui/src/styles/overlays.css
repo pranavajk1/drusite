@@ -425,6 +425,8 @@
 @media (max-width: 700px) {
   .modal-backdrop {
     padding: 0;
+    /* A sheet sits above the keyboard where it covers the window (see App.svelte). */
+    padding-bottom: var(--keyboard-cover, 0px);
     place-items: end stretch;
   }
 
@@ -436,7 +438,7 @@
   .modal.modal-sm,
   .modal.modal-palette {
     width: 100%;
-    max-height: calc(100dvh - env(safe-area-inset-top) - var(--space-6));
+    max-height: calc(100dvh - var(--keyboard-cover, 0px) - env(safe-area-inset-top) - var(--space-6));
     border-radius: var(--radius-xl) var(--radius-xl) 0 0;
     padding-bottom: env(safe-area-inset-bottom);
     animation: sheet-in var(--dur-slow) var(--ease-out);

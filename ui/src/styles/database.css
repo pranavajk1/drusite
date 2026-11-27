@@ -718,10 +718,11 @@ tr:hover .open-row,
   top: auto;
   left: 0;
   right: 0;
-  bottom: 0;
+  /* Above the keyboard where it covers the window (see App.svelte). */
+  bottom: var(--keyboard-cover, 0px);
   width: auto;
   max-width: none;
-  max-height: 80vh;
+  max-height: min(80vh, calc(100dvh - var(--keyboard-cover, 0px) - env(safe-area-inset-top) - var(--space-6)));
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   padding: var(--space-4) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom));
   box-shadow: var(--shadow-lg);
