@@ -36,6 +36,9 @@ struct ServerStatus {
     message: Option<String>,
     model: Option<String>,
     semantic: bool,
+    /// Older servers leave it out.
+    #[serde(default)]
+    embedding_model: Option<String>,
     indexing: i64,
 }
 
@@ -98,6 +101,7 @@ fn not_signed_in() -> AskStatus {
         reason: Some("not_signed_in".to_owned()),
         model: None,
         semantic: false,
+        embedding_model: None,
         indexing: 0,
     }
 }
@@ -210,6 +214,7 @@ impl Supervisor {
                 reason: s.reason,
                 model: s.model,
                 semantic: s.semantic,
+                embedding_model: s.embedding_model,
                 indexing: u32::try_from(s.indexing.max(0)).unwrap_or(u32::MAX),
             },
             // A server from before Ask answers 404.
@@ -222,6 +227,7 @@ impl Supervisor {
                 reason: Some("old_server".to_owned()),
                 model: None,
                 semantic: false,
+                embedding_model: None,
                 indexing: 0,
             },
             // The workspace hasn't reached the server yet (a moment after signing in).
@@ -232,6 +238,7 @@ impl Supervisor {
                 reason: Some("syncing".to_owned()),
                 model: None,
                 semantic: false,
+                embedding_model: None,
                 indexing: 0,
             },
             Err(f) => AskStatus {
@@ -241,6 +248,7 @@ impl Supervisor {
                 reason: Some("unreachable".to_owned()),
                 model: None,
                 semantic: false,
+                embedding_model: None,
                 indexing: 0,
             },
         }
