@@ -175,6 +175,25 @@ impl Page {
         Ok(Self { guard, inner })
     }
 
+    /// Takes back what changed between `before` and `after` (two versions in this page's
+    /// history, `before` within `after`), as a new edit: a copy of the page at `after` is put
+    /// back to `before`, and those changes are merged in. Everything else, including whatever
+    /// changed since `after`, stays. This is how an agent's edit is undone.
+    pub fn revert_change(&mut self, before: &VersionVector, after: &VersionVector) -> Result<Patch> {
+        if !after.includes_vv(before) {
+            return Err(Error::Invalid("the change ends before it starts".into()));
+        }
+        let fork = self.fork_at(after)?;
+        fork.guard.run(|| {
+            let frontiers = fork.inner.doc.vv_to_frontiers(before);
+            fork.inner.doc.revert_to(&frontiers)?;
+            fork.inner.doc.commit();
+            Ok(())
+        })?;
+        let updates = fork.export_updates(after)?;
+        self.import(&updates)
+    }
+
     /// Whether Loro panicked inside this page. A poisoned page refuses every call; reload it.
     pub fn is_poisoned(&self) -> bool {
         self.guard.is_poisoned()

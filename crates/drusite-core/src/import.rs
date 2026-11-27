@@ -24,7 +24,7 @@ use specta::Type;
 use crate::api::{ApiError, ErrorCode};
 use crate::attachments::{blob_id, guess_mime};
 use crate::bridge::PAGE_LINK;
-use crate::bridge::merge::{self, Wanted};
+use drusite_crdt::merge::{self, Wanted};
 use crate::engine::Core;
 
 /// The largest embedded file imported.

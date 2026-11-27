@@ -11,11 +11,10 @@
 
 use std::collections::{HashMap, HashSet};
 
-use drusite_crdt::{Page, Patch, VersionVector};
 use drusite_model::{Block, BlockId, BlockKind, Mark, Marks, Span};
 use similar::{Algorithm, DiffOp, capture_diff_slices};
 
-use crate::Result;
+use crate::{Page, Patch, Result, VersionVector};
 
 /// A block as a file wants it. `id` is the block it was, if it names one of the page's.
 #[derive(Debug, Clone, PartialEq)]

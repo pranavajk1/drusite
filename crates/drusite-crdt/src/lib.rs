@@ -40,6 +40,7 @@ mod attrs;
 mod error;
 mod guard;
 mod layout;
+pub mod merge;
 mod page;
 mod workspace;
 
