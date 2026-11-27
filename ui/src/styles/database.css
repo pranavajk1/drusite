@@ -390,9 +390,10 @@ tr:hover .open-row,
   opacity: 1;
 }
 
+/* On a touch screen the title itself opens the row (see Database.svelte). */
 @media (hover: none) {
   .open-row {
-    opacity: 1;
+    display: none;
   }
 }
 

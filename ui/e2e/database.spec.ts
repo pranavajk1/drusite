@@ -161,6 +161,29 @@ test("on a phone-width screen, the table's title column scrolls away with the ot
   await expect.poll(async () => (await title.boundingBox())!.x).toBeLessThan(before - 150);
 });
 
+test("on a touch phone, a row's title opens it, with no Open button over it", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  const page = await context.newPage();
+  await page.goto("/");
+  await expect(page.locator(".editor")).toBeVisible();
+  expect(await page.evaluate(() => matchMedia("(hover: none)").matches)).toBe(true);
+  await page.getByRole("button", { name: "Pages" }).first().click();
+  await page.getByRole("button", { name: "New task board" }).click();
+  await page.getByRole("tab", { name: "All tasks" }).click();
+  await page.getByRole("button", { name: "New", exact: true }).first().click();
+  await expect(page.getByLabel("Page title")).toBeFocused();
+  await page.keyboard.type("A rather long title for a narrow phone screen");
+  // Back to the table through the pages drawer (a phone has no breadcrumb).
+  await page.getByRole("button", { name: "Pages" }).first().click();
+  await page.locator(".tree").getByText("Tasks", { exact: true }).click();
+  const title = page.locator(".db-table .title-cell .cell-btn", { hasText: "A rather long title" });
+  await expect(title).toBeVisible();
+  await expect(page.locator(".db-table .open-row").first()).toBeHidden();
+  await title.tap();
+  await expect(page.getByLabel("Page title")).toHaveValue("A rather long title for a narrow phone screen");
+  await context.close();
+});
+
 test("a task board goes inline in a page from the slash menu", async ({ page }) => {
   await openApp(page);
   await page.keyboard.type("/kanban");

@@ -18,6 +18,10 @@
   import ViewSettings from "./ViewSettings.svelte";
   import { LAYOUTS, cellOf, editable, kindIcon, shortId, todayIso } from "./util";
 
+  /** On a touch screen, as in Notion's phone apps, a row's title opens it: there's no hover to
+   *  show an Open button, and a title is renamed on its page. */
+  const touch = window.matchMedia?.("(hover: none)").matches ?? false;
+
   let {
     client,
     database,
@@ -474,7 +478,7 @@
                   <td>
                     {#if p.id === "title"}
                       <div class="title-cell">
-                        <button class="cell-btn" onclick={(e) => editCell(r, p, e.currentTarget)}>{@render title(r)}</button>
+                        <button class="cell-btn" onclick={(e) => (touch ? onopen(r.id) : editCell(r, p, e.currentTarget))}>{@render title(r)}</button>
                         <button class="btn small ghost open-row" onclick={() => onopen(r.id)}><Icon name="arrow-up-right" size={14} />Open</button>
                       </div>
                     {:else}
