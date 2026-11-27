@@ -31,7 +31,7 @@ pub fn merge(page: &mut Page, base: &VersionVector, wanted: &[Wanted]) -> Result
     let mut fork = page.fork_at(base)?;
     apply(&mut fork, wanted)?;
     let updates = fork.export_updates(base)?;
-    Ok(page.import(&updates)?)
+    page.import(&updates)
 }
 
 /// Turns `page` into `wanted`, changing as little as it can: blocks keep their identity, text

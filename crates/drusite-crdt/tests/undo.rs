@@ -16,7 +16,9 @@ fn page_with(texts: &[&str]) -> Page {
     page.insert_text(first, 0, texts[0]).unwrap();
     let mut last = first;
     for t in &texts[1..] {
-        let (id, _) = page.insert_block_after(Some(last), BlockKind::Paragraph).unwrap();
+        let (id, _) = page
+            .insert_block_after(Some(last), BlockKind::Paragraph)
+            .unwrap();
         page.insert_text(id, 0, t).unwrap();
         last = id;
     }
@@ -29,7 +31,9 @@ fn an_edit_is_taken_back_and_later_typing_stays() {
     let [a, b] = page.order()[..] else { panic!() };
     let before = page.version();
     // The agent adds a block and changes a word.
-    let (added, _) = page.insert_block_after(Some(b), BlockKind::Bulleted).unwrap();
+    let (added, _) = page
+        .insert_block_after(Some(b), BlockKind::Bulleted)
+        .unwrap();
     page.insert_text(added, 0, "from the agent").unwrap();
     page.insert_text(a, 3, " (agent)").unwrap();
     let after = page.version();
@@ -47,7 +51,8 @@ fn a_deleted_block_comes_back_as_it_was() {
     let mut page = page_with(&["keep", "gone", "also"]);
     let gone = page.order()[1];
     let before = page.version();
-    page.set_kind(gone, &BlockKind::Todo { checked: true }).unwrap();
+    page.set_kind(gone, &BlockKind::Todo { checked: true })
+        .unwrap();
     page.delete_block(gone).unwrap();
     let after = page.version();
     page.revert_change(&before, &after).unwrap();

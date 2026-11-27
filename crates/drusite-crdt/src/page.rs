@@ -179,7 +179,11 @@ impl Page {
     /// history, `before` within `after`), as a new edit: a copy of the page at `after` is put
     /// back to `before`, and those changes are merged in. Everything else, including whatever
     /// changed since `after`, stays. This is how an agent's edit is undone.
-    pub fn revert_change(&mut self, before: &VersionVector, after: &VersionVector) -> Result<Patch> {
+    pub fn revert_change(
+        &mut self,
+        before: &VersionVector,
+        after: &VersionVector,
+    ) -> Result<Patch> {
         if !after.includes_vv(before) {
             return Err(Error::Invalid("the change ends before it starts".into()));
         }
