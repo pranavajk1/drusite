@@ -156,6 +156,7 @@ pub async fn require_reader(
             user,
             disabled: false,
             role,
+            agent: None,
         },
         Action::ReadWorkspace,
         &Resource::Workspace(WorkspaceId::from_uuid(ws)),

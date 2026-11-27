@@ -31,6 +31,7 @@ use crate::sync::SyncError;
 use crate::sync::net::{self, NetError};
 
 mod ask;
+mod share;
 
 /// Refresh the access token when it has less than this left.
 const REFRESH_BEFORE: Duration = Duration::from_secs(60);

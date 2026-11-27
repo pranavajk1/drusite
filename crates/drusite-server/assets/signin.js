@@ -385,7 +385,10 @@ async function showAccount() {
 function accessText(access) {
   if (!access) return "";
   if (!access.write) return "reads only";
-  return access.journal ? "reads and writes, journal too" : "reads and writes";
+  const parts = ["reads and writes"];
+  if (access.journal) parts.push("journal too");
+  if (access.publish) parts.push("publishes pages");
+  return parts.join(", ");
 }
 
 // A token for an agent that can't sign in with a browser, such as one on a server.
@@ -397,6 +400,7 @@ function agentTokenForm() {
         name: value(f, "name"),
         write: f.elements.access.value === "write",
         journal: f.elements.journal.checked,
+        publish: f.elements.publish.checked,
         days: Number(value(f, "days")),
       });
       f.reset();
@@ -412,6 +416,7 @@ function agentTokenForm() {
     h("label", { class: "choice" }, h("input", { type: "radio", name: "access", value: "read", checked: true }), " Read only"),
     h("label", { class: "choice" }, h("input", { type: "radio", name: "access", value: "write" }), " Read, add and edit pages"),
     h("label", { class: "choice" }, h("input", { type: "checkbox", name: "journal" }), " Edit journal entries too"),
+    h("label", { class: "choice" }, h("input", { type: "checkbox", name: "publish" }), " Publish pages to the web"),
     field("days", "Lasts this many days", "number", { required: true, min: 1, max: 365, value: 90 }),
     h("button", { type: "submit" }, "Make a token"));
   out.append(form);

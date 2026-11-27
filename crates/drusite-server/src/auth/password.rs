@@ -79,6 +79,16 @@ pub(super) async fn hash(password: &str) -> AuthResult<String> {
     .map_err(AuthError::internal)?
 }
 
+/// A published page's password, hashed as account passwords are.
+pub(crate) async fn hash_page_password(password: &str) -> AuthResult<String> {
+    hash(password).await
+}
+
+/// Checks a reader's try at a published page's password.
+pub(crate) async fn verify_page_password(password: &str, phc: String) -> bool {
+    verify(password, Some(phc)).await.unwrap_or(false)
+}
+
 async fn verify(password: &str, phc: Option<String>) -> AuthResult<bool> {
     let password = Zeroizing::new(password.to_owned());
     let real = phc.is_some();

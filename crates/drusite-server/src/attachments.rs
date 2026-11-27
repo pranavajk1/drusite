@@ -48,6 +48,18 @@ fn storage(e: StorageError) -> AuthError {
     AuthError::internal(e)
 }
 
+/// [`find`], for the public host, whose callers have checked the file is on a published page.
+pub(crate) async fn find_blob(
+    state: &AppState,
+    tx: &mut sqlx::PgConnection,
+    ws: Uuid,
+    blob: &BlobId,
+) -> anyhow::Result<Option<(i32, String)>> {
+    find(state, tx, ws, blob)
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))
+}
+
 /// The row for `blob`, under any version of the workspace's key: its key version and address.
 async fn find(
     state: &AppState,
@@ -90,6 +102,7 @@ fn allowed(
             user: auth.user,
             disabled: false,
             role,
+            agent: None,
         },
         action,
         &Resource::Workspace(WorkspaceId::from_uuid(ws)),

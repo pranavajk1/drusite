@@ -210,7 +210,8 @@ The agent signs in through the browser like an app does, using a
 
 - which workspaces it can see;
 - read only, or read and edit;
-- whether it may edit journal entries (it can't unless you allow it).
+- whether it may edit journal entries (it can't unless you allow it);
+- whether it may publish pages to the web (it can't unless you allow it).
 
 Its tokens are good at `/mcp` only (RFC 8707). Agents have no tools that delete. Every change one
 makes is recorded, and the app lists those changes with an undo button for each.
@@ -228,3 +229,91 @@ Disconnecting an agent on that page ends its access at once.
 When the server fetches a client's metadata document, it refuses addresses on private
 networks. Your reverse proxy must pass the `/.well-known/oauth-protected-resource` paths through
 to Drusite.
+
+## Publish to web
+
+Anyone who can edit a page can share it as a read-only link, from the page's Share button. The
+server renders the page as plain HTML, live: readers always see the page as it is now, and
+unpublishing or making a new link takes the old address down at once. Links are long random
+tokens, never page IDs. Each page's options are off until its editor turns them on: its
+subpages (as a small site), search engines, an expiry date, and a password.
+
+With no extra settings, published pages are at `https://<your server>/p/<token>`. That works,
+but it means readers reach the same address as your app. To keep the app, its API and sign-in
+private, give published pages **a host of their own**, which serves nothing but published pages
+and their files (everything else there is a 404):
+
+```toml
+[publish]
+public_url = "https://pages.example.com"
+listen = "0.0.0.0:8443"   # its own port: published pages only
+```
+
+Then put only that port (or that host name) on the internet, by whichever of these suits you:
+
+- **Behind any reverse proxy.** Route `pages.example.com` to port 8443 and nothing else; keep
+  your app's host on your private network or VPN. If the proxy sets `X-Forwarded-For`, set
+  `client_ip_header = "x-forwarded-for"` so the per-reader limits see readers rather than the
+  proxy. Without `listen`, the main port also serves the public host to requests for its name;
+  a separate port is easier to expose alone.
+- **With the server's own TLS**, with no proxy: give it a certificate and key in PEM files.
+  They're read again when they change, so a renewal (certbot, acme.sh, cert-manager) needs no
+  restart.
+
+  ```toml
+  [publish]
+  public_url = "https://pages.example.com"
+  listen = "0.0.0.0:443"
+  tls_cert = "/etc/drusite/tls/fullchain.pem"
+  tls_key = "/etc/drusite/tls/privkey.pem"
+  ```
+
+- **Docker Compose**: uncomment `[publish]` in [`compose/drusite.toml`](compose/drusite.toml)
+  and the `8443` port in [`compose/compose.yaml`](compose/compose.yaml).
+- **Kubernetes**: the chart's `publish` values add the listener, a `public` Service port and,
+  optionally, an Ingress for the public host alone, so it can use an internet-facing ingress
+  class while the app's Ingress stays internal:
+
+  ```yaml
+  publish:
+    enabled: true
+    host: pages.example.com
+    ingress:
+      enabled: true
+      className: public
+      tls:
+        - hosts: [pages.example.com]
+          secretName: pages-tls
+  ```
+
+What readers get:
+
+- Pages are rendered by the server, with no JavaScript, in light and dark, on phones too. Every
+  piece of content is escaped, a strict CSP allows no script at all, `Referrer-Policy:
+  no-referrer` keeps the link's token from leaking to the sites a page links to, links to pages
+  that aren't shared become plain text, and no internal ID appears anywhere.
+- A link that doesn't work (unknown, unpublished, expired, in the trash, a subpage that isn't
+  shared) gets the same 404 as one that never existed.
+- A page is `noindex` (in a meta tag and `X-Robots-Tag`) unless its editor allows search
+  engines, and always while it has a password. `robots.txt` lets crawlers see that, and never
+  lists links.
+- A password page shows only a form. The password is hashed (argon2id), tries are limited (per
+  address on each node, and per link across all of them), and a reader who knows it gets a
+  signed cookie for that link, never a password in the URL. A new password or a new link ends
+  those cookies.
+- Pages carry an ETag and `Cache-Control: private, max-age=15`: a reader's browser may show a
+  page up to that long after it's unpublished. Set `cache_secs` to change it.
+
+Who may publish is policy (Cedar's `publish_document`): a workspace's editors and owners. An
+agent publishes only if its person allowed that when connecting it, and its publishing shows in
+the agents' activity. `enabled = false` turns publishing off (editors can still unpublish).
+
+| Setting | Default | |
+|---|---|---|
+| `DRUSITE__PUBLISH__ENABLED` | `true` | `false`: no new links, and published pages are 404 |
+| `DRUSITE__PUBLISH__PUBLIC_URL` | none | the public host's origin; links use it |
+| `DRUSITE__PUBLISH__LISTEN` | none | the public host's own port |
+| `DRUSITE__PUBLISH__TLS_CERT`, `DRUSITE__PUBLISH__TLS_KEY` | none | PEM files for TLS on that port |
+| `DRUSITE__PUBLISH__CACHE_SECS` | `15` | how long browsers keep a page |
+| `DRUSITE__PUBLISH__PER_MINUTE` | `300` | requests a minute from one address |
+| `DRUSITE__PUBLISH__CLIENT_IP_HEADER` | none | where a proxy puts the reader's address |

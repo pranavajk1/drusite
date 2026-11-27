@@ -360,3 +360,31 @@ mod journal {
         assert_eq!(page.blocks().unwrap()[0].kind, kind);
     }
 }
+
+#[test]
+fn share_state_is_mirrored_and_reaches_other_devices() {
+    use drusite_crdt::ShareMirror;
+    let mut ws = Workspace::create().unwrap();
+    let a = ws.create_page(None, "A").unwrap().id();
+    let b = ws.create_page(Some(a), "B").unwrap().id();
+    assert_eq!(ws.share(a).unwrap(), None);
+    let share = ShareMirror {
+        url: "https://pages.example.com/p/abc".to_owned(),
+        include_subpages: true,
+        allow_indexing: false,
+        expires_at: Some(1_900_000_000_000),
+        has_password: true,
+    };
+    ws.set_share(a, Some(&share)).unwrap();
+    assert_eq!(ws.share(a).unwrap(), Some(share.clone()));
+    assert_eq!(ws.shared_pages(), vec![a]);
+    assert_eq!(ws.share(b).unwrap(), None);
+
+    let mut other = Workspace::load(&ws.export_snapshot().unwrap()).unwrap();
+    assert_eq!(other.share(a).unwrap(), Some(share));
+    let before = ws.version();
+    ws.set_share(a, None).unwrap();
+    other.import(&ws.export_updates(&before).unwrap()).unwrap();
+    assert_eq!(other.share(a).unwrap(), None);
+    assert!(other.shared_pages().is_empty());
+}

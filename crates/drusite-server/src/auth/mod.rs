@@ -23,7 +23,7 @@ pub mod oauth;
 mod oidc;
 mod pages;
 mod passkeys;
-mod password;
+pub(crate) mod password;
 mod secret;
 pub mod session;
 pub mod tokens;

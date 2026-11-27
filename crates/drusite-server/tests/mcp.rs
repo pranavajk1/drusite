@@ -543,6 +543,69 @@ async fn an_agent_connects_reads_writes_and_the_person_undoes_it() {
         .await;
     assert!(list[1]["undoneAt"].is_number(), "{list}");
 
+    // Publishing to the web is off for an agent unless its person allowed it.
+    let (said, err) = writer
+        .tool(
+            "publish_page",
+            json!({ "page": page.to_string(), "publish": true }),
+        )
+        .await;
+    assert!(err && said.contains("weren't allowed to publish"), "{said}");
+    let tokens = connect_agent(
+        &base,
+        &mut browser,
+        &client_id,
+        &redirect,
+        &[
+            ("access", "write"),
+            ("publish", "on"),
+            ("decision", "allow"),
+        ],
+    )
+    .await
+    .unwrap();
+    let publisher = Mcp {
+        url: mcp_url.clone(),
+        token: tokens["access_token"].as_str().unwrap().to_owned(),
+        http: reqwest::Client::new(),
+    };
+    publisher.initialize().await;
+    let (said, err) = publisher
+        .tool(
+            "publish_page",
+            json!({ "page": page.to_string(), "publish": true }),
+        )
+        .await;
+    assert!(!err, "{said}");
+    let link = said
+        .split_whitespace()
+        .find(|w| w.starts_with("http"))
+        .unwrap()
+        .to_owned();
+    let read = reqwest::get(&link).await.unwrap();
+    assert_eq!(read.status(), StatusCode::OK);
+    assert!(read.text().await.unwrap().contains("Groceries"));
+    let (said, err) = publisher
+        .tool(
+            "publish_page",
+            json!({ "page": page.to_string(), "publish": false }),
+        )
+        .await;
+    assert!(!err && said.contains("no longer published"), "{said}");
+    assert_eq!(
+        reqwest::get(&link).await.unwrap().status(),
+        StatusCode::NOT_FOUND
+    );
+    let (_, list) = mac
+        .call(
+            &base,
+            "GET",
+            &format!("api/v1/workspaces/{ws}/agent-activity"),
+        )
+        .await;
+    assert_eq!(list[0]["summary"], "Took a page off the web", "{list}");
+    assert_eq!(list[1]["summary"], "Published a page to the web", "{list}");
+
     // Tokens stay where they belong: the agent's can't use the app's API, and the app's can't
     // use MCP.
     let response = reqwest::Client::new()

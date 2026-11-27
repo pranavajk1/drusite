@@ -42,6 +42,10 @@ pub struct Access {
     pub write: bool,
     /// It may change journal entries too. Off unless the person turned it on.
     pub journal: bool,
+    /// It may publish pages to the web (and change or take down what's published). Off unless
+    /// the person turned it on; the server's policy checks it too.
+    #[serde(default)]
+    pub publish: bool,
     /// The workspaces it may see; `None` is all of the person's.
     pub workspaces: Option<Vec<WorkspaceId>>,
 }
@@ -51,6 +55,7 @@ impl Access {
         Self {
             write: false,
             journal: false,
+            publish: false,
             workspaces: None,
         }
     }
@@ -79,6 +84,17 @@ pub struct WorkspaceInfo {
     pub id: WorkspaceId,
     /// The person's role allows changing it (an editor or owner).
     pub writable: bool,
+}
+
+/// What an agent asks of a page's share to the web.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShareRequest {
+    /// Publish, or change how; `None` keeps what's there (off, for a new link).
+    Publish {
+        include_subpages: Option<bool>,
+        allow_search_engines: Option<bool>,
+    },
+    Unpublish,
 }
 
 /// One search result.
@@ -216,6 +232,17 @@ pub trait Notes: Send + Sync + 'static {
         query: &str,
         limit: usize,
     ) -> impl Future<Output = ToolResult<Vec<Hit>>> + Send;
+
+    /// Shares a page to the web, changes how, or takes it down, as the agent's user (with the
+    /// agent's own permission checked by the place's policy). Returns the page's share state in
+    /// a sentence or two for the agent.
+    fn share(
+        &self,
+        agent: &Agent,
+        ws: WorkspaceId,
+        page: PageId,
+        request: ShareRequest,
+    ) -> impl Future<Output = ToolResult<String>> + Send;
 
     /// Saves a call's changes and records what it did, together.
     fn commit(

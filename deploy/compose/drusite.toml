@@ -25,5 +25,11 @@ self_signup = false
 [auth.passkeys]
 enabled = true
 
+# Publish to web. With this, published pages live on their own host, served on port 8443
+# (uncomment it in compose.yaml), and nothing else is there: put only that on the internet.
+# [publish]
+# public_url = "https://pages.example.com"
+# listen = "0.0.0.0:8443"
+
 [auth.password]
 enabled = true

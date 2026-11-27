@@ -427,6 +427,96 @@ impl Notes for ServerNotes {
             .collect())
     }
 
+    async fn share(
+        &self,
+        agent: &Agent,
+        ws: WorkspaceId,
+        page: PageId,
+        request: drusite_mcp::ShareRequest,
+    ) -> ToolResult<String> {
+        use crate::publish::{Actor, ShareChange};
+        let user = user_of(agent)?;
+        let actor = Actor {
+            user,
+            agent: Some(crate::policy::AgentRights {
+                publish: agent.access.publish,
+            }),
+        };
+        let (ws, page) = (*ws.as_uuid(), *page.as_uuid());
+        let result = match &request {
+            drusite_mcp::ShareRequest::Publish {
+                include_subpages,
+                allow_search_engines,
+            } => {
+                crate::publish::publish(
+                    &self.state,
+                    actor,
+                    ws,
+                    page,
+                    ShareChange {
+                        include_subpages: *include_subpages,
+                        allow_indexing: *allow_search_engines,
+                        ..ShareChange::default()
+                    },
+                )
+                .await
+            }
+            drusite_mcp::ShareRequest::Unpublish => {
+                crate::publish::unpublish(&self.state, actor, ws, page).await
+            }
+        };
+        let share = result.map_err(|e| match e {
+            AuthError::NotFound => ToolError::NotFound("no such page".to_owned()),
+            AuthError::Forbidden(_, m) => ToolError::Forbidden(m.to_owned()),
+            AuthError::BadRequest(_, m) => ToolError::Invalid(m),
+            other => ToolError::Server(other.to_string()),
+        })?;
+        // The person sees it in the agents' activity, like any other change.
+        let summary = match (&request, &share.url) {
+            (drusite_mcp::ShareRequest::Unpublish, _) => "Took a page off the web".to_owned(),
+            (_, Some(_)) => format!(
+                "Published a page to the web{}",
+                if share.include_subpages {
+                    ", with its subpages"
+                } else {
+                    ""
+                }
+            ),
+            _ => "Changed how a page is published".to_owned(),
+        };
+        save(
+            &self.state,
+            user,
+            ws,
+            Change::default(),
+            Record::New(
+                agent,
+                Activity {
+                    tool: "publish_page".to_owned(),
+                    summary,
+                    effects: Vec::new(),
+                },
+            ),
+        )
+        .await?;
+        Ok(match share.url {
+            Some(url) => format!(
+                "Published. Anyone with this link can read it: {url}{}{}",
+                if share.include_subpages {
+                    " (with its subpages)"
+                } else {
+                    ""
+                },
+                if share.allow_indexing {
+                    " Search engines may index it."
+                } else {
+                    ""
+                }
+            ),
+            None => "The page is no longer published; its link doesn't work any more.".to_owned(),
+        })
+    }
+
     async fn commit(
         &self,
         agent: &Agent,

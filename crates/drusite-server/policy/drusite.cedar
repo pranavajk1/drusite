@@ -36,6 +36,24 @@ permit (
 )
 when { principal in resource.workspace.editors };
 
+// Editors publish pages to the web (viewers can see whether a page is published).
+@id("editors-publish-documents")
+permit (
+    principal,
+    action == Drusite::Action::"publish_document",
+    resource is Drusite::Document
+)
+when { principal in resource.workspace.editors };
+
+// An agent publishes only if its person allowed that when connecting it. Off unless they did.
+@id("agents-publish-only-when-allowed")
+forbid (
+    principal,
+    action == Drusite::Action::"publish_document",
+    resource
+)
+when { context.via_agent && !context.agent_may_publish };
+
 // Owners manage the workspace.
 @id("owners-manage")
 permit (

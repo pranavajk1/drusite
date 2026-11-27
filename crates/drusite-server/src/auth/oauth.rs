@@ -792,6 +792,7 @@ pub async fn consent_answer(
     let mut allow = false;
     let mut write = false;
     let mut journal = false;
+    let mut publish = false;
     let mut chosen = Vec::new();
     for (k, v) in url::form_urlencoded::parse(&body) {
         match &*k {
@@ -799,6 +800,7 @@ pub async fn consent_answer(
             "decision" => allow = v == "allow",
             "access" => write = v == "write",
             "journal" => journal = v == "on",
+            "publish" => publish = v == "on",
             "workspace" => chosen.extend(v.parse::<Uuid>().ok()),
             _ => {}
         }
@@ -834,6 +836,7 @@ pub async fn consent_answer(
         let access = drusite_mcp::Access {
             write,
             journal: write && journal,
+            publish: write && publish,
             workspaces: Some(
                 chosen
                     .into_iter()

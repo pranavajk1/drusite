@@ -59,6 +59,20 @@ impl LocalNotes {
 }
 
 impl Notes for LocalNotes {
+    async fn share(
+        &self,
+        _agent: &Agent,
+        _ws: drusite_model::WorkspaceId,
+        _page: drusite_model::PageId,
+        _request: drusite_mcp::ShareRequest,
+    ) -> ToolResult<String> {
+        Err(ToolError::Forbidden(
+            "agents on this computer can't publish pages; publishing goes through the Drusite \
+             server's agent endpoint"
+                .to_owned(),
+        ))
+    }
+
     async fn workspaces(&self, _agent: &Agent) -> ToolResult<Vec<WorkspaceInfo>> {
         self.with(|core| {
             Ok(vec![WorkspaceInfo {

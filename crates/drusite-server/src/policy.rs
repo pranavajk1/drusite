@@ -80,10 +80,12 @@ pub enum Action {
     ReadDocument,
     WriteDocument,
     DeleteDocument,
+    /// Share a page to the web, change how, or take it down.
+    PublishDocument,
 }
 
 impl Action {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::ReadWorkspace,
         Self::CreateDocument,
         Self::ManageMembers,
@@ -91,6 +93,7 @@ impl Action {
         Self::ReadDocument,
         Self::WriteDocument,
         Self::DeleteDocument,
+        Self::PublishDocument,
     ];
 
     const fn name(self) -> &'static str {
@@ -102,6 +105,7 @@ impl Action {
             Self::ReadDocument => "read_document",
             Self::WriteDocument => "write_document",
             Self::DeleteDocument => "delete_document",
+            Self::PublishDocument => "publish_document",
         }
     }
 
@@ -109,7 +113,7 @@ impl Action {
     pub const fn on_document(self) -> bool {
         matches!(
             self,
-            Self::ReadDocument | Self::WriteDocument | Self::DeleteDocument
+            Self::ReadDocument | Self::WriteDocument | Self::DeleteDocument | Self::PublishDocument
         )
     }
 }
@@ -121,6 +125,15 @@ pub struct Principal {
     pub disabled: bool,
     /// The user's role in the workspace the request is about, if any.
     pub role: Option<Role>,
+    /// Set when an agent (an MCP client) is asking for the user: whether the user allowed it to
+    /// publish pages.
+    pub agent: Option<AgentRights>,
+}
+
+/// What a person allowed an agent to do beyond reading and writing, where policy asks.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct AgentRights {
+    pub publish: bool,
 }
 
 /// What the request is about.
@@ -278,7 +291,7 @@ impl Policy {
             user_uid,
             uid("Drusite::Action", action.name()),
             resource_uid,
-            Context::empty(),
+            context(principal, action)?,
             Some(&self.schema),
         )
         .map_err(|e| e.to_string())?;
@@ -286,6 +299,24 @@ impl Policy {
             .authorizer
             .is_authorized(&request, &self.policies, &entities)
             .decision())
+    }
+}
+
+/// The request context an action's schema declares.
+fn context(principal: &Principal, action: Action) -> Result<Context, String> {
+    match action {
+        Action::PublishDocument => Context::from_pairs([
+            (
+                "via_agent".to_owned(),
+                RestrictedExpression::new_bool(principal.agent.is_some()),
+            ),
+            (
+                "agent_may_publish".to_owned(),
+                RestrictedExpression::new_bool(principal.agent.is_some_and(|a| a.publish)),
+            ),
+        ])
+        .map_err(|e| e.to_string()),
+        _ => Ok(Context::empty()),
     }
 }
 
@@ -298,6 +329,7 @@ mod tests {
             user: UserId::new(),
             disabled,
             role,
+            agent: None,
         }
     }
 
@@ -321,6 +353,7 @@ mod tests {
             match role {
                 None => false,
                 Some(Role::Viewer) => matches!(action, ReadWorkspace | ReadDocument),
+                // Editors publish; see agents_publish_only_when_allowed.
                 Some(Role::Editor) => !matches!(action, ManageMembers | DeleteWorkspace),
                 Some(Role::Owner) => true,
             }
@@ -342,6 +375,32 @@ mod tests {
                 assert!(!policy.is_allowed(&principal(role, true), action, &resource));
             }
         }
+    }
+
+    #[test]
+    fn agents_publish_only_when_allowed() {
+        let policy = Policy::load().unwrap();
+        let doc = Resource::Document {
+            workspace: WorkspaceId::new(),
+            document: Uuid::now_v7(),
+        };
+        for role in [Role::Editor, Role::Owner] {
+            let person = principal(Some(role), false);
+            assert!(policy.is_allowed(&person, Action::PublishDocument, &doc));
+            let agent = |publish| Principal {
+                agent: Some(AgentRights { publish }),
+                ..person
+            };
+            assert!(!policy.is_allowed(&agent(false), Action::PublishDocument, &doc));
+            assert!(policy.is_allowed(&agent(true), Action::PublishDocument, &doc));
+            // The agent's rights only ever narrow: its other actions are its person's.
+            assert!(policy.is_allowed(&agent(false), Action::WriteDocument, &doc));
+        }
+        let viewer = Principal {
+            agent: Some(AgentRights { publish: true }),
+            ..principal(Some(Role::Viewer), false)
+        };
+        assert!(!policy.is_allowed(&viewer, Action::PublishDocument, &doc));
     }
 
     #[test]

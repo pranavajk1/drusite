@@ -151,6 +151,8 @@ impl Core {
         let access = Access {
             write: access.write,
             journal: access.write && access.journal,
+            // Publishing needs the server; agents on this computer don't publish.
+            publish: false,
             workspaces: None,
         };
         let row = AgentTokenRow {

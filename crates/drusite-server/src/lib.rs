@@ -15,6 +15,7 @@ pub mod health;
 pub mod keys;
 pub mod mcp;
 pub mod policy;
+pub mod publish;
 pub mod search;
 pub mod storage;
 pub mod sync;

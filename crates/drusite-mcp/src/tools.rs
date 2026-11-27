@@ -116,6 +116,18 @@ pub const TOOLS: &[ToolSpec] = &[
         destructive: true,
         schema: schema::<UpdatePage>,
     },
+    ToolSpec {
+        name: "publish_page",
+        title: "Publish a page to the web",
+        description: "Shares a page as a read-only link anyone can open (`publish: true`), \
+                      changes how (with its subpages; findable by search engines), or takes it \
+                      down (`publish: false`). Returns the link. Only works if the person \
+                      allowed you to publish when connecting you; ask them first, since a \
+                      published page is public.",
+        read_only: false,
+        destructive: false,
+        schema: schema::<PublishPage>,
+    },
 ];
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -133,6 +145,20 @@ pub(crate) struct ListPages {
 pub(crate) struct ReadPage {
     /// The page's ID (or a `drusite:page/…` link to it).
     pub(crate) page: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub(crate) struct PublishPage {
+    /// The page's ID (or a `drusite:page/…` link to it).
+    pub(crate) page: String,
+    /// True to publish it (or keep it published with these options), false to take it down.
+    pub(crate) publish: bool,
+    /// Share the pages inside it too, as a small site.
+    #[serde(default)]
+    pub(crate) include_subpages: Option<bool>,
+    /// Let search engines index it.
+    #[serde(default)]
+    pub(crate) allow_search_engines: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -209,6 +235,7 @@ pub async fn call<N: Notes>(
         "create_page" => tools.create_page(args(arguments)?).await,
         "append_to_page" => tools.append_to_page(args(arguments)?).await,
         "update_page" => tools.update_page(args(arguments)?).await,
+        "publish_page" => tools.publish_page(args(arguments)?).await,
         other => Err(ToolError::NotFound(format!(
             "there is no tool called {other}"
         ))),
@@ -328,6 +355,29 @@ impl<N: Notes> Tools<'_, N> {
             ));
         }
         Ok(())
+    }
+
+    async fn publish_page(&self, a: PublishPage) -> ToolResult<String> {
+        if !self.agent.access.publish {
+            return Err(ToolError::Forbidden(
+                "you weren't allowed to publish pages; the person can allow it when connecting \
+                 you in Drusite"
+                    .to_owned(),
+            ));
+        }
+        let at = self.locate(&a.page).await?;
+        self.may_write(&at.info, None)?;
+        let request = if a.publish {
+            crate::ShareRequest::Publish {
+                include_subpages: a.include_subpages,
+                allow_search_engines: a.allow_search_engines,
+            }
+        } else {
+            crate::ShareRequest::Unpublish
+        };
+        self.notes
+            .share(self.agent, at.info.id, at.node.id, request)
+            .await
     }
 
     async fn list_workspaces(&self) -> ToolResult<String> {

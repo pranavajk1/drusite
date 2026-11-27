@@ -34,6 +34,8 @@ import type {
   SearchHit,
   Setting,
   Settings,
+  ShareChange,
+  ShareInfo,
   TrashItem,
 } from "./types";
 
@@ -307,6 +309,26 @@ export class CoreClient {
   /** Stops following an answer; the server still finishes and saves it. */
   async cancelAsk(request: string): Promise<void> {
     await this.call({ type: "cancelAsk", request }, "done");
+  }
+
+  /** How a page is shared to the web, from the server (or what the workspace last heard). */
+  async share(page: PageId): Promise<ShareInfo> {
+    return (await this.call({ type: "share", page }, "share")).share;
+  }
+
+  /** Publishes a page to the web, or changes how. */
+  async publish(page: PageId, change: ShareChange): Promise<ShareInfo> {
+    return (await this.call({ type: "publish", page, change }, "share")).share;
+  }
+
+  /** Takes a page off the web at once. */
+  async unpublish(page: PageId): Promise<ShareInfo> {
+    return (await this.call({ type: "unpublish", page }, "share")).share;
+  }
+
+  /** A new link for a published page; the old one stops working. */
+  async regenerateShareLink(page: PageId): Promise<ShareInfo> {
+    return (await this.call({ type: "regenerateShareLink", page }, "share")).share;
   }
 
   /** Tells the core the UI is showing what it opened (benchmarks wait for this). */

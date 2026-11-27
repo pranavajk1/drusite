@@ -387,7 +387,27 @@ export type Command =
 /**  The local date, `YYYY-MM-DD`, so "yesterday" means the asker's. */
 today: string | null } | 
 /**  Stops following an answer. The server still finishes and saves it. */
-{ type: "cancelAsk"; request: string };
+{ type: "cancelAsk"; request: string } | 
+/**
+ *  How a page is shared to the web, as the server says (and whether this person may change
+ *  it). Answered with [`Response::Share`]; when the server can't be asked, with what the
+ *  workspace last heard and `available` false.
+ */
+{ type: "share"; page: PageId } | 
+/**
+ *  How a page is shared, from the workspace document alone (no server needed). Answered
+ *  with [`Response::Share`].
+ */
+{ type: "localShare"; page: PageId } | 
+/**  Publishes a page to the web, or changes how. Answered with [`Response::Share`]. */
+{ type: "publish"; page: PageId; change: ShareChange } | 
+/**  Takes a page off the web at once. Answered with [`Response::Share`]. */
+{ type: "unpublish"; page: PageId } | 
+/**
+ *  Gives a published page a new link; the old one stops working. Answered with
+ *  [`Response::Share`].
+ */
+{ type: "regenerateShareLink"; page: PageId };
 
 /**  How a condition compares a property. */
 export type Comparison = 
@@ -490,6 +510,10 @@ export type Event =
 /**  More of an answer to [`Command::Ask`]. */
 { type: "ask"; request: string; update: AskUpdate };
 
+export type ExpiryChange = 
+/**  Unix milliseconds, in the future. */
+{ type: "set"; at: number } | { type: "clear" };
+
 /**  Heading levels 1 to 3, as in Notion. Serialized as `"h1"`, `"h2"`, `"h3"`. */
 export type HeadingLevel = "h1" | "h2" | "h3";
 
@@ -546,6 +570,8 @@ export type PageInfo = {
 	kind: PageKind,
 	/**  In name order. */
 	properties: Property[],
+	/**  Shared to the web, as the workspace last heard from the server. */
+	published: boolean,
 };
 
 /**  What a page is for. */
@@ -582,6 +608,8 @@ export type PageView = {
 	blocks: Block[],
 };
 
+export type PasswordChange = { type: "set"; password: string } | { type: "clear" };
+
 /**  A block and the block shown before it. */
 export type PlacedBlock = {
 	block: Block,
@@ -608,7 +636,7 @@ activity: AgentCall[];
 /**  Why the server's activity couldn't be listed, if it couldn't. */
 serverProblem: string | null } | { type: "agentToken"; token: string; url: string } | { type: "ai"; 
 /**  Whether this build can reach AI providers. */
-available: boolean; kinds: AiKindInfo[]; providers: AiProvider[]; features: AiFeatureChoice[] } | { type: "aiProviderSaved"; provider: AiProvider } | { type: "aiModels"; models: AiModel[] } | { type: "askStatus"; status: AskStatus } | { type: "conversations"; conversations: ConversationSummary[] } | { type: "conversation"; conversation: Conversation } | { type: "aiCheck"; steps: AiCheckStep[] } | { type: "done" };
+available: boolean; kinds: AiKindInfo[]; providers: AiProvider[]; features: AiFeatureChoice[] } | { type: "aiProviderSaved"; provider: AiProvider } | { type: "aiModels"; models: AiModel[] } | { type: "askStatus"; status: AskStatus } | { type: "conversations"; conversations: ConversationSummary[] } | { type: "conversation"; conversation: Conversation } | { type: "aiCheck"; steps: AiCheckStep[] } | { type: "share"; share: ShareInfo } | { type: "done" };
 
 /**  A page that matched a search, at the block that matched best (none when only the title did). */
 export type SearchHit = {
@@ -637,6 +665,35 @@ export type Settings = {
 	weekStart: number,
 	/**  Whether Ask your notes may read journal entries. Off unless switched on. */
 	askJournal: boolean,
+};
+
+/**  A change to how a page is shared. Fields left out stay as they are (off, for a new link). */
+export type ShareChange = {
+	includeSubpages: boolean | null,
+	allowIndexing: boolean | null,
+	expiry: ExpiryChange | null,
+	password: PasswordChange | null,
+};
+
+/**  How a page is shared to the web. */
+export type ShareInfo = {
+	published: boolean,
+	/**  The public link, while it's published. */
+	url: string | null,
+	includeSubpages: boolean,
+	allowIndexing: boolean,
+	/**  When the link stops working, in Unix milliseconds. */
+	expiresAt: number | null,
+	expired: boolean,
+	hasPassword: boolean,
+	/**  Whether this person may change it. */
+	canPublish: boolean,
+	/**
+	 *  Whether this came from the server now. When false, it's what the workspace last heard,
+	 *  and `message` says why the server couldn't be asked.
+	 */
+	available: boolean,
+	message: string | null,
 };
 
 /**  A piece of a search snippet; `highlight` marks the words that matched. */

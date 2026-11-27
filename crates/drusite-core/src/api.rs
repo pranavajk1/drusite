@@ -229,6 +229,89 @@ pub enum Command {
     CancelAsk {
         request: String,
     },
+    /// How a page is shared to the web, as the server says (and whether this person may change
+    /// it). Answered with [`Response::Share`]; when the server can't be asked, with what the
+    /// workspace last heard and `available` false.
+    Share {
+        page: PageId,
+    },
+    /// How a page is shared, from the workspace document alone (no server needed). Answered
+    /// with [`Response::Share`].
+    LocalShare {
+        page: PageId,
+    },
+    /// Publishes a page to the web, or changes how. Answered with [`Response::Share`].
+    Publish {
+        page: PageId,
+        change: ShareChange,
+    },
+    /// Takes a page off the web at once. Answered with [`Response::Share`].
+    Unpublish {
+        page: PageId,
+    },
+    /// Gives a published page a new link; the old one stops working. Answered with
+    /// [`Response::Share`].
+    RegenerateShareLink {
+        page: PageId,
+    },
+}
+
+/// How a page is shared to the web.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ShareInfo {
+    pub published: bool,
+    /// The public link, while it's published.
+    pub url: Option<String>,
+    pub include_subpages: bool,
+    pub allow_indexing: bool,
+    /// When the link stops working, in Unix milliseconds.
+    #[specta(type = Option<u32>)]
+    pub expires_at: Option<i64>,
+    pub expired: bool,
+    pub has_password: bool,
+    /// Whether this person may change it.
+    pub can_publish: bool,
+    /// Whether this came from the server now. When false, it's what the workspace last heard,
+    /// and `message` says why the server couldn't be asked.
+    pub available: bool,
+    pub message: Option<String>,
+}
+
+/// A change to how a page is shared. Fields left out stay as they are (off, for a new link).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ShareChange {
+    pub include_subpages: Option<bool>,
+    pub allow_indexing: Option<bool>,
+    pub expiry: Option<ExpiryChange>,
+    pub password: Option<PasswordChange>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum ExpiryChange {
+    /// Unix milliseconds, in the future.
+    Set {
+        #[specta(type = u32)]
+        at: i64,
+    },
+    Clear,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum PasswordChange {
+    Set { password: String },
+    Clear,
 }
 
 /// Whether Ask your notes works, as the server says.
@@ -731,6 +814,9 @@ pub enum Response {
     AiCheck {
         steps: Vec<AiCheckStep>,
     },
+    Share {
+        share: ShareInfo,
+    },
     Done,
 }
 
@@ -780,6 +866,8 @@ pub struct PageInfo {
     pub kind: PageKind,
     /// In name order.
     pub properties: Vec<Property>,
+    /// Shared to the web, as the workspace last heard from the server.
+    pub published: bool,
 }
 
 /// An open page: everything the editor needs to show it.
