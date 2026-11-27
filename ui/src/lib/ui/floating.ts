@@ -12,10 +12,22 @@ export interface Place {
 const GAP = 4;
 const EDGE = 8;
 
+/**
+ * The bottom of what's visible: above the on-screen keyboard (which on phones covers the window
+ * rather than shrinking it) and above the phone's formatting bar.
+ */
+export function visibleBottom(): number {
+  const vv = window.visualViewport;
+  let bottom = vv ? vv.offsetTop + vv.height : window.innerHeight;
+  const bar = document.querySelector(".phone-toolbar")?.getBoundingClientRect();
+  if (bar && bar.height > 0) bottom = Math.min(bottom, bar.top);
+  return bottom;
+}
+
 /** Below `anchor` (above if there's no room), left edges lined up, kept on screen. */
 export function placeBelow(anchor: DOMRect, size: { width: number; height: number }, matchWidth = false): Place {
   const vw = window.innerWidth;
-  const vh = window.innerHeight;
+  const vh = visibleBottom();
   let top = anchor.bottom + GAP;
   if (top + size.height > vh - EDGE && anchor.top - GAP - size.height > EDGE) top = anchor.top - GAP - size.height;
   top = Math.max(EDGE, Math.min(top, vh - EDGE - size.height));

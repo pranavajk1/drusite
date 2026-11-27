@@ -10,6 +10,7 @@ import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
 
 import type { BlockKind } from "../core/types";
 import { type IconName, iconSvg } from "../lib/icons/icons";
+import { visibleBottom } from "../lib/ui/floating";
 import { PICK_FILES } from "./attachments";
 import { attrsOf } from "./convert";
 import { defaultQueryJson } from "./query";
@@ -143,10 +144,22 @@ class MenuView {
     this.render(s);
     this.dom.hidden = false;
     const at = view.coordsAtPos(s.from);
+    this.dom.style.maxHeight = "";
     const r = this.dom.getBoundingClientRect();
+    // Below the caret, or above it when the keyboard or the window's edge leaves no room. When
+    // neither fits, the menu shrinks to the room above (it scrolls).
+    const bottom = visibleBottom();
     const below = at.bottom + 6;
-    const top = below + r.height > window.innerHeight - 8 && at.top - 6 - r.height > 8 ? at.top - 6 - r.height : below;
-    this.dom.style.top = `${Math.max(8, Math.min(top, window.innerHeight - 8 - r.height))}px`;
+    const roomBelow = bottom - 8 - below;
+    const roomAbove = at.top - 6 - 8;
+    if (r.height <= roomBelow || roomBelow >= roomAbove) {
+      this.dom.style.maxHeight = `${Math.max(120, roomBelow)}px`;
+      this.dom.style.top = `${below}px`;
+    } else {
+      const h = Math.min(r.height, roomAbove);
+      this.dom.style.maxHeight = `${roomAbove}px`;
+      this.dom.style.top = `${at.top - 6 - h}px`;
+    }
     this.dom.style.left = `${Math.max(8, Math.min(at.left - 8, window.innerWidth - 8 - r.width))}px`;
     this.dom.querySelector(".active")?.scrollIntoView({ block: "nearest" });
   }
