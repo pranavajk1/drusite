@@ -186,9 +186,13 @@ impl Resolver for NoteLinks<'_> {
         match self.vault.resolve_note(self.from, &target) {
             Some(id) => format!("{PAGE_LINK}{id}"),
             None => {
-                self.unresolved
-                    .borrow_mut()
-                    .push(format!("{}: link to {target}", self.from));
+                // An embed that pointed at nothing comes back here as a link: it's already been
+                // reported, once.
+                let embed = format!("{}: embed of {target}", self.from);
+                let mut unresolved = self.unresolved.borrow_mut();
+                if unresolved.last() != Some(&embed) {
+                    unresolved.push(format!("{}: link to {target}", self.from));
+                }
                 dest.to_owned()
             }
         }
@@ -518,6 +522,33 @@ mod tests {
             std::fs::create_dir_all(full.parent().unwrap()).unwrap();
             std::fs::write(full, bytes).unwrap();
         }
+    }
+
+    #[test]
+    fn a_missing_embed_is_reported_once() {
+        let data = tempfile::tempdir().unwrap();
+        let mut core = Core::open(
+            data.path(),
+            &StoreKey::generate().unwrap(),
+            Box::new(|_| {}),
+        )
+        .unwrap();
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join("Home.md"),
+            b"See [[Plan]] and ![[pic.png]].\n\n![[gone.png]]\n\nA link to [[Nowhere]].\n",
+        )
+        .unwrap();
+        std::fs::write(root.path().join("Plan.md"), b"Back [[Home]].\n").unwrap();
+        let report = core.import_folder(root.path()).unwrap();
+        assert_eq!(
+            report.unresolved,
+            [
+                "Home.md: embed of pic.png",
+                "Home.md: embed of gone.png",
+                "Home.md: link to Nowhere"
+            ]
+        );
     }
 
     #[test]

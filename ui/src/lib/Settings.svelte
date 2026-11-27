@@ -115,20 +115,31 @@
     }
   }
 
+  /** The system's folder picker; a failure to open it is shown, not swallowed. */
+  async function pick(title: string): Promise<string | null> {
+    try {
+      return await client.pickFolder(title);
+    } catch (e) {
+      onerror(e);
+      return null;
+    }
+  }
+
   async function chooseFolder() {
-    const folder = await client.pickFolder();
+    const folder = await pick("Choose the folder for your pages");
     if (folder) await setFolder(folder);
   }
 
   let imported = $state<string | null>(null);
   async function importNotes() {
-    const folder = await client.pickFolder();
+    const folder = await pick("Choose a folder of notes to import");
     if (!folder) return;
     busy = true;
     imported = "Importing…";
     try {
       const r = await client.importFolder(folder);
-      const missing = r.unresolved.length ? ` ${r.unresolved.length} links or embeds pointed at nothing.` : "";
+      const n = r.unresolved.length;
+      const missing = n === 0 ? "" : n === 1 ? " 1 link or embed pointed at nothing." : ` ${n} links or embeds pointed at nothing.`;
       imported = `Imported ${r.pages} ${r.pages === 1 ? "page" : "pages"} and ${r.attachments} ${r.attachments === 1 ? "file" : "files"}.${missing}`;
       if (r.page) onopen(r.page);
     } catch (e) {
