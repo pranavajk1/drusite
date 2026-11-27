@@ -156,8 +156,11 @@
           arriving = false;
           editor = createEditor(mount, client, view, onerror, onselect);
           editorView = editor.view;
+          // A new page starts in its title. Otherwise the cursor goes to the text, except on a
+          // touch screen: there that would open the keyboard over a page just opened to read
+          // (Notion's phone apps open a page without one).
           if (view.title === "") titleInput.focus();
-          else editor.view.focus();
+          else if (!touch) editor.view.focus();
           onopened();
           return;
         } catch (e) {

@@ -181,6 +181,9 @@ test("on a touch phone, a row's title opens it, with no Open button over it", as
   await expect(page.locator(".db-table .open-row").first()).toBeHidden();
   await title.tap();
   await expect(page.getByLabel("Page title")).toHaveValue("A rather long title for a narrow phone screen");
+  // Opened to read: no cursor in its text, so no keyboard comes up over it.
+  await expect(page.locator(".editor")).not.toBeFocused();
+  await expect(page.getByLabel("Page title")).not.toBeFocused();
   await context.close();
 });
 
