@@ -41,6 +41,12 @@ spec:
               value: /etc/drusite/drusite.toml
             - name: DRUSITE__SERVER__LISTEN
               value: "0.0.0.0:8080"
+            {{- if .Values.publish.enabled }}
+            - name: DRUSITE__PUBLISH__LISTEN
+              value: "0.0.0.0:{{ .Values.publish.port }}"
+            - name: DRUSITE__PUBLISH__PUBLIC_URL
+              value: "https://{{ .Values.publish.host }}"
+            {{- end }}
             {{- with .Values.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -51,6 +57,10 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+            {{- if .Values.publish.enabled }}
+            - name: public
+              containerPort: {{ .Values.publish.port }}
+            {{- end }}
           startupProbe:
             # Migrations run before the server listens.
             httpGet:

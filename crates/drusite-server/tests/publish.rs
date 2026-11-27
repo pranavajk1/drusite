@@ -21,6 +21,7 @@ use drusite_model::{BlockId, BlockKind, HeadingLevel, Mark, PageId, UserId, Work
 use drusite_server::app::AppState;
 use drusite_server::auth::session::Method;
 use drusite_server::auth::tokens::{self, NewGrant};
+use rustls::pki_types::pem::PemObject as _;
 use serde_json::{Value, json};
 use url::Url;
 
@@ -1141,4 +1142,106 @@ async fn readers_are_rate_limited() {
         .api(&w.server.url, "GET", &w.share_path(w.shared), None)
         .await;
     assert_eq!(status, 200);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_public_host_serves_tls_itself() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let public_url = format!("https://pages.localhost:{port}/");
+    let Some(w) = world(&[("DRUSITE__PUBLISH__PUBLIC_URL", public_url.as_str())]).await else {
+        return;
+    };
+    let share = w
+        .publish(w.shared, json!({ "password": "open sesame" }))
+        .await;
+    let url = share["url"].as_str().unwrap().to_owned();
+    assert!(url.starts_with(&public_url));
+
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let acceptor = drusite_server::publish::tls::acceptor(
+        &fixtures.join("test-tls-cert.pem"),
+        &fixtures.join("test-tls-key.pem"),
+    )
+    .unwrap();
+    let app = drusite_server::publish::public_router(w.server.state.clone());
+    tokio::spawn(drusite_server::publish::tls::serve_tls(
+        listener,
+        acceptor,
+        app,
+        std::future::pending(),
+    ));
+    // A client that trusts only the test CA, as a browser trusts a real one.
+    let mut roots = rustls::RootCertStore::empty();
+    for cert in
+        rustls::pki_types::CertificateDer::pem_file_iter(fixtures.join("test-tls-ca.pem")).unwrap()
+    {
+        roots.add(cert.unwrap()).unwrap();
+    }
+    let tls = std::sync::Arc::new(
+        rustls::ClientConfig::builder_with_provider(std::sync::Arc::new(
+            rustls::crypto::aws_lc_rs::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_root_certificates(roots)
+        .with_no_client_auth(),
+    );
+    let request = |raw: String| {
+        let tls = std::sync::Arc::clone(&tls);
+        async move {
+            use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+            let tcp = tokio::net::TcpStream::connect(("127.0.0.1", port))
+                .await
+                .unwrap();
+            let name = rustls::pki_types::ServerName::try_from("pages.localhost").unwrap();
+            let mut stream = tokio_rustls::TlsConnector::from(tls)
+                .connect(name, tcp)
+                .await
+                .unwrap();
+            stream.write_all(raw.as_bytes()).await.unwrap();
+            let mut out = Vec::new();
+            let _ = stream.read_to_end(&mut out).await;
+            String::from_utf8_lossy(&out).into_owned()
+        }
+    };
+    let path = url
+        .strip_prefix(public_url.trim_end_matches('/'))
+        .unwrap()
+        .to_owned();
+    let gate = request(format!(
+        "GET {path} HTTP/1.1\r\nHost: pages.localhost\r\nConnection: close\r\n\r\n"
+    ))
+    .await;
+    assert!(gate.starts_with("HTTP/1.1 200"), "{gate}");
+    assert!(gate.contains("This page needs a password"));
+    let form = "password=open+sesame";
+    let right = request(format!(
+        "POST {path}/unlock HTTP/1.1\r\nHost: pages.localhost\r\nConnection: close\r\n\
+         Content-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\n\r\n{form}",
+        form.len()
+    ))
+    .await;
+    assert!(right.starts_with("HTTP/1.1 303"), "{right}");
+    let set = right
+        .lines()
+        .find_map(|l| l.strip_prefix("set-cookie: "))
+        .unwrap()
+        .to_owned();
+    assert!(
+        set.contains("; Secure"),
+        "on https the cookie is Secure: {set}"
+    );
+    let cookie = set.split(';').next().unwrap();
+    let page = request(format!(
+        "GET {path} HTTP/1.1\r\nHost: pages.localhost\r\nCookie: {cookie}\r\nConnection: close\r\n\r\n"
+    ))
+    .await;
+    assert!(page.contains("Day one"), "{page}");
+    // Plain HTTP on the TLS port gets nowhere.
+    let plain = reqwest::Client::new()
+        .get(format!("http://127.0.0.1:{port}/"))
+        .send()
+        .await;
+    assert!(plain.is_err() || !plain.unwrap().status().is_success());
 }

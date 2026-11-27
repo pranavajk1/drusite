@@ -12,3 +12,8 @@ spec:
     - name: http
       port: {{ .Values.service.port }}
       targetPort: http
+    {{- if .Values.publish.enabled }}
+    - name: public
+      port: {{ .Values.publish.port }}
+      targetPort: public
+    {{- end }}

@@ -116,3 +116,21 @@ text_config = "simple"
 [attachments]
 # Files on pages, sealed in the object store ([storage]). The largest file a page can hold:
 # max_bytes = 104857600
+
+[publish]
+# Publish to web: pages shared as read-only links, rendered by this server as plain HTML.
+# enabled = true
+# A host for published pages alone, which serves nothing else. Without it, pages are at
+# <public_url>/p/<token>.
+# public_url = "https://pages.example.com"
+# Its own port: published pages only, whatever the host name. Expose just this to the internet
+# and keep the app, the API and sign-in private.
+# listen = "0.0.0.0:8443"
+# Serve TLS on that port yourself (read again when the files change), instead of a proxy:
+# tls_cert = "/etc/drusite/tls/fullchain.pem"
+# tls_key = "/etc/drusite/tls/privkey.pem"
+# How long a reader's browser keeps a page before asking again (ETag makes that cheap):
+# cache_secs = 15
+# Requests a minute from one address, and where to find the address behind a proxy:
+# per_minute = 300
+# client_ip_header = "x-forwarded-for"

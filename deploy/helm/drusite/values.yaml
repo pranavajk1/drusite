@@ -55,6 +55,19 @@ ingress:
   host: notes.example.com
   tls: []
 
+# Publish to web on a host of its own. The pod listens for published pages on `port` (nothing
+# else is served there), the Service gets a `public` port, and `ingress` routes `host` to it, so
+# the internet can reach published pages while the app's own Ingress stays private.
+publish:
+  enabled: false
+  host: pages.example.com
+  port: 8443
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    tls: []
+
 resources:
   requests:
     cpu: 50m

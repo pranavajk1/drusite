@@ -1,0 +1,33 @@
+{{- if and .Values.publish.enabled .Values.publish.ingress.enabled }}
+# Published pages only: this routes the public host to the pod's public port, which serves
+# nothing but published pages and their files.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "drusite.fullname" . }}-public
+  labels:
+    {{- include "drusite.labels" . | nindent 4 }}
+  {{- with .Values.publish.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.publish.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with .Values.publish.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.publish.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "drusite.fullname" . }}
+                port:
+                  name: public
+{{- end }}

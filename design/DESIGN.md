@@ -16,6 +16,8 @@ The code is the other half of the standard:
 | Modals, search, toasts, menus | `ui/src/styles/overlays.css` |
 | Settings | `ui/src/styles/settings.css` |
 | Ask your notes | `ui/src/styles/ask.css` |
+| Share to web | `ui/src/styles/share.css` |
+| Published pages (served by the server) | `crates/drusite-server/assets/publish.css` |
 | Icons | `ui/src/lib/icons/icons.ts` (Lucide, ISC) |
 | Server pages (sign-in, consent) | `crates/drusite-server/assets/signin.css` |
 
@@ -205,6 +207,8 @@ Moods use Lucide faces (angry, frown, meh, smile, laugh) in the mood colours.
 | Saved chats / a chat | `history` / `message-square-text` |
 | Ask (send) / stop | `arrow-up` / `square` |
 | Sync off | `cloud-off` |
+| Published to web, Share | `globe` |
+| A page's password | `lock` |
 
 ## 7. Components and surfaces
 
@@ -346,6 +350,35 @@ Moods use Lucide faces (angry, frown, meh, smile, laugh) in the mood colours.
   "…" on hover with Rename and Delete). Rename edits in place; Delete confirms inline.
 - **Settings › Journal** has the switch "Ask your notes reads the journal", off by default, which
   syncs with the account.
+
+### 7.10 Share to web (`Share.svelte`, `share.css`)
+
+- **Where**: a quiet "Share" text button in the top bar, left of Ask, as in Notion. It turns
+  `--accent-text` with a `globe` when the page is published. It opens a 380 px popover under the
+  button, right edges lined up. On phones the button is hidden: "Share to web" in the page actions
+  ("…") opens the same content as a bottom sheet. Esc, or a click outside, closes the popover and
+  puts the focus back on the button.
+- **Head row**: a 32 px round `globe` (`--bg-subtle`, `--accent-soft` with `--accent-text` when on),
+  "Publish to web" with one line below it, and the Switch. Only editors and owners get a working
+  switch; a viewer sees why not.
+- **Published**: the link in a read-only mono `.input` (focus selects it) beside a primary small
+  "Copy link", which says "Copied" with a tick for 2 s. Then the options, each a 44 px row with a
+  label, a `--text-2` line and a Switch, all off until turned on: Include subpages, Search engines,
+  Link expires (a date input appears: the last day the link works), Password (a password input
+  and Save; once set, "Password set" with a `lock` and Change).
+- **Foot**: "New link" (ghost, `refresh-cw`), which confirms inline ("The current link will stop
+  working"), and "Unpublish" (ghost, danger).
+- **Problems** (offline, not signed in, a refusal from the server) show as one `--bg-subtle` line
+  with an `info` icon; the last known state stays visible beneath.
+- **The tree** marks a published page with a 12 px `globe` in `--text-3` after its title.
+
+### Published pages (`publish.css`, served by `drusite-server`)
+
+The reader's side follows §7.3 and §7.4 with no JavaScript: the same 720 px column, title, block
+styles, light and dark from the system, 16 px side padding on phones. A shared page with subpages
+gets a sticky 44 px bar with the breadcrumb, and a "Pages inside" list under the page. Toggles are
+`<details>`, to-dos are disabled checkboxes, code is highlighted with token colours that keep 4.5:1
+on `--bg-subtle`. The password form and "Page not found" are the server-page card of §7.8.
 
 ### 7.8 Server pages
 

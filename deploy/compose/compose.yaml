@@ -26,6 +26,8 @@ services:
       - master_key
     ports:
       - "8080:8080"
+      # Published pages only ([publish] listen in drusite.toml): the one port to expose.
+      # - "8443:8443"
     depends_on:
       postgres:
         condition: service_healthy

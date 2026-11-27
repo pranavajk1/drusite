@@ -400,9 +400,7 @@ impl Core {
     /// How a page is shared, as the workspace document last heard from the server.
     pub fn local_share(&self, page: PageId) -> Result<crate::api::ShareInfo, ApiError> {
         let mirror = self.workspace.share(page)?;
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX));
+        let now = crate::trash::now_ms();
         Ok(match mirror {
             Some(m) => crate::api::ShareInfo {
                 published: true,
