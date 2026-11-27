@@ -18,6 +18,7 @@ The code is the other half of the standard:
 | Ask your notes | `ui/src/styles/ask.css` |
 | Share to web | `ui/src/styles/share.css` |
 | Published pages (served by the server) | `crates/drusite-server/assets/publish.css` |
+| Databases (views, cells, their editors) | `ui/src/styles/database.css` |
 | Icons | `ui/src/lib/icons/icons.ts` (Lucide, ISC) |
 | Server pages (sign-in, consent) | `crates/drusite-server/assets/signin.css` |
 
@@ -379,6 +380,33 @@ styles, light and dark from the system, 16 px side padding on phones. A shared p
 gets a sticky 44 px bar with the breadcrumb, and a "Pages inside" list under the page. Toggles are
 `<details>`, to-dos are disabled checkboxes, code is highlighted with token colours that keep 4.5:1
 on `--bg-subtle`. The password form and "Page not found" are the server-page card of §7.8.
+### 7.11 Databases (`lib/database/`, `database.css`)
+
+- **Where**: a full-page database shows its views under its title, using the window's width, with no
+  document of its own. An inline one sits in a page as a block (slash menu: Database, Task board),
+  under its title as a button that opens it. A row's page shows its properties under its title.
+- **Bar**: the views as tabs (layout icon and name; the current one underlined in `--text`), + to add
+  one; then Filter, Sort (accent when set), view settings, and a small primary **New**.
+- **Table**: 34 px rows of hairline cells; headers are `--text-2` with the type icon, and open the
+  property's form. The title cell shows **Open** on hover (always on touch). Numbers are tabular and
+  right-aligned. Groups are sections with the group's chip and count.
+- **Board**: columns 260 px on `--bg-subtle`, radius 8, headed by the group's chip and count; cards
+  are `--bg` with `--shadow-sm`, the title 500 and the shown properties below. Cards drag by pointer
+  (a press and hold on touch, so a swipe still scrolls): a ghost follows, the column under it gets an
+  accent outline, and the card lands before the card under the pointer.
+- **Calendar**: a month of days, Monday first, other months' days on `--bg-sidebar`, today's number
+  on the accent; rows are small cards that drag between days (keeping their time and length).
+- **List and gallery**: rows with the shown properties at the right; cards in a grid, 220 px wide.
+- **Chips**: options are 20 px chips on `--tag-<colour>` (ten colours, chosen for Drusite); status chips
+  are pills with a dot. People are an initial on `--accent-soft-2` and the name.
+- **Editing**: a cell edits in a popover by it (a sheet on phones): a field; a searchable list of
+  options where Enter makes a new one; a date with an optional end and time; people; the related
+  database's rows. A property's form has its name, type, and what the type needs; a formula is
+  checked as it's typed ("Gives a number", or the error in `--danger`).
+- **View settings**: tabs for Layout, Properties (shown ones in order, hidden ones greyed), Filter
+  (conditions joined by "and"), Sort and Group.
+- **Phones** (Notion mobile's shapes): the board shows one column at a time (82 vw) and snaps between
+  them; the table scrolls sideways with the title column held; popovers are sheets.
 
 ### 7.8 Server pages
 

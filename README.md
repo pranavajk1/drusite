@@ -12,7 +12,9 @@ Rust sync server. Notion's block model, real-time sync, and notes that AI tools 
 | `drusite-model` | IDs, the page and block schema, schema versioning |
 | `drusite-crdt` | The block model on Loro: one document per page, plus the workspace document |
 | `drusite-proto` | The sync protocol (Phase 2) |
-| `drusite-core` | The client engine and the Core API the UI talks to |
+| `drusite-formula` | Notion's formula language (2.0): parser, type checker, evaluator |
+| `drusite-db` | Databases read: views computed (formulas, rollups, relations, filters, groups), rows as Markdown |
+| `drusite-core` | The client engine and the Core API the UI talks to; Notion import (`docs/databases.md`) |
 | `drusite-ai` | The AI provider interface and adapters (Phase 3) |
 | `drusite-server` | The server binary: PostgreSQL 16+ with pgvector, any S3-compatible store. [`drusite.example.toml`](crates/drusite-server/drusite.example.toml) shows its configuration |
 | `drusite-app` | The Tauri 2 shell, an adapter from the Core API to Tauri |
