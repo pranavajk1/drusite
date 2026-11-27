@@ -461,6 +461,11 @@ impl Core {
         }
     }
 
+    /// Sends an event to the UI.
+    pub fn emit(&self, event: Event) {
+        (self.events)(event);
+    }
+
     pub(crate) fn pages(&self) -> Result<Vec<PageInfo>, ApiError> {
         let shared: std::collections::HashSet<PageId> =
             self.workspace.shared_pages().into_iter().collect();

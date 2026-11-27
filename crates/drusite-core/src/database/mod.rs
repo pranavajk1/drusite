@@ -5,6 +5,8 @@
 
 pub mod compute;
 pub mod notion;
+#[cfg(feature = "net")]
+pub mod notion_api;
 pub mod zip;
 
 use drusite_model::database::{
