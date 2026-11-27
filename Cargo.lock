@@ -2021,6 +2021,7 @@ dependencies = [
  "drusite-ai",
  "drusite-core",
  "drusite-crdt",
+ "drusite-db",
  "drusite-dpop",
  "drusite-mcp",
  "drusite-model",

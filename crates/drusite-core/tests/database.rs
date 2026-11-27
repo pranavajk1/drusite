@@ -543,3 +543,46 @@ fn a_real_notion_export_imports_when_given() {
         }
     }
 }
+
+#[test]
+fn search_finds_rows_by_their_values() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut core = core(dir.path());
+    let tasks = database(&mut core, "Tasks", Template::Tasks);
+    let s = schema(&mut core, tasks);
+    let priority = s.property_named("Priority").unwrap().clone();
+    let urgent = priority.options[0].id.clone();
+    let row = row(
+        &mut core,
+        tasks,
+        "Repot the fern",
+        vec![CellValue {
+            property: priority.id.clone(),
+            value: Value::Select(urgent),
+        }],
+    );
+    let hits = |core: &mut Core, q: &str| match core
+        .handle(Command::Search {
+            query: q.into(),
+            limit: 10,
+        })
+        .unwrap()
+    {
+        Response::SearchResults { hits } => hits,
+        other => panic!("{other:?}"),
+    };
+    let found = hits(&mut core, "high");
+    assert_eq!(found.iter().map(|h| h.page).collect::<Vec<_>>(), [row]);
+    let text: String = found[0].snippet.iter().map(|p| p.text.clone()).collect();
+    assert!(text.contains("Priority: High"), "{text}");
+    // A changed value is found by its new name.
+    let low = priority.options[2].id.clone();
+    core.handle(Command::SetCell {
+        row,
+        property: priority.id,
+        value: Some(Value::Select(low)),
+    })
+    .unwrap();
+    assert!(hits(&mut core, "high").is_empty());
+    assert_eq!(hits(&mut core, "low").len(), 1);
+}

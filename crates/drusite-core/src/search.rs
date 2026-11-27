@@ -138,6 +138,15 @@ impl Built {
         Ok(())
     }
 
+    /// A database row's values ("Status: Done · Priority: High"), found like its text.
+    fn add_values(&mut self, page: PageId, text: &str) -> Result<(), ApiError> {
+        let mut doc = TantivyDocument::default();
+        doc.add_text(self.fields.page, page.to_string());
+        doc.add_text(self.fields.text, text);
+        self.writer.add_document(doc).map_err(search_error)?;
+        Ok(())
+    }
+
     fn add_block(&mut self, page: PageId, block: BlockId, text: &str) -> Result<(), ApiError> {
         let mut doc = TantivyDocument::default();
         doc.add_text(self.fields.page, page.to_string());
@@ -152,8 +161,15 @@ impl Core {
     /// Brings the index up to date: built the first time, then only what changed.
     fn refresh_index(&mut self) -> Result<(), ApiError> {
         let pages = self.workspace.pages()?;
-        let titles: HashMap<PageId, String> =
-            pages.iter().map(|p| (p.id, p.title.clone())).collect();
+        // A row's values count as part of its title here: when they change, it's indexed again.
+        let values = self.row_values_text(&pages);
+        let titles: HashMap<PageId, String> = pages
+            .iter()
+            .map(|p| {
+                let v = values.get(&p.id).map_or("", String::as_str);
+                (p.id, format!("{}\u{1}{v}", p.title))
+            })
+            .collect();
         let (mut built, mut todo) = match self.search.built.take() {
             Some(built) => {
                 let mut todo = std::mem::take(&mut self.search.dirty);
@@ -185,7 +201,11 @@ impl Core {
             let Some(title) = titles.get(&page) else {
                 continue; // deleted
             };
-            built.add_title(page, title)?;
+            let (shown, vals) = title.split_once('\u{1}').unwrap_or((title.as_str(), ""));
+            built.add_title(page, shown)?;
+            if !vals.is_empty() {
+                built.add_values(page, vals)?;
+            }
             built.titles.insert(page, title.clone());
             let blocks = match self.open.get(&page) {
                 Some(open) => open.page.blocks(),
@@ -214,6 +234,36 @@ impl Core {
         self.search.dirty.extend(retry);
         self.search.built = Some(built);
         Ok(())
+    }
+
+    /// Each database row's values as one line of text.
+    fn row_values_text(&self, pages: &[drusite_crdt::PageNode]) -> HashMap<PageId, String> {
+        let mut out = HashMap::new();
+        let clock = crate::database::Clock::utc();
+        let db = crate::database::compute::Db::new(&self.workspace, clock.now, clock.utc_offset);
+        for p in pages
+            .iter()
+            .filter(|p| p.kind == drusite_model::PageKind::Database)
+        {
+            let Some(schema) = db.schema(p.id) else {
+                continue;
+            };
+            for row in db.all_rows(p.id) {
+                let text: Vec<String> = row
+                    .cells
+                    .iter()
+                    .filter(|c| c.property != drusite_model::database::TITLE && !c.text.is_empty())
+                    .filter_map(|c| {
+                        let name = &schema.property(&c.property)?.name;
+                        Some(format!("{name}: {}", c.text))
+                    })
+                    .collect();
+                if !text.is_empty() {
+                    out.insert(row.id, text.join(" · "));
+                }
+            }
+        }
+        out
     }
 
     /// Pages matching every word of `query`, the last word as a prefix (so results follow the
@@ -291,7 +341,11 @@ impl Core {
             let block = text_of(f.block).and_then(|s| s.parse::<BlockId>().ok());
             let snippet = match &block {
                 Some(_) => snippet(&text_of(f.text).unwrap_or_default(), &marked),
-                None => snippet(title, &marked),
+                // A row's values matched (they have no block), or else the title.
+                None => match text_of(f.text) {
+                    Some(values) => snippet(&values, &marked),
+                    None => snippet(title, &marked),
+                },
             };
             hits.push(SearchHit {
                 page,

@@ -23,6 +23,8 @@ use crate::config::Config;
 pub use index::{backfill, forget_other_models, spawn_indexer};
 
 /// The block ID a page's title is indexed under.
+pub use index::row_values;
+
 pub const TITLE_BLOCK: uuid::Uuid = uuid::Uuid::nil();
 
 /// The embedding model, when one is configured.

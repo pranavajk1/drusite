@@ -310,6 +310,7 @@ impl Job {
                 workspace: self.ws,
                 pages: &self.readable.pages,
                 excluded: &self.readable.excluded,
+                values: &self.readable.values,
             };
             let found =
                 retrieve::find(state, &mut tx, &scope, &search_text, vector.as_deref()).await?;
