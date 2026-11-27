@@ -290,3 +290,10 @@ code.secret {
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* With no passkey button above it, the form's own button is the page's main action. */
+main:not(:has(button.primary)) form:first-of-type button:not([type="button"]) {
+  background: var(--accent);
+  box-shadow: none;
+  color: #fff;
+}
