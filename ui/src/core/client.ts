@@ -6,6 +6,8 @@
 
 import type {
   AccountStatus,
+  AgentAccess,
+  AgentSource,
   ApiError,
   BlockKind,
   BridgeStatus,
@@ -140,6 +142,31 @@ export class CoreClient {
   /** Imports a folder of Markdown notes as new pages. */
   async importFolder(folder: string): Promise<ImportReport> {
     return (await this.call({ type: "importFolder", folder }, "imported")).report;
+  }
+
+  /** Agents: this computer's endpoint and tokens, and what agents did here and on the server. */
+  async agents(): Promise<Omit<Extract<Response, { type: "agents" }>, "type">> {
+    const { type: _, ...rest } = await this.call({ type: "agents" }, "agents");
+    return rest;
+  }
+
+  async setLocalAgents(enabled: boolean, port: number): Promise<void> {
+    await this.call({ type: "setLocalAgents", enabled, port }, "done");
+  }
+
+  /** A token for an agent on this computer: shown only now. */
+  async createAgentToken(name: string, access: AgentAccess): Promise<{ token: string; url: string }> {
+    const { token, url } = await this.call({ type: "createAgentToken", name, access }, "agentToken");
+    return { token, url };
+  }
+
+  async revokeAgentToken(id: string): Promise<void> {
+    await this.call({ type: "revokeAgentToken", id }, "done");
+  }
+
+  /** Takes back one agent call; whatever changed since stays. */
+  async undoAgentCall(id: string, source: AgentSource): Promise<void> {
+    await this.call({ type: "undoAgentCall", id, source }, "done");
   }
 
   /** Asks for a folder; null if the person cancels or the platform can't. */

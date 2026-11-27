@@ -5,6 +5,8 @@
 
 #[cfg(feature = "net")]
 pub mod account;
+#[cfg(feature = "mcp")]
+pub mod agents;
 pub mod api;
 #[cfg(feature = "sqlite")]
 pub mod attachments;

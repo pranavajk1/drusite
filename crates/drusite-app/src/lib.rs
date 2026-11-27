@@ -38,6 +38,12 @@ struct Ready {
     /// The Markdown bridge, while it's on.
     #[cfg(desktop)]
     bridge: Mutex<Option<drusite_core::bridge::watch::Watch>>,
+    /// The local MCP endpoint, while it's on, and why it isn't when it should be.
+    #[cfg(desktop)]
+    agents: tokio::sync::Mutex<(
+        Option<drusite_core::agents::local::LocalServer>,
+        Option<String>,
+    )>,
     /// The sign-in waiting in the browser, if any.
     sign_in: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
 }
@@ -117,10 +123,14 @@ async fn open(handle: AppHandle) -> Result<Ready, ApiError> {
         supervisor,
         #[cfg(desktop)]
         bridge: Mutex::new(None),
+        #[cfg(desktop)]
+        agents: tokio::sync::Mutex::new((None, None)),
         sign_in: Mutex::new(None),
     };
     #[cfg(desktop)]
     ready.start_bridge();
+    #[cfg(desktop)]
+    ready.restart_agents().await;
     Ok(ready)
 }
 
@@ -171,6 +181,61 @@ impl Ready {
     }
 
     #[cfg(desktop)]
+    /// Starts (or stops) the local MCP endpoint as the store says.
+    #[cfg(desktop)]
+    async fn restart_agents(&self) {
+        let mut agents = self.agents.lock().await;
+        // The old one lets go of its port first.
+        agents.0 = None;
+        agents.1 = None;
+        let wanted = self.core.lock().ok().and_then(|c| c.local_agents().ok());
+        if let Some((true, port)) = wanted {
+            match drusite_core::agents::local::serve(
+                Arc::clone(&self.core),
+                port,
+                env!("CARGO_PKG_VERSION"),
+            )
+            .await
+            {
+                Ok(server) => agents.0 = Some(server),
+                Err(e) => agents.1 = Some(format!("can't listen on port {port}: {e}")),
+            }
+        }
+    }
+
+    /// The agents' list: this computer's, and what agents did through the server.
+    async fn agents(&self) -> Result<Response, ApiError> {
+        #[cfg(desktop)]
+        let mut response = {
+            let problem = self.agents.lock().await.1.clone();
+            self.core
+                .lock()
+                .map_err(|_| internal("the core crashed earlier; restart Drusite"))?
+                .agents(problem)?
+        };
+        #[cfg(mobile)]
+        let mut response = self
+            .core
+            .lock()
+            .map_err(|_| internal("the core crashed earlier; restart Drusite"))?
+            .handle(Command::Agents)?;
+        let signed_in = self.supervisor.status().server.is_some();
+        if let Response::Agents {
+            activity,
+            server_problem,
+            ..
+        } = &mut response
+            && signed_in
+        {
+            match self.supervisor.server_agent_activity().await {
+                Ok(list) => activity.extend(list),
+                Err(e) => *server_problem = Some(e),
+            }
+            activity.sort_by_key(|c| std::cmp::Reverse(c.at));
+        }
+        Ok(response)
+    }
+
     fn stop_bridge(&self) {
         let old = self.bridge.lock().ok().and_then(|mut b| b.take());
         drop(old);
@@ -231,6 +296,30 @@ async fn core(state: tauri::State<'_, AppState>, command: Command) -> Result<Res
         Command::SignOut => {
             ready.supervisor.sign_out().await.map_err(account_error)?;
             Ok(Response::Done)
+        }
+        Command::Agents => ready.agents().await,
+        Command::UndoAgentCall {
+            id,
+            source: drusite_core::api::AgentSource::Server,
+        } => {
+            ready
+                .supervisor
+                .undo_server_agent_call(&id)
+                .await
+                .map_err(|e| ApiError::new(ErrorCode::Account, e))?;
+            emit(&state.handle, Event::AgentsChanged);
+            Ok(Response::Done)
+        }
+        #[cfg(desktop)]
+        command @ Command::SetLocalAgents { .. } => {
+            let response = ready
+                .core
+                .lock()
+                .map_err(|_| internal("the core crashed earlier; restart Drusite"))?
+                .handle(command)?;
+            ready.restart_agents().await;
+            emit(&state.handle, Event::AgentsChanged);
+            Ok(response)
         }
         #[cfg(mobile)]
         Command::BridgeStatus | Command::SetBridgeFolder { .. } | Command::ImportFolder { .. } => {

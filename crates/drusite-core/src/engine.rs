@@ -242,6 +242,54 @@ impl Core {
             Command::Search { query, limit } => Ok(Response::SearchResults {
                 hits: self.search(&query, limit.min(100))?,
             }),
+            #[cfg(feature = "mcp")]
+            Command::Agents => self.agents(None),
+            #[cfg(feature = "mcp")]
+            Command::SetLocalAgents { enabled, port } => {
+                self.set_local_agents(enabled, port)?;
+                Ok(Response::Done)
+            }
+            #[cfg(feature = "mcp")]
+            Command::CreateAgentToken { name, access } => self.create_agent_token(&name, access),
+            #[cfg(feature = "mcp")]
+            Command::RevokeAgentToken { id } => {
+                self.revoke_agent_token(&id)?;
+                Ok(Response::Done)
+            }
+            #[cfg(feature = "mcp")]
+            Command::UndoAgentCall {
+                id,
+                source: crate::api::AgentSource::Device,
+            } => {
+                self.undo_agent_call(&id)?;
+                Ok(Response::Done)
+            }
+            #[cfg(not(feature = "mcp"))]
+            Command::Agents => Ok(Response::Agents {
+                local: crate::api::LocalAgents {
+                    available: false,
+                    enabled: false,
+                    port: crate::api::LOCAL_AGENTS_PORT,
+                    url: String::new(),
+                    problem: None,
+                },
+                tokens: Vec::new(),
+                activity: Vec::new(),
+                server_problem: None,
+            }),
+            #[cfg(not(feature = "mcp"))]
+            Command::SetLocalAgents { .. }
+            | Command::CreateAgentToken { .. }
+            | Command::RevokeAgentToken { .. }
+            | Command::UndoAgentCall { .. } => Err(ApiError::new(
+                ErrorCode::Unsupported,
+                "agents on this computer need the desktop app",
+            )),
+            #[cfg(feature = "mcp")]
+            Command::UndoAgentCall { .. } => Err(ApiError::new(
+                ErrorCode::Unsupported,
+                "the server's agent activity is undone through the app",
+            )),
             Command::SetSetting { setting } => {
                 self.set_setting(setting)?;
                 Ok(Response::Settings {
