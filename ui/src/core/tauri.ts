@@ -12,14 +12,30 @@ import type { Command, Event, Response } from "./types";
 /** The Tauri event the core's events arrive on (see crates/drusite-app). */
 const EVENT = "drusite://event";
 
-export const tauriTransport: Transport = {
-  call(command: Command): Promise<Response> {
-    return invoke<Response>("core", { command });
-  },
+/** Phones and tablets have no dialog plugin (see crates/drusite-app): files come from an
+ *  `<input type="file">` as bytes there. iPadOS calls itself a Mac, but one with a touch screen. */
+const mobile =
+  typeof navigator !== "undefined" &&
+  (/Android|iPhone|iPad/.test(navigator.userAgent) ||
+    (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1));
 
+const pickers: Pick<Transport, "pickFolder" | "pickFile"> = {
   async pickFolder(title: string): Promise<string | null> {
     const folder = await open({ directory: true, title });
     return typeof folder === "string" ? folder : null;
+  },
+
+  async pickFile(title: string, extensions: string[]): Promise<string | null> {
+    const file = await open({ directory: false, title, filters: [{ name: title, extensions }] });
+    return typeof file === "string" ? file : null;
+  },
+};
+
+export const tauriTransport: Transport = {
+  ...(mobile ? {} : pickers),
+
+  call(command: Command): Promise<Response> {
+    return invoke<Response>("core", { command });
   },
 
   subscribe(handler: (event: Event) => void): () => void {

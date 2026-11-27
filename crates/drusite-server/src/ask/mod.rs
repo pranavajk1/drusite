@@ -176,6 +176,8 @@ pub struct Readable {
     pub excluded: Vec<Uuid>,
     /// Whether journal entries are in.
     pub journal: bool,
+    /// Database rows' values ("Status: Done · Priority: High"), by row.
+    pub values: HashMap<Uuid, String>,
 }
 
 /// Opens the workspace document (as the asker) for its pages and settings.
@@ -204,10 +206,15 @@ pub async fn readable_pages(
             pages.insert(*p.id.as_uuid(), p.title);
         }
     }
+    let values = crate::search::row_values(&workspace)?
+        .into_iter()
+        .map(|(k, v)| (*k.as_uuid(), v))
+        .collect();
     Ok(Some(Readable {
         pages,
         excluded,
         journal,
+        values,
     }))
 }
 

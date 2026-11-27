@@ -453,9 +453,169 @@ fn contents(core: &mut Core) -> BTreeMap<PageId, Vec<String>> {
     out
 }
 
+/// The databases a device holds.
+fn databases(core: &mut Core) -> Vec<PageId> {
+    let Response::Pages { pages } = core.handle(Command::ListPages).unwrap() else {
+        panic!()
+    };
+    pages
+        .into_iter()
+        .filter(|p| p.kind == drusite_model::PageKind::Database)
+        .map(|p| p.id)
+        .collect()
+}
+
+fn schema(core: &mut Core, db: PageId) -> Option<drusite_model::database::Schema> {
+    match core.handle(Command::Database { database: db }) {
+        Ok(Response::Database { schema }) => Some(schema),
+        _ => None,
+    }
+}
+
+fn clock() -> drusite_core::database::Clock {
+    drusite_core::database::Clock {
+        now: drusite_model::database::DateTime::parse("2026-11-27T12:00").unwrap(),
+        utc_offset: 0,
+    }
+}
+
+/// Every database's schema, views and rows' values, in a form two devices can compare.
+fn database_state(core: &mut Core) -> String {
+    let mut out = Vec::new();
+    for db in databases(core) {
+        let Some(s) = schema(core, db) else { continue };
+        let Ok(Response::View { result }) = core.handle(Command::QueryView {
+            database: db,
+            view: None,
+            clock: clock(),
+        }) else {
+            continue;
+        };
+        let mut rows: Vec<String> = result
+            .groups
+            .iter()
+            .flat_map(|g| &g.rows)
+            .map(|r| {
+                format!(
+                    "{}={:?}",
+                    r.id,
+                    r.cells
+                        .iter()
+                        .map(|c| (&c.property, &c.value))
+                        .collect::<Vec<_>>()
+                )
+            })
+            .collect();
+        rows.sort();
+        rows.dedup();
+        out.push(format!("{db}: {s:?} {rows:?}"));
+    }
+    out.join("\n")
+}
+
+/// One random change to a database; returns the token it saved, if any. Tokens go where
+/// nothing may lose them: a database's or a row's title, or a new option's name (options are
+/// added one by one, so two devices adding one each keep both). The rest (a row's status and
+/// priority, a view's sort) are last-writer-wins, and are checked only for agreement.
+fn random_database_edit(core: &mut Core, rng: &mut fastrand::Rng, token: &str) -> Option<String> {
+    use drusite_model::database::{SelectOption, Value, ViewSort};
+    let dbs = databases(core);
+    if dbs.is_empty() || rng.u8(..12) == 0 {
+        return matches!(
+            core.handle(Command::CreateDatabase {
+                parent: None,
+                title: token.to_owned(),
+                inline: false,
+                template: drusite_core::database::Template::Tasks,
+            }),
+            Ok(Response::DatabaseCreated { .. })
+        )
+        .then(|| token.to_owned());
+    }
+    let db = dbs[rng.usize(..dbs.len())];
+    let s = schema(core, db)?;
+    let Ok(Response::View { result }) = core.handle(Command::QueryView {
+        database: db,
+        view: None,
+        clock: clock(),
+    }) else {
+        return None;
+    };
+    let rows: Vec<PageId> = result
+        .groups
+        .iter()
+        .flat_map(|g| &g.rows)
+        .map(|r| r.id)
+        .collect();
+    match rng.u8(..5) {
+        0 => matches!(
+            core.handle(Command::CreateRow {
+                database: db,
+                title: token.to_owned(),
+                values: Vec::new(),
+                after: None,
+            }),
+            Ok(Response::PageCreated { .. })
+        )
+        .then(|| token.to_owned()),
+        1 => {
+            let mut priority = s.property_named("Priority")?.clone();
+            priority.options.push(SelectOption {
+                id: drusite_model::database::short_id(),
+                name: token.to_owned(),
+                color: drusite_model::database::Color::Blue,
+                group: None,
+                position: priority.options.len() as f64,
+            });
+            core.handle(Command::PutProperty {
+                database: db,
+                property: priority,
+                twin_name: None,
+            })
+            .is_ok()
+            .then(|| token.to_owned())
+        }
+        2 if !rows.is_empty() => {
+            let status = s.property_named("Status")?;
+            let o = &status.options[rng.usize(..status.options.len())];
+            let _ = core.handle(Command::SetCell {
+                row: rows[rng.usize(..rows.len())],
+                property: status.id.clone(),
+                value: Some(Value::Status(o.id.clone())),
+            });
+            None
+        }
+        3 if !rows.is_empty() => {
+            let priority = s.property_named("Priority")?;
+            let o = &priority.options[rng.usize(..priority.options.len())];
+            let _ = core.handle(Command::SetCell {
+                row: rows[rng.usize(..rows.len())],
+                property: priority.id.clone(),
+                value: Some(Value::Select(o.id.clone())),
+            });
+            None
+        }
+        _ => {
+            let mut v = s.views.first()?.clone();
+            v.sorts = vec![ViewSort {
+                property: s.property_named("Priority")?.id.clone(),
+                descending: rng.bool(),
+            }];
+            let _ = core.handle(Command::PutView {
+                database: db,
+                view: v,
+            });
+            None
+        }
+    }
+}
+
 /// One random edit; returns the token it saved, if it saved one. Inserts only at token
 /// boundaries, so no token is ever split by another.
 fn random_edit(core: &mut Core, rng: &mut fastrand::Rng, token: &str) -> Option<String> {
+    if rng.u8(..5) == 0 {
+        return random_database_edit(core, rng, token);
+    }
     let pages = page_ids(core);
     if pages.is_empty() || rng.u8(..10) == 0 {
         let title = token.to_owned();
@@ -1036,6 +1196,7 @@ fn run_seed(seed: u64) {
 /// Every device holds every saved token exactly once, and all agree.
 fn check(slots: &[Arc<Mutex<DeviceSlot>>], saved: &[String]) -> Result<(), String> {
     let mut first: Option<BTreeMap<PageId, Vec<String>>> = None;
+    let mut first_dbs: Option<String> = None;
     for (i, slot) in slots.iter().enumerate() {
         let core = slot.lock().unwrap().core.clone().ok_or("no core")?;
         let mut core = core.lock().unwrap();
@@ -1046,13 +1207,29 @@ fn check(slots: &[Arc<Mutex<DeviceSlot>>], saved: &[String]) -> Result<(), Strin
             };
             pages.into_iter().map(|p| p.title).collect()
         };
+        let options: String = databases(&mut core)
+            .into_iter()
+            .filter_map(|db| schema(&mut core, db))
+            .flat_map(|s| s.properties)
+            .flat_map(|p| p.options)
+            .map(|o| o.name)
+            .collect();
         let all: String = pages
             .values()
             .flatten()
             .cloned()
             .collect::<Vec<_>>()
             .join("")
-            + &titles.join("");
+            + &titles.join("")
+            + &options;
+        let dbs = database_state(&mut core);
+        match &first_dbs {
+            None => first_dbs = Some(dbs),
+            Some(f) if *f != dbs => {
+                return Err(format!("device {i}'s databases disagree with device 0's"));
+            }
+            Some(_) => {}
+        }
         for token in saved {
             let count = all.matches(token.as_str()).count();
             if count != 1 {

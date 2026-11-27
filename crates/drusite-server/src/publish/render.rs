@@ -323,8 +323,10 @@ fn node(out: &mut String, n: &Node<'_>, links: &dyn Links, depth: usize) {
             out.push_str("</div></details>");
         }
         // A filter block lists pages from the whole workspace; published pages never show it.
-        // List items are drawn by `nodes`, never here.
+        // An inline database isn't shown on the web yet either. List items are drawn by
+        // `nodes`, never here.
         BlockKind::Query { .. }
+        | BlockKind::Database { .. }
         | BlockKind::Bulleted
         | BlockKind::Numbered
         | BlockKind::Todo { .. } => nested(out, &n.children, links, depth),
@@ -511,6 +513,7 @@ fn description(blocks: &[Block]) -> String {
             b.kind,
             BlockKind::Divider
                 | BlockKind::Query { .. }
+                | BlockKind::Database { .. }
                 | BlockKind::Code { .. }
                 | BlockKind::Attachment { .. }
         ) {

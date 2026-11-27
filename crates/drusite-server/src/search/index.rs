@@ -169,11 +169,21 @@ async fn round(state: &AppState) -> anyhow::Result<usize> {
 fn rows_of(doc: &store::OpenedDoc, id: Uuid) -> anyhow::Result<Vec<(Uuid, Uuid, String)>> {
     let parts = doc.parts();
     Ok(match doc.kind.as_str() {
-        "workspace" => Workspace::load_all(&parts)?
-            .pages()?
-            .into_iter()
-            .map(|p| (*p.id.as_uuid(), TITLE_BLOCK, p.title))
-            .collect(),
+        "workspace" => {
+            let ws = Workspace::load_all(&parts)?;
+            let values = row_values(&ws)?;
+            ws.pages()?
+                .into_iter()
+                .map(|p| {
+                    // A database row is found by its values too: they go with its title.
+                    let text = match values.get(&p.id) {
+                        Some(v) => format!("{}\n{v}", p.title),
+                        None => p.title,
+                    };
+                    (*p.id.as_uuid(), TITLE_BLOCK, text)
+                })
+                .collect()
+        }
         _ => Page::load_all(&parts)?
             .blocks()?
             .into_iter()
@@ -182,6 +192,40 @@ fn rows_of(doc: &store::OpenedDoc, id: Uuid) -> anyhow::Result<Vec<(Uuid, Uuid, 
             .filter(|(_, _, t)| !t.trim().is_empty())
             .collect(),
     })
+}
+
+/// Each database row's values as one line ("Status: Done · Priority: High").
+pub fn row_values(ws: &Workspace) -> anyhow::Result<HashMap<drusite_model::PageId, String>> {
+    use drusite_db::compute::{Db, utc_now};
+    let db = Db::new(ws, utc_now(), 0);
+    let mut out = HashMap::new();
+    for p in ws
+        .pages()?
+        .iter()
+        .filter(|p| p.kind == drusite_model::PageKind::Database)
+    {
+        let Some(schema) = db.schema(p.id) else {
+            continue;
+        };
+        for row in db.all_rows(p.id) {
+            let parts: Vec<String> = row
+                .cells
+                .iter()
+                .filter(|c| c.property != drusite_model::database::TITLE && !c.text.is_empty())
+                .filter_map(|c| {
+                    Some(format!(
+                        "{}: {}",
+                        schema.property(&c.property)?.name,
+                        c.text
+                    ))
+                })
+                .collect();
+            if !parts.is_empty() {
+                out.insert(row.id, parts.join(" · "));
+            }
+        }
+    }
+    Ok(out)
 }
 
 type Key = (Uuid, Uuid);

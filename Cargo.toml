@@ -22,6 +22,8 @@ drusite-proto = { path = "crates/drusite-proto" }
 drusite-ai = { path = "crates/drusite-ai" }
 drusite-markdown = { path = "crates/drusite-markdown" }
 drusite-mcp = { path = "crates/drusite-mcp" }
+drusite-formula = { path = "crates/drusite-formula" }
+drusite-db = { path = "crates/drusite-db" }
 tauri-plugin-drusite = { path = "crates/tauri-plugin-drusite" }
 
 # Third-party. Each is the newest stable release when added; bump them together.
@@ -80,6 +82,8 @@ tracing-opentelemetry = "0.34.0"
 tracing-subscriber = "0.3.23"
 url = "2.5.9"
 fastrand = "2.5.0"
+regex = { version = "1.13.2", default-features = false }
+miniz_oxide = { version = "0.9.1", default-features = false, features = ["with-alloc"] }
 getrandom = "0.4.3"
 libc = "0.2.191"
 loro = "1.19.1"

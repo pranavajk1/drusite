@@ -29,7 +29,7 @@ use crate::{Error, Result};
 pub const STORE_FILE: &str = "workspace.drusite";
 
 /// The layout of the database itself (not of the documents in it).
-const STORE_SCHEMA: i32 = 7;
+const STORE_SCHEMA: i32 = 8;
 
 /// A token the person made for an agent on this computer (the token itself isn't kept).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -355,6 +355,19 @@ impl Store {
             )?;
             tx.commit()?;
         }
+        if version < 8 {
+            // Secrets this device keeps for services it talks to (a Notion integration's token),
+            // where the operating system's key store can't hold them itself.
+            let tx = self.conn.transaction()?;
+            tx.execute_batch(
+                "CREATE TABLE secrets (
+                     name  TEXT PRIMARY KEY,
+                     value TEXT NOT NULL
+                 ) STRICT;
+                 PRAGMA user_version = 8;",
+            )?;
+            tx.commit()?;
+        }
         Ok(())
     }
 
@@ -511,6 +524,36 @@ impl Store {
                 i64::from(state.on_server)
             ],
         )?;
+        Ok(())
+    }
+
+    // ---- Secrets ----
+
+    /// A secret kept on this device, by name.
+    pub fn secret(&self, name: &str) -> Result<Option<zeroize::Zeroizing<String>>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT value FROM secrets WHERE name = ?1",
+                params![name],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()?
+            .map(zeroize::Zeroizing::new))
+    }
+
+    /// Keeps a secret, or forgets it (`None`).
+    pub fn set_secret(&mut self, name: &str, value: Option<&str>) -> Result<()> {
+        match value {
+            Some(v) => self.conn.execute(
+                "INSERT INTO secrets (name, value) VALUES (?1, ?2)
+                 ON CONFLICT (name) DO UPDATE SET value = excluded.value",
+                params![name, v],
+            )?,
+            None => self
+                .conn
+                .execute("DELETE FROM secrets WHERE name = ?1", params![name])?,
+        };
         Ok(())
     }
 

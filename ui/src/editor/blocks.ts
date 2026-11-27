@@ -10,6 +10,7 @@ import { Decoration, DecorationSet, type EditorView, type NodeView } from "prose
 
 import { iconSvg } from "../lib/icons/icons";
 import { attachmentView } from "./attachments";
+import { databaseView } from "./database.svelte";
 import { queryView } from "./query";
 
 import { attrsOf } from "./convert";
@@ -144,7 +145,7 @@ function control(tag: string, className: string): HTMLElement {
 }
 
 /** Kinds whose view has more than text. */
-const CUSTOM: ReadonlySet<string> = new Set(["todo", "toggle", "callout", "divider", "query", "attachment"]);
+const CUSTOM: ReadonlySet<string> = new Set(["todo", "toggle", "callout", "divider", "query", "attachment", "database"]);
 
 /** One view for every block: the text, plus whatever its kind shows next to the text. */
 export function blockView(node: Node, view: EditorView, getPos: () => number | undefined): NodeView {
@@ -212,6 +213,7 @@ export function blockView(node: Node, view: EditorView, getPos: () => number | u
   }
 
   if (kind.type === "query") return queryView(node, view, getPos, setAttrs);
+  if (kind.type === "database") return databaseView(node, view, getPos);
   if (kind.type === "attachment") return attachmentView(node, setAttrs, dom, contentDOM);
 
   if (kind.type === "toggle") {

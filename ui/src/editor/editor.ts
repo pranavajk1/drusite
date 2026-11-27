@@ -7,9 +7,10 @@ import { EditorState } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 
 import type { CoreClient } from "../core/client";
-import type { PageId, PageView } from "../core/types";
+import type { PageId, PageView, Template } from "../core/types";
 import { PICK_FILES, insertFiles, pickFiles } from "./attachments";
 import { blockView, displayPlugin } from "./blocks";
+import { MAKE_DATABASE, makeDatabase } from "./database.svelte";
 import { baseKeys, editorKeymap, markdownShortcuts } from "./commands";
 import { docNode } from "./convert";
 import { clipboardParser } from "./schema";
@@ -45,6 +46,8 @@ export function createEditor(
     dispatchTransaction: (tr) => {
       sync.dispatch(tr);
       if (tr.getMeta(PICK_FILES)) pickFiles(view);
+      const template = tr.getMeta(MAKE_DATABASE) as Template | undefined;
+      if (template) makeDatabase(view, page.id, template).catch((e: unknown) => onError?.(e));
     },
     // ⌘- or Ctrl-click on a link to another page opens it.
     handleClick: (v, pos, event) => {

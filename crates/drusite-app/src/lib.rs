@@ -401,6 +401,20 @@ async fn core(state: tauri::State<'_, AppState>, command: Command) -> Result<Res
                 .await
                 .map_err(account_error)?,
         }),
+        command if drusite_core::database::notion_api::is_notion_api(&command) => {
+            drusite_core::database::notion_api::run(&ready.core, command).await
+        }
+        command @ (Command::ImportNotion { .. } | Command::ImportNotionData { .. }) => {
+            let core = Arc::clone(&ready.core);
+            // Reads the whole export: off the async threads.
+            tauri::async_runtime::spawn_blocking(move || {
+                core.lock()
+                    .map_err(|_| internal("the core crashed earlier; restart Drusite"))?
+                    .handle(command)
+            })
+            .await
+            .map_err(internal)?
+        }
         command if drusite_core::ai::is_network(&command) => {
             drusite_core::ai::run(&ready.core, command).await
         }

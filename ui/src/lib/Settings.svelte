@@ -21,7 +21,7 @@
       desc: "Where entries go and what they start from. These sync, so every device you sign in on has them.",
     },
     { id: "markdown", label: "Markdown folder", icon: "folder-sync", group: "Notes", desc: "Your pages as Markdown files on this computer." },
-    { id: "import", label: "Import", icon: "folder-input", group: "Notes", desc: "Bring in a folder of Markdown notes." },
+    { id: "import", label: "Import", icon: "folder-input", group: "Notes", desc: "Bring in notes from Notion, or a folder of Markdown notes." },
     { id: "ai", label: "AI", icon: "sparkles", group: "Connections", desc: "Models that answer questions about your notes." },
     { id: "agents", label: "Agents", icon: "bot", group: "Connections", desc: "Agents such as Claude Code that work with your notes." },
   ];
@@ -37,6 +37,8 @@
   import Account from "./Account.svelte";
   import Agents from "./Agents.svelte";
   import Ai from "./Ai.svelte";
+  import { openLayer } from "./back";
+  import NotionImport from "./NotionImport.svelte";
   import Icon from "./ui/Icon.svelte";
   import Modal from "./ui/Modal.svelte";
   import Select from "./ui/Select.svelte";
@@ -83,7 +85,14 @@
     return stop;
   });
 
-  const shown = $derived(SECTIONS.filter((s) => (s.id !== "markdown" && s.id !== "import") || bridge !== null));
+  // Importing from Notion works everywhere; the Markdown folder only where there's a bridge.
+  const shown = $derived(SECTIONS.filter((s) => s.id !== "markdown" || bridge !== null));
+  // On phones a section is a screen of its own: Back goes to the list.
+  $effect(() => {
+    if (section !== "home" && (window.matchMedia?.("(max-width: 700px)").matches ?? false))
+      return openLayer(() => onsection("home"));
+  });
+
   /** The section on screen. On phones "home" is the list; on desktops, the first section. */
   const current = $derived<Section>(section === "home" ? "account" : section);
   const info = $derived(SECTIONS.find((s) => s.id === current)!);
@@ -299,8 +308,11 @@
             <p class="hint" class:field-error={!!bridge.last.error}>{summary(bridge.last)}</p>
           {/if}
         </div>
-      {:else if current === "import" && bridge}
+      {:else if current === "import"}
+        <NotionImport {client} {onerror} onopen={(id) => (onclose(), onopen(id))} />
+        {#if bridge}
         <div class="set-group">
+          <h3 class="set-title">Markdown</h3>
           <p class="set-desc">
             Copies a folder of Markdown notes, such as an Obsidian vault, into new pages: folders become pages,
             wikilinks become links, embedded files become attachments, and daily notes become journal entries. The
@@ -316,6 +328,7 @@
             </button>
           </div>
         </div>
+        {/if}
       {:else if current === "ai"}
         <Ai {client} {onerror} />
       {:else if current === "agents"}

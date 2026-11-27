@@ -17,6 +17,7 @@
 <script lang="ts">
   import { onMount, tick, type Snippet } from "svelte";
 
+  import { openLayer } from "../back";
   import Icon from "./Icon.svelte";
   import { dismissable, placeBelow, portal, type Place } from "./floating";
 
@@ -54,8 +55,11 @@
       menu.focus();
     });
     const undo = dismissable(() => [menu, from], close);
+    // The device's Back closes it.
+    const dismiss = openLayer(() => onclose());
     return () => {
       open = false;
+      dismiss();
       undo();
     };
   });

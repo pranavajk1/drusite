@@ -30,6 +30,7 @@ sha2.workspace = true
 webauthn-rs = { workspace = true, features = ["conditional-ui", "danger-allow-state-serialisation"] }
 drusite-model.workspace = true
 drusite-crdt.workspace = true
+drusite-db.workspace = true
 drusite-proto.workspace = true
 loro.workspace = true
 anyhow.workspace = true

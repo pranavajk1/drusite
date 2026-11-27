@@ -53,6 +53,8 @@ pub(crate) const CALLOUTS: &[(&str, &str)] = &[
 
 /// The fence language a filter block is written as.
 pub(crate) const QUERY_LANG: &str = "drusite-query";
+/// The fence an inline database block is written in: `database: <id>`, and `view: <id>`.
+pub(crate) const DATABASE_LANG: &str = "drusite-database";
 
 pub(crate) fn write_blocks(blocks: &[Block], r: &dyn Resolver) -> String {
     let mut lines: Vec<String> = Vec::new();
@@ -141,6 +143,13 @@ fn block_lines(b: &Block, r: &dyn Resolver) -> (Vec<String>, Option<&'static str
             (id_line(fenced(language, &code)), None)
         }
         BlockKind::Query { query } => (id_line(fenced(QUERY_LANG, query)), None),
+        BlockKind::Database { database, view } => {
+            let mut body = format!("database: {database}");
+            if let Some(v) = view {
+                body.push_str(&format!("\nview: {v}"));
+            }
+            (id_line(fenced(DATABASE_LANG, &body)), None)
+        }
         BlockKind::Divider => (id_line(vec!["---".to_owned()]), None),
         BlockKind::Attachment { blob, name, .. } => {
             let caption: String = b

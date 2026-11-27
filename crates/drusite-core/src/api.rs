@@ -10,6 +10,7 @@
 //!
 //! Positions are UTF-16 code units within one block's text, as in the browser.
 
+use drusite_model::database::{PropertyDef, Schema, Value, View};
 pub use drusite_model::search::SnippetPart;
 use drusite_model::{
     Block, BlockId, BlockKind, Day, Mark, PageId, PageKind, PageQuery, Property, PropertyValue,
@@ -254,6 +255,96 @@ pub enum Command {
     RegenerateShareLink {
         page: PageId,
     },
+    /// Makes a database under `parent` (inside it, shown as a block, when `inline`). Answered
+    /// with [`Response::DatabaseCreated`].
+    CreateDatabase {
+        parent: Option<PageId>,
+        title: String,
+        inline: bool,
+        template: crate::database::Template,
+    },
+    /// A database's schema and views. Answered with [`Response::Database`].
+    Database {
+        database: PageId,
+    },
+    /// What a view shows (the first view when `view` is none). Answered with
+    /// [`Response::View`].
+    QueryView {
+        database: PageId,
+        view: Option<String>,
+        clock: crate::database::Clock,
+    },
+    /// A row's cells, for its page; none when the page isn't a row. Answered with
+    /// [`Response::RowCells`].
+    RowCells {
+        row: PageId,
+        clock: crate::database::Clock,
+    },
+    /// Adds or changes a property. A new relation with `twin_name` is two-way: the related
+    /// database gets a property of that name showing the other side. Answered with
+    /// [`Response::Database`].
+    PutProperty {
+        database: PageId,
+        property: PropertyDef,
+        twin_name: Option<String>,
+    },
+    /// Removes a property (and a two-way relation's other side). Answered with
+    /// [`Response::Database`].
+    DeleteProperty {
+        database: PageId,
+        property: String,
+    },
+    /// Adds or changes a view. Answered with [`Response::Database`].
+    PutView {
+        database: PageId,
+        view: View,
+    },
+    DeleteView {
+        database: PageId,
+        view: String,
+    },
+    /// Sets a cell, or clears it (`value` none). The title cell renames the row; the far side
+    /// of a two-way relation changes the rows on the other end.
+    SetCell {
+        row: PageId,
+        property: String,
+        value: Option<Value>,
+    },
+    /// Adds a row (after `after`, or last) with these values. Answered with
+    /// [`Response::PageCreated`].
+    CreateRow {
+        database: PageId,
+        title: String,
+        values: Vec<CellValue>,
+        after: Option<PageId>,
+    },
+    /// Whether a formula reads and type-checks, against a database's properties. Answered with
+    /// [`Response::FormulaCheck`].
+    CheckFormula {
+        database: PageId,
+        expression: String,
+    },
+    /// Imports a Notion export (its `.zip`, or the folder it unzips to), offline, as new pages
+    /// under a new top-level page. Answered with [`Response::NotionImported`]; desktops.
+    ImportNotion {
+        path: String,
+    },
+    /// The same, from the export's bytes (base64), for phones and the browser.
+    ImportNotionData {
+        name: String,
+        data: String,
+    },
+    /// Imports straight from Notion's API, with an internal integration's token: every page
+    /// shared with the integration. A token given is kept in the device's key store for next
+    /// time; none uses the one kept. Answered with [`Response::NotionImported`] at the end,
+    /// with [`Event::NotionProgress`] on the way.
+    ImportNotionApi {
+        token: Option<String>,
+    },
+    /// Whether a Notion token is kept. Answered with [`Response::NotionToken`].
+    NotionToken,
+    /// Forgets the kept Notion token.
+    ForgetNotionToken,
 }
 
 /// How a page is shared to the web.
@@ -312,6 +403,14 @@ pub enum ExpiryChange {
 pub enum PasswordChange {
     Set { password: String },
     Clear,
+}
+
+/// One value for [`Command::CreateRow`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CellValue {
+    pub property: String,
+    pub value: Value,
 }
 
 /// Whether Ask your notes works, as the server says.
@@ -817,6 +916,29 @@ pub enum Response {
     Share {
         share: ShareInfo,
     },
+    DatabaseCreated {
+        page: PageInfo,
+        schema: Schema,
+    },
+    Database {
+        schema: Schema,
+    },
+    View {
+        result: crate::database::ViewResult,
+    },
+    RowCells {
+        schema: Option<Schema>,
+        row: Option<crate::database::RowView>,
+    },
+    FormulaCheck {
+        check: crate::database::FormulaCheck,
+    },
+    NotionImported {
+        report: crate::database::notion::NotionReport,
+    },
+    NotionToken {
+        saved: bool,
+    },
     Done,
 }
 
@@ -853,6 +975,8 @@ pub enum Event {
     SettingsChanged { settings: Settings },
     /// More of an answer to [`Command::Ask`].
     Ask { request: String, update: AskUpdate },
+    /// How an import from Notion's API is going.
+    NotionProgress { done: u32, total: u32, what: String },
 }
 
 /// A page's place in the tree.

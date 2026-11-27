@@ -65,6 +65,8 @@ class DrusitePlugin(private val activity: Activity) : Plugin(activity) {
   private val main = Handler(Looper.getMainLooper())
   private var pending: Invoke? = null
   private var scheme: String? = null
+  /// The sign-in that was waiting when the app was last paused.
+  private var away: Invoke? = null
 
   private fun b64(bytes: ByteArray) = Base64.encodeToString(bytes, Base64.NO_WRAP)
 
@@ -244,12 +246,23 @@ class DrusitePlugin(private val activity: Activity) : Plugin(activity) {
     }
   }
 
+  override fun onPause(activity: AppCompatActivity) {
+    // The browser covering the app pauses it; only a sign-in already waiting then is "away".
+    away = pending
+  }
+
   override fun onResume(activity: AppCompatActivity) {
     // A redirect arrives (onNewIntent) before the app resumes. Still waiting a moment after
-    // resuming means the person came back by hand.
+    // resuming means the person came back by hand. Only a sign-in that was waiting while the
+    // app was paused counts: a resume from something else (the local-network permission dialog
+    // just before the first sign-in) must not cancel one that starts right after it.
+    val waiting = away ?: return
+    away = null
     main.postDelayed({
-      pending?.resolve(JSObject().put("cancelled", true))
-      pending = null
+      if (pending === waiting) {
+        waiting.resolve(JSObject().put("cancelled", true))
+        pending = null
+      }
     }, 1500)
   }
 }

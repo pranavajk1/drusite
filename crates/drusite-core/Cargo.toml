@@ -30,6 +30,11 @@ drusite-dpop.workspace = true
 sha2.workspace = true
 url.workspace = true
 drusite-crdt.workspace = true
+drusite-db.workspace = true
+drusite-formula.workspace = true
+time.workspace = true
+miniz_oxide.workspace = true
+regex = { workspace = true, features = ["std", "unicode-perl"] }
 drusite-model.workspace = true
 drusite-markdown.workspace = true
 drusite-mcp = { workspace = true, optional = true }

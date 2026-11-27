@@ -1,0 +1,22 @@
+[package]
+name = "drusite-db"
+description = "Databases: computing views (formulas, rollups, relations, filters, groups) and rows as Markdown."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+drusite-crdt.workspace = true
+drusite-formula.workspace = true
+drusite-model.workspace = true
+serde.workspace = true
+specta.workspace = true
+time.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

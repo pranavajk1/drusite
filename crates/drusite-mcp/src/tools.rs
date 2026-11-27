@@ -128,6 +128,50 @@ pub const TOOLS: &[ToolSpec] = &[
         destructive: false,
         schema: schema::<PublishPage>,
     },
+    ToolSpec {
+        name: "query_database",
+        title: "Read a database",
+        description: "Reads a database (a page whose rows are pages, as in Notion): its \
+                      properties and their types, then its rows as a table, through one of its \
+                      views (its filter, sorts and groups; a board's columns are its groups). \
+                      Formulas and rollups are computed. Each row has its page ID, for \
+                      read_page and update_row.",
+        read_only: true,
+        destructive: false,
+        schema: schema::<crate::databases::QueryDatabase>,
+    },
+    ToolSpec {
+        name: "add_row",
+        title: "Add a row to a database",
+        description: "Adds a row (a page) to a database, with values by property name as you \
+                      would type them: an option's name (\"In progress\"), several joined with \
+                      \", \", a date as YYYY-MM-DD (or YYYY-MM-DDTHH:MM, or \"start → end\"), \
+                      true/false, a number, \"[[Row title]]\" for a relation. Optional \
+                      Markdown is its content.",
+        read_only: false,
+        destructive: false,
+        schema: schema::<crate::databases::AddRow>,
+    },
+    ToolSpec {
+        name: "update_row",
+        title: "Change a row's values",
+        description: "Sets values on a database row, by property name, as add_row reads them; \
+                      null clears one. Computed properties can't be set. Moving a task to \
+                      another column of a board is setting its status.",
+        read_only: false,
+        destructive: false,
+        schema: schema::<crate::databases::UpdateRow>,
+    },
+    ToolSpec {
+        name: "create_database",
+        title: "Create a database",
+        description: "Creates a database at the top level or under `parent`: an empty one (a \
+                      title and a table), or `template: \"tasks\"` for tasks with status, due \
+                      date, priority and assignee, and a board.",
+        read_only: false,
+        destructive: false,
+        schema: schema::<crate::databases::CreateDatabase>,
+    },
 ];
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -236,6 +280,10 @@ pub async fn call<N: Notes>(
         "append_to_page" => tools.append_to_page(args(arguments)?).await,
         "update_page" => tools.update_page(args(arguments)?).await,
         "publish_page" => tools.publish_page(args(arguments)?).await,
+        "query_database" => tools.query_database(args(arguments)?).await,
+        "add_row" => tools.add_row(args(arguments)?).await,
+        "update_row" => tools.update_row(args(arguments)?).await,
+        "create_database" => tools.create_database(args(arguments)?).await,
         other => Err(ToolError::NotFound(format!(
             "there is no tool called {other}"
         ))),
@@ -243,7 +291,7 @@ pub async fn call<N: Notes>(
 }
 
 /// Reads a page ID, bare or as a link.
-fn page_id(s: &str) -> ToolResult<PageId> {
+pub(crate) fn page_id(s: &str) -> ToolResult<PageId> {
     let s = s.trim();
     let s = s.strip_prefix("drusite:page/").unwrap_or(s);
     s.parse()
@@ -256,7 +304,7 @@ fn workspace_id(s: &str) -> ToolResult<WorkspaceId> {
         .map_err(|_| ToolError::Invalid(format!("{s:?} isn't a workspace ID")))
 }
 
-fn quote(title: &str) -> String {
+pub(crate) fn quote(title: &str) -> String {
     if title.is_empty() {
         "an untitled page".to_owned()
     } else {
@@ -265,15 +313,15 @@ fn quote(title: &str) -> String {
 }
 
 /// A page the agent may look at: where it is, and its place in the tree.
-struct Located {
-    info: WorkspaceInfo,
-    ws: Workspace,
-    node: PageNode,
+pub(crate) struct Located {
+    pub(crate) info: WorkspaceInfo,
+    pub(crate) ws: Workspace,
+    pub(crate) node: PageNode,
 }
 
-struct Tools<'a, N> {
-    notes: &'a N,
-    agent: &'a Agent,
+pub(crate) struct Tools<'a, N> {
+    pub(crate) notes: &'a N,
+    pub(crate) agent: &'a Agent,
 }
 
 impl<N: Notes> Tools<'_, N> {
@@ -284,7 +332,7 @@ impl<N: Notes> Tools<'_, N> {
     }
 
     /// The workspace named, or the only one.
-    async fn pick(&self, workspace: Option<&str>) -> ToolResult<WorkspaceInfo> {
+    pub(crate) async fn pick(&self, workspace: Option<&str>) -> ToolResult<WorkspaceInfo> {
         let visible = self.visible().await?;
         match workspace {
             Some(s) => {
@@ -309,7 +357,7 @@ impl<N: Notes> Tools<'_, N> {
         }
     }
 
-    async fn locate(&self, page: &str) -> ToolResult<Located> {
+    pub(crate) async fn locate(&self, page: &str) -> ToolResult<Located> {
         let id = page_id(page)?;
         let missing = || ToolError::NotFound("no such page".to_owned());
         let ws_id = self
@@ -334,7 +382,11 @@ impl<N: Notes> Tools<'_, N> {
     }
 
     /// Refuses a change the agent may not make to `node` (or under it, for a new page).
-    fn may_write(&self, info: &WorkspaceInfo, node: Option<&PageNode>) -> ToolResult<()> {
+    pub(crate) fn may_write(
+        &self,
+        info: &WorkspaceInfo,
+        node: Option<&PageNode>,
+    ) -> ToolResult<()> {
         if !self.agent.access.write {
             return Err(ToolError::Forbidden(
                 "you were connected to read only; the person can give you write access in \
@@ -457,12 +509,24 @@ impl<N: Notes> Tools<'_, N> {
     }
 
     async fn render(&self, ws: WorkspaceId, node: &PageNode) -> ToolResult<String> {
+        if node.kind == PageKind::Database {
+            return self
+                .query_database(crate::databases::QueryDatabase {
+                    database: node.id.to_string(),
+                    view: None,
+                })
+                .await;
+        }
         let page = self.notes.page(self.agent, ws, node.id).await?;
+        // A row's values are its frontmatter, as in the Markdown folder.
+        let doc = self.notes.workspace(self.agent, ws).await?;
+        let mut properties = node.properties.clone();
+        properties.extend(crate::databases::row_values(&doc, node.id));
         Ok(page_to_markdown(
             node.id,
             &node.title,
             node.kind,
-            &node.properties,
+            &properties,
             &page.blocks()?,
         ))
     }
@@ -675,7 +739,10 @@ impl<N: Notes> Tools<'_, N> {
             ws.set_title(id, t)?;
         }
         if let Some(props) = &properties {
-            set_properties(ws, id, &at.node.properties, props)?;
+            // A row's values by property name; the rest are the page's own properties.
+            let (values, own) = crate::databases::split_row_values(ws, id, props);
+            crate::databases::set_row_values(ws, id, &values)?;
+            set_properties(ws, id, &at.node.properties, &own)?;
         }
         let ws_after = ws.version();
         if ws_after != ws_before {

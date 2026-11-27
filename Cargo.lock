@@ -1858,7 +1858,9 @@ dependencies = [
  "blake3",
  "drusite-ai",
  "drusite-crdt",
+ "drusite-db",
  "drusite-dpop",
+ "drusite-formula",
  "drusite-markdown",
  "drusite-mcp",
  "drusite-model",
@@ -1868,9 +1870,11 @@ dependencies = [
  "getrandom 0.4.3",
  "http",
  "loro",
+ "miniz_oxide 0.9.1",
  "notify",
  "notify-debouncer-full",
  "prost",
+ "regex",
  "reqwest",
  "rmcp",
  "rusqlite",
@@ -1883,6 +1887,7 @@ dependencies = [
  "tantivy",
  "tempfile",
  "thiserror 2.0.21",
+ "time",
  "tokio",
  "tokio-tungstenite",
  "tower",
@@ -1902,8 +1907,23 @@ dependencies = [
  "fastrand",
  "loro",
  "proptest",
+ "serde",
+ "serde_json",
  "similar",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "drusite-db"
+version = "0.1.0-alpha.4"
+dependencies = [
+ "drusite-crdt",
+ "drusite-formula",
+ "drusite-model",
+ "serde",
+ "specta",
+ "time",
+ "uuid",
 ]
 
 [[package]]
@@ -1918,6 +1938,18 @@ dependencies = [
  "sha2 0.11.2",
  "thiserror 2.0.21",
  "zeroize",
+]
+
+[[package]]
+name = "drusite-formula"
+version = "0.1.0-alpha.4"
+dependencies = [
+ "drusite-model",
+ "proptest",
+ "regex",
+ "serde",
+ "specta",
+ "time",
 ]
 
 [[package]]
@@ -1937,6 +1969,7 @@ version = "0.1.0-alpha.4"
 dependencies = [
  "base64 0.23.1",
  "drusite-crdt",
+ "drusite-db",
  "drusite-markdown",
  "drusite-model",
  "http",
@@ -1988,6 +2021,7 @@ dependencies = [
  "drusite-ai",
  "drusite-core",
  "drusite-crdt",
+ "drusite-db",
  "drusite-dpop",
  "drusite-mcp",
  "drusite-model",

@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use uuid::Uuid;
 
+pub mod database;
 pub mod journal;
 pub mod search;
 pub use journal::{
@@ -158,6 +159,12 @@ pub enum BlockKind {
     Query {
         query: String,
     },
+    /// A database shown inside the page: `database` is a subpage of kind
+    /// [`PageKind::Database`], and `view` the view it opens on. No text of its own.
+    Database {
+        database: PageId,
+        view: Option<String>,
+    },
     /// A file stored with the workspace: shown inline when it's an image, as a card otherwise.
     /// The block's text is its caption.
     Attachment {
@@ -187,6 +194,7 @@ impl BlockKind {
             Self::Callout { .. } => "callout",
             Self::Toggle => "toggle",
             Self::Query { .. } => "query",
+            Self::Database { .. } => "database",
             Self::Attachment { .. } => "attachment",
         }
     }

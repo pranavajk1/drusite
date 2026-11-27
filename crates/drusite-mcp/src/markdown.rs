@@ -53,6 +53,7 @@ pub(crate) fn page_to_markdown(
         kind,
         title: Some(title.to_owned()),
         properties: properties.to_vec(),
+        extra: String::new(),
     };
     drusite_markdown::write(&front, blocks, &AgentResolver::new(blocks))
 }

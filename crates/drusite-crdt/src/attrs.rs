@@ -67,6 +67,13 @@ pub(crate) fn write_kind(map: &LoroMap, kind: &BlockKind) -> LoroResult<()> {
         BlockKind::Code { language } => map.insert("language", language.as_str()),
         BlockKind::Callout { icon } => map.insert("icon", icon.as_str()),
         BlockKind::Query { query } => map.insert("query", query.as_str()),
+        BlockKind::Database { database, view } => {
+            map.insert("database", database.to_string())?;
+            match view {
+                Some(v) => map.insert("view", v.as_str()),
+                None => map.delete("view"),
+            }
+        }
         BlockKind::Attachment {
             blob,
             name,
@@ -113,6 +120,13 @@ pub(crate) fn read_kind(map: Option<&LoroMap>) -> BlockKind {
         Some("toggle") => BlockKind::Toggle,
         Some("query") => BlockKind::Query {
             query: get_str(map, "query").unwrap_or_default(),
+        },
+        Some("database") => match get_str(map, "database").and_then(|d| d.parse().ok()) {
+            Some(database) => BlockKind::Database {
+                database,
+                view: get_str(map, "view"),
+            },
+            None => BlockKind::Paragraph,
         },
         Some("attachment") => BlockKind::Attachment {
             blob: get_str(map, "blob").unwrap_or_default(),

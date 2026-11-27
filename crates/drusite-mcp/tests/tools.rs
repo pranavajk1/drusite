@@ -456,3 +456,148 @@ async fn trashed_pages_are_out_of_sight() {
     let tree = run(&notes, &a, "list_pages", json!({})).await.unwrap();
     assert_eq!(tree, "No pages.");
 }
+
+fn id_in(said: &str) -> PageId {
+    said.rsplit("page ")
+        .next()
+        .unwrap()
+        .split(')')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap()
+}
+
+#[tokio::test]
+async fn agents_make_a_task_board_add_tasks_and_move_them() {
+    let notes = Memory::new();
+    let a = agent(true, false);
+    let made = run(
+        &notes,
+        &a,
+        "create_database",
+        json!({ "title": "Tasks", "template": "tasks" }),
+    )
+    .await
+    .unwrap();
+    let db = id_in(&made);
+    let added = run(
+        &notes,
+        &a,
+        "add_row",
+        json!({
+            "database": db.to_string(),
+            "title": "Water the seedlings",
+            "values": { "Priority": "High", "Due": "2026-11-28" },
+            "markdown": "Twice a day."
+        }),
+    )
+    .await
+    .unwrap();
+    let row = id_in(&added);
+    assert_eq!(notes.texts(row), ["Twice a day."]);
+
+    let board = run(
+        &notes,
+        &a,
+        "query_database",
+        json!({ "database": db.to_string() }),
+    )
+    .await
+    .unwrap();
+    assert!(
+        board.contains("Status (status): Not started | In progress | Done"),
+        "{board}"
+    );
+    assert!(board.contains("## Not started (1)"), "{board}");
+    assert!(
+        board.contains(&format!(
+            "| Water the seedlings | November 28, 2026 | High |  | {row} |"
+        )),
+        "{board}"
+    );
+
+    // A value that isn't an option is refused, saying what is.
+    let bad = run(
+        &notes,
+        &a,
+        "update_row",
+        json!({ "row": row.to_string(), "values": { "Status": "Someday" } }),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        bad.to_string()
+            .contains("one of: Not started, In progress, Done"),
+        "{bad}"
+    );
+
+    run(
+        &notes,
+        &a,
+        "update_row",
+        json!({ "row": row.to_string(), "values": { "Status": "Done" } }),
+    )
+    .await
+    .unwrap();
+    let board = run(
+        &notes,
+        &a,
+        "query_database",
+        json!({ "database": db.to_string(), "view": "Board" }),
+    )
+    .await
+    .unwrap();
+    assert!(board.contains("## Done (1)"), "{board}");
+
+    // read_page gives a row its values as frontmatter, and update_page can set them.
+    let md = run(&notes, &a, "read_page", json!({ "page": row.to_string() }))
+        .await
+        .unwrap();
+    assert!(
+        md.contains("Status: Done") && md.contains("Priority: High"),
+        "{md}"
+    );
+    run(
+        &notes,
+        &a,
+        "update_page",
+        json!({ "page": row.to_string(), "markdown": md.replace("Status: Done", "Status: In progress") }),
+    )
+    .await
+    .unwrap();
+    let md = run(&notes, &a, "read_page", json!({ "page": row.to_string() }))
+        .await
+        .unwrap();
+    assert!(md.contains("Status: In progress"), "{md}");
+
+    // Undo takes the status back.
+    notes.undo_last();
+    let md = run(&notes, &a, "read_page", json!({ "page": row.to_string() }))
+        .await
+        .unwrap();
+    assert!(md.contains("Status: Done"), "{md}");
+
+    // Read-only agents can read it but not change it.
+    let r = agent(false, false);
+    assert!(
+        run(
+            &notes,
+            &r,
+            "query_database",
+            json!({ "database": db.to_string() })
+        )
+        .await
+        .is_ok()
+    );
+    assert!(
+        run(
+            &notes,
+            &r,
+            "update_row",
+            json!({ "row": row.to_string(), "values": { "Status": "Done" } })
+        )
+        .await
+        .is_err()
+    );
+}

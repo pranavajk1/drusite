@@ -297,6 +297,7 @@ fn front_of(
         kind,
         title: (stem != title).then(|| title.to_owned()),
         properties: props.to_vec(),
+        extra: String::new(),
     }
 }
 
@@ -584,6 +585,12 @@ impl Core {
             let base = page.version();
             merge::merge(&mut page, &base, &wanted_of(&md))?;
             self.store.create_page(&page)?;
+            // A new file in a database's folder is a new row: its frontmatter is its values.
+            for p in &md.front.properties {
+                if self.row_property_from_file(page.id(), &p.name, Some(&p.value))? {
+                    self.workspace.set_property(page.id(), &p.name, None)?;
+                }
+            }
             self.changed(*page.id().as_uuid());
             return Ok((page.id(), true));
         };
@@ -640,12 +647,16 @@ impl Core {
             None => self.workspace.properties(id)?,
         };
         for p in &md.front.properties {
-            if !base_props.contains(p) {
+            if !base_props.contains(p)
+                && !self.row_property_from_file(id, &p.name, Some(&p.value))?
+            {
                 self.workspace.set_property(id, &p.name, Some(&p.value))?;
             }
         }
         for p in &base_props {
-            if !md.front.properties.iter().any(|q| q.name == p.name) {
+            if !md.front.properties.iter().any(|q| q.name == p.name)
+                && !self.row_property_from_file(id, &p.name, None)?
+            {
                 self.workspace.set_property(id, &p.name, None)?;
             }
         }
@@ -761,9 +772,22 @@ impl Core {
             }
         }
 
+        let clock = crate::database::Clock::utc();
+        let dbs = crate::database::compute::Db::new(&self.workspace, clock.now, clock.utc_offset);
+        let mut fronts = HashMap::new();
         for node in &nodes {
             let path = &paths[&node.id];
-            let front = front_of(node.id, &node.title, node.kind, &node.properties, path);
+            let mut front = front_of(node.id, &node.title, node.kind, &node.properties, path);
+            // A row's values, and a database's schema (see database::markdown).
+            let (values, extra) = self.database_front(node.id, &dbs);
+            front.properties.extend(values);
+            front.extra = extra;
+            fronts.insert(node.id, front);
+        }
+        drop(dbs);
+        for node in &nodes {
+            let path = &paths[&node.id];
+            let front = fronts.remove(&node.id).unwrap_or_default();
             let meta = meta_of(path, &front);
             let record = records.get(&node.id.to_string());
             let fresh = record.is_some_and(|r| r.meta == meta) && !dirty.contains(&node.id);

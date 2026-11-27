@@ -18,6 +18,9 @@ use crate::guard::Guard;
 use crate::page::Page;
 use crate::{Error, MARKER, Result, attrs};
 
+mod database;
+pub use database::RowData;
+
 /// A page's place in the tree.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PageNode {

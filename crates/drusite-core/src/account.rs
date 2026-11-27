@@ -314,6 +314,23 @@ impl Supervisor {
         // The issuer is the server's own idea of its address; sign-in answers and proofs are
         // checked against it, so use it rather than what was typed.
         let server = server_url(&metadata.issuer)?;
+        if server != typed_url {
+            // Reached under another name (an IP address, a LAN name): the browser and sync will
+            // both go to the issuer, so make sure this device can reach it before sending the
+            // person to a page that won't load.
+            let probe = server
+                .join(".well-known/oauth-authorization-server")
+                .map_err(|e| AccountError::NotDrusite(e.to_string()))?;
+            let http = self::agent();
+            if let Err(HttpError::Network(m)) =
+                blocking(move || read::<Metadata>(http.get(probe.as_str()).call())).await
+            {
+                return Err(AccountError::Unreachable(format!(
+                    "{typed_url} answers as {server}, but this device can't reach {server} ({m}). \
+                     The server's public_url should be an address its devices can reach."
+                )));
+            }
+        }
         let auth = Authorization::new(&server, redirect_uri, &self.inner.key.jwk().thumbprint())?;
         let url = auth.url().clone();
         *lock(&self.inner.pending)? = Some(auth);

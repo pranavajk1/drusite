@@ -12,6 +12,7 @@ publish.workspace = true
 [dependencies]
 base64.workspace = true
 drusite-crdt.workspace = true
+drusite-db.workspace = true
 drusite-markdown.workspace = true
 drusite-model.workspace = true
 http.workspace = true

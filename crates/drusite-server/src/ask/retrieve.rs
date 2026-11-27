@@ -47,6 +47,8 @@ pub struct Scope<'a> {
     pub pages: &'a HashMap<Uuid, String>,
     /// Pages to leave out (journal entries, unless allowed).
     pub excluded: &'a [Uuid],
+    /// Database rows' values, by row: a row found by them is cited with them.
+    pub values: &'a HashMap<Uuid, String>,
 }
 
 /// The words of a question, as typed, for `plainto_tsquery` to normalise one by one.
@@ -224,7 +226,7 @@ pub async fn find(
         if block == TITLE_BLOCK {
             // The page matched by its title: its opening blocks stand in for it, cited as the
             // first of them.
-            let mut text = String::new();
+            let mut text = scope.values.get(&page).cloned().unwrap_or_default();
             let mut first = None;
             for b in doc.blocks().unwrap_or_default() {
                 let t = b.text();
@@ -240,8 +242,10 @@ pub async fn find(
                     break;
                 }
             }
-            // Its blocks are all in already.
-            if first.is_none() {
+            // Its blocks are all in already (and it isn't a row with values to tell).
+            if first.is_none()
+                && (!scope.values.contains_key(&page) || !taken.insert((page, block)))
+            {
                 continue;
             }
             let text = cut(&text, MAX_BLOCK_CHARS.min(room));

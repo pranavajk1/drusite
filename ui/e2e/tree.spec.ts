@@ -147,3 +147,32 @@ test("what's typed on a page is still there after opening another and coming bac
   await expectOpen(page, "");
   await expectBlocks(page, [{ kind: { type: "todo", checked: true }, text: "Remember me", box: true, struck: true }]);
 });
+
+test("a title being typed isn't cut short by an earlier save coming back", async ({ page }) => {
+  await openApp(page);
+  const title = page.getByLabel("Page title");
+  await title.click();
+  await page.keyboard.type("Mulch the");
+  // The save of "Mulch the" goes out; an earlier save ("Mulch") comes back after it, while the
+  // field still has the focus (typing pauses between words, so this happens on phones).
+  await page.waitForTimeout(400);
+  await page.evaluate(async () => {
+    const core = window.drusiteMemoryCore!;
+    const pages = await core.handle({ type: "listPages" });
+    if (pages.type !== "pages") return;
+    const open = pages.pages.find((p) => p.title === "Mulch the")!;
+    await core.handle({ type: "renamePage", page: open.id, title: "Mulch" });
+  });
+  await page.keyboard.type(" beds");
+  await expect(title).toHaveValue("Mulch the beds");
+  // It's what's saved, too.
+  await page.locator(".editor").click();
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const r = await window.drusiteMemoryCore!.handle({ type: "listPages" });
+        return r.type === "pages" ? r.pages.map((p) => p.title) : [];
+      }),
+    )
+    .toContain("Mulch the beds");
+});

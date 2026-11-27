@@ -11,6 +11,8 @@
   import { focusEnd } from "../editor/commands";
   import { type Editor, createEditor } from "../editor/editor";
   import PhoneToolbar from "./PhoneToolbar.svelte";
+  import Database from "./database/Database.svelte";
+  import RowProperties from "./database/RowProperties.svelte";
 
   let {
     client,
@@ -56,9 +58,15 @@
   let draft = $state("");
   let renaming: ReturnType<typeof setTimeout> | undefined;
 
-  // Follow renames from elsewhere unless one is being typed here.
+  /** The title field has the focus: what's typed there is the title, whatever comes back. */
+  let typing = $state(false);
+
+  // Follow renames from elsewhere, but not into the field while it's being typed in: a save of
+  // an earlier draft can come back after a later one went out (typing pauses between words), and
+  // would cut off what was typed since. After the field loses the focus, the last save's own
+  // title comes back last.
   $effect(() => {
-    if (renaming === undefined) draft = title;
+    if (renaming === undefined && !typing) draft = title;
   });
 
   function rename() {
@@ -124,7 +132,16 @@
     view.focus();
   }
 
+  // A database's page shows its views, not a document (as a full-page database in Notion).
+  // svelte-ignore state_referenced_locally
+  const isDatabase = info?.kind === "database";
+  const isRow = $derived(!!info?.parent && pages.find((p) => p.id === info?.parent)?.kind === "database");
+
   onMount(() => {
+    if (isDatabase) {
+      onopened();
+      return;
+    }
     let closed = false;
     const stop = client.subscribe((event) => {
       if (!editor) return;
@@ -145,8 +162,11 @@
           arriving = false;
           editor = createEditor(mount, client, view, onerror, onselect);
           editorView = editor.view;
+          // A new page starts in its title. Otherwise the cursor goes to the text, except on a
+          // touch screen: there that would open the keyboard over a page just opened to read
+          // (Notion's phone apps open a page without one).
           if (view.title === "") titleInput.focus();
-          else editor.view.focus();
+          else if (!touch) editor.view.focus();
           onopened();
           return;
         } catch (e) {
@@ -185,7 +205,7 @@
   });
 </script>
 
-<article class="page" class:journal-page={info?.kind === "journal"}>
+<article class="page" class:journal-page={info?.kind === "journal"} class:database-page={isDatabase}>
   <input
     bind:this={titleInput}
     class="page-title"
@@ -194,9 +214,16 @@
     bind:value={draft}
     oninput={rename}
     onkeydown={titleKey}
+    onfocus={() => (typing = true)}
+    onblur={() => (typing = false)}
   />
-  {#if info}
+  {#if isRow}
+    <RowProperties {client} page={id} {pages} onopen={onselect} {onerror} />
+  {:else if info && !isDatabase}
     <Properties {client} page={info} {onerror} />
+  {/if}
+  {#if isDatabase}
+    <Database {client} database={id} {pages} onopen={onselect} {onerror} />
   {/if}
   {#if settings.journalParent === id}
     <JournalViews {pages} weekStart={settings.weekStart} {onday} onselect={(p) => onselect(p.id)} />
@@ -206,6 +233,7 @@
   {/if}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
+    hidden={isDatabase}
     class="page-body"
     bind:this={mount}
     onkeydown={bodyKey}

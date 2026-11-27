@@ -214,7 +214,7 @@ test("the slash menu turns an empty block into another kind, and filters as you 
   await page.keyboard.type("/");
   const menu = page.getByRole("listbox", { name: "Blocks" });
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole("option")).toHaveCount(14);
+  await expect(menu.getByRole("option")).toHaveCount(16);
   await page.keyboard.type("todo");
   await expect(menu.getByRole("option")).toHaveText(["To-do list[]"]);
   await page.keyboard.press("Enter");

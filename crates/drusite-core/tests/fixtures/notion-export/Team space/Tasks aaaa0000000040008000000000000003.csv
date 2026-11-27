@@ -1,0 +1,6 @@
+﻿Task,Created,Done?,Due,Estimate,ID,Late,Points,Priority,Project,Status,Tags
+Water the seedlings,"November 20, 2026 9:00 AM",Yes,"November 21, 2026",6,GARDEN-1,No,3,High,Garden app (Projects/Garden%20app%20bbbb0000000040008000000000000001.csv),Done,outdoors
+Design the logo,"November 20, 2026 9:05 AM",No,"November 28, 2026 2:30 PM (CST)",8,GARDEN-2,Yes,4,Medium,Recipe site (Projects/Recipe%20site%20bbbb0000000040008000000000000002.csv),In progress,"design, web"
+"Write recipes, part one","November 21, 2026 10:00 AM",No,"December 3, 2026 → December 5, 2026",10,GARDEN-3,No,5,Low,Garden app (Projects/Garden%20app%20bbbb0000000040008000000000000001.csv),Not started,web
+Pick a domain,"November 22, 2026 11:00 AM",No,,6,GARDEN-4,No,3,High,Recipe site (Projects/Recipe%20site%20bbbb0000000040008000000000000002.csv),Not started,web
+Inbox zero,"November 23, 2026 8:00 AM",No,,0,GARDEN-5,No,,,,Not started,

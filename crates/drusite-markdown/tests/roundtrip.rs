@@ -148,6 +148,12 @@ fn kind() -> impl Strategy<Value = BlockKind> {
             Just("```\nnot json"),
         ]
         .prop_map(|q| BlockKind::Query { query: q.to_owned() }),
+        1 => (any::<u128>(), prop::option::of("[a-z0-9]{8}")).prop_map(|(d, view)| {
+            BlockKind::Database {
+                database: drusite_model::PageId::from_uuid(uuid::Uuid::from_u128(d)),
+                view,
+            }
+        }),
         1 => ("[0-9a-f]{64}", "[a-zA-Z0-9 ._-]{1,12}\\.png").prop_map(|(blob, name)| {
             BlockKind::Attachment { blob, name, mime: String::new(), size: 0 }
         }),
@@ -167,7 +173,9 @@ fn block() -> impl Strategy<Value = Block> {
                         vec![Span::plain(code)]
                     }
                 }
-                BlockKind::Divider | BlockKind::Query { .. } => Vec::new(),
+                BlockKind::Divider | BlockKind::Query { .. } | BlockKind::Database { .. } => {
+                    Vec::new()
+                }
                 BlockKind::Attachment { .. } => {
                     let caption: String = spans.iter().map(|s| s.text.as_str()).collect();
                     let caption = caption.replace(['\n', '\t'], " ").trim().to_owned();

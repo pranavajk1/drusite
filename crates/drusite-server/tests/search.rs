@@ -359,3 +359,38 @@ async fn words_only_without_a_model_and_off_when_disabled() {
         .unwrap();
     assert_eq!(response.status(), 400);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn database_rows_are_found_by_their_values() {
+    let Some(server) = common::serve(&[("DRUSITE__AUTH__PASSWORD__ENABLED", "true")]).await else {
+        return;
+    };
+    drusite_server::search::spawn_indexer(server.state.clone());
+    let alice = account(&server.state, "alice@example.com").await;
+    let mac = Device::new(&server.state, alice).await;
+    let Response::DatabaseCreated { page, schema } = mac.handle(Command::CreateDatabase {
+        parent: None,
+        title: "Tasks".into(),
+        inline: false,
+        template: drusite_core::database::Template::Tasks,
+    }) else {
+        panic!()
+    };
+    let priority = schema.property_named("Priority").unwrap().clone();
+    mac.handle(Command::CreateRow {
+        database: page.id,
+        title: "Repot the fern".into(),
+        values: vec![drusite_core::api::CellValue {
+            property: priority.id.clone(),
+            value: drusite_model::database::Value::Select(priority.options[0].id.clone()),
+        }],
+        after: None,
+    });
+    mac.connect(&server.url);
+    // "High" is the row's priority, not a word on its page.
+    let found = until(&mac, &server.url, "high", |r| {
+        !r["hits"].as_array().unwrap().is_empty()
+    })
+    .await;
+    assert_eq!(pages(&found)[0].0, "Repot the fern");
+}

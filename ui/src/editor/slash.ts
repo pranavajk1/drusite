@@ -13,6 +13,7 @@ import { type IconName, iconSvg } from "../lib/icons/icons";
 import { visibleBottom, visibleTop } from "../lib/ui/floating";
 import { PICK_FILES } from "./attachments";
 import { attrsOf } from "./convert";
+import { MAKE_DATABASE } from "./database.svelte";
 import { defaultQueryJson } from "./query";
 import { blockType } from "./schema";
 
@@ -23,7 +24,7 @@ interface Item {
   hint?: string;
   keywords: string;
   /** The block's new kind, or what else picking it does. */
-  kind: BlockKind | "divider" | "filter" | "file";
+  kind: BlockKind | "divider" | "filter" | "file" | "database" | "tasks";
 }
 
 export const SLASH_ITEMS: Item[] = [
@@ -39,7 +40,9 @@ export const SLASH_ITEMS: Item[] = [
   { label: "Callout", icon: "message-square-text", hint: "!", keywords: "note tip info aside", kind: { type: "callout", icon: "💡" } },
   { label: "Code", icon: "code", hint: "```", keywords: "snippet pre monospace", kind: { type: "code", language: "" } },
   { label: "Divider", icon: "minus", hint: "---", keywords: "rule line hr separator", kind: "divider" },
-  { label: "Filter", icon: "list-filter", keywords: "query journal database view", kind: "filter" },
+  { label: "Filter", icon: "list-filter", keywords: "query journal view", kind: "filter" },
+  { label: "Database", icon: "table", keywords: "table inline database view rows", kind: "database" },
+  { label: "Task board", icon: "square-kanban", keywords: "tasks kanban board status", kind: "tasks" },
   { label: "File or image", icon: "paperclip", keywords: "attachment upload image picture photo", kind: "file" },
 ];
 
@@ -108,6 +111,10 @@ function apply(view: EditorView, from: number, item: Item) {
     paragraphAfter();
   } else if (item.kind === "file") {
     tr.setMeta(PICK_FILES, true);
+  } else if (item.kind === "database" || item.kind === "tasks") {
+    tr.setMeta(MAKE_DATABASE, item.kind === "tasks" ? "tasks" : "empty");
+    paragraphAfter();
+    tr.setSelection(TextSelection.create(tr.doc, pos + 1));
   } else {
     tr.setNodeAttribute(pos, "kind", item.kind);
   }
