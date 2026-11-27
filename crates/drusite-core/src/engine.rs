@@ -290,6 +290,47 @@ impl Core {
                 ErrorCode::Unsupported,
                 "the server's agent activity is undone through the app",
             )),
+            #[cfg(feature = "ai")]
+            Command::Ai => self.ai(),
+            #[cfg(feature = "ai")]
+            Command::SaveAiProvider {
+                id,
+                kind,
+                name,
+                base_url,
+                api_key,
+            } => self.save_ai_provider(id, kind, &name, base_url, api_key),
+            #[cfg(feature = "ai")]
+            Command::DeleteAiProvider { id } => {
+                self.delete_ai_provider(&id)?;
+                Ok(Response::Done)
+            }
+            #[cfg(feature = "ai")]
+            Command::SetAiFeature { feature, choice } => {
+                self.set_ai_feature(feature, choice)?;
+                Ok(Response::Done)
+            }
+            #[cfg(feature = "ai")]
+            Command::AiModels { .. } | Command::TestAiProvider { .. } => Err(ApiError::new(
+                ErrorCode::Unsupported,
+                "reaching a provider goes through drusite_core::ai::run",
+            )),
+            #[cfg(not(feature = "ai"))]
+            Command::Ai => Ok(Response::Ai {
+                available: false,
+                kinds: Vec::new(),
+                providers: Vec::new(),
+                features: Vec::new(),
+            }),
+            #[cfg(not(feature = "ai"))]
+            Command::SaveAiProvider { .. }
+            | Command::DeleteAiProvider { .. }
+            | Command::SetAiFeature { .. }
+            | Command::AiModels { .. }
+            | Command::TestAiProvider { .. } => Err(ApiError::new(
+                ErrorCode::Unsupported,
+                "AI providers need the app",
+            )),
             Command::SetSetting { setting } => {
                 self.set_setting(setting)?;
                 Ok(Response::Settings {

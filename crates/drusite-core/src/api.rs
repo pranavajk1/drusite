@@ -167,6 +167,128 @@ pub enum Command {
         id: String,
         source: AgentSource,
     },
+    /// The AI providers on this device and what each feature uses. Answered with
+    /// [`Response::Ai`].
+    Ai,
+    /// Adds a provider (`id` none) or changes one. A `None` key keeps the one already saved; an
+    /// empty one removes it. Answered with [`Response::AiProviderSaved`].
+    SaveAiProvider {
+        id: Option<String>,
+        kind: AiKind,
+        name: String,
+        base_url: Option<String>,
+        api_key: Option<String>,
+    },
+    /// Removes a provider; the features that used it are left without one.
+    DeleteAiProvider {
+        id: String,
+    },
+    /// Picks the provider and model a feature uses, or none.
+    SetAiFeature {
+        feature: AiFeature,
+        choice: Option<AiChoice>,
+    },
+    /// The models a provider offers. Answered with [`Response::AiModels`].
+    AiModels {
+        provider: String,
+    },
+    /// *Test connection*: lists the models, then tries each model given with a tiny request.
+    /// Answered with [`Response::AiCheck`].
+    TestAiProvider {
+        provider: String,
+        chat_model: Option<String>,
+        embedding_model: Option<String>,
+    },
+}
+
+/// Which API an AI provider speaks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum AiKind {
+    Anthropic,
+    OpenAi,
+    Google,
+    Mistral,
+    OpenRouter,
+    /// Any server speaking the OpenAI-compatible API: LiteLLM, Ollama, vLLM, LM Studio, …
+    OpenAiCompatible,
+}
+
+/// What the UI needs to know about a kind of provider.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AiKindInfo {
+    pub kind: AiKind,
+    pub label: String,
+    /// The vendor's address; none for a custom endpoint, which must be given one.
+    pub default_base_url: Option<String>,
+    pub needs_key: bool,
+    /// Whether it makes embeddings (Anthropic doesn't).
+    pub embeds: bool,
+}
+
+/// Something AI does, each with its own provider and model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum AiFeature {
+    Chat,
+    Embeddings,
+}
+
+impl AiFeature {
+    pub const ALL: [Self; 2] = [Self::Chat, Self::Embeddings];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Chat => "chat",
+            Self::Embeddings => "embeddings",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AiChoice {
+    pub provider: String,
+    pub model: String,
+}
+
+/// A provider set up on this device. Its key is never sent back, only whether there is one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AiProvider {
+    pub id: String,
+    pub kind: AiKind,
+    pub name: String,
+    pub base_url: Option<String>,
+    /// The key's last four characters, when there is one.
+    pub key_hint: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AiFeatureChoice {
+    pub feature: AiFeature,
+    pub choice: Option<AiChoice>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AiModel {
+    pub id: String,
+    pub name: Option<String>,
+    /// Whether it looks like an embedding model.
+    pub embeddings: bool,
+}
+
+/// One step of *Test connection*.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AiCheckStep {
+    pub what: String,
+    pub ok: bool,
+    pub detail: String,
+    pub millis: u32,
 }
 
 /// What an agent may do.
@@ -450,6 +572,22 @@ pub enum Response {
         token: String,
         url: String,
     },
+    Ai {
+        /// Whether this build can reach AI providers.
+        available: bool,
+        kinds: Vec<AiKindInfo>,
+        providers: Vec<AiProvider>,
+        features: Vec<AiFeatureChoice>,
+    },
+    AiProviderSaved {
+        provider: AiProvider,
+    },
+    AiModels {
+        models: Vec<AiModel>,
+    },
+    AiCheck {
+        steps: Vec<AiCheckStep>,
+    },
     Done,
 }
 
@@ -468,6 +606,8 @@ pub enum Event {
     TrashChanged { pages: Vec<TrashItem> },
     /// An agent on this computer changed something, or the agents' list changed.
     AgentsChanged,
+    /// The AI providers or the features' choices changed.
+    AiChanged,
     /// A file this device was waiting for has come from the server.
     AttachmentArrived { blob: String },
     /// The Markdown bridge ran a round that did something, or failed.

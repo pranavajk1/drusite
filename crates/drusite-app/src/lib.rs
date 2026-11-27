@@ -298,6 +298,9 @@ async fn core(state: tauri::State<'_, AppState>, command: Command) -> Result<Res
             Ok(Response::Done)
         }
         Command::Agents => ready.agents().await,
+        command if drusite_core::ai::is_network(&command) => {
+            drusite_core::ai::run(&ready.core, command).await
+        }
         Command::UndoAgentCall {
             id,
             source: drusite_core::api::AgentSource::Server,
