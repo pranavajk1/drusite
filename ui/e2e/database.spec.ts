@@ -58,6 +58,38 @@ test("a task board: cards are added to columns and dragged between them", async 
   expect(statuses).toEqual(["In progress: Water the beds", "Done: Sow the seeds"]);
 });
 
+test("on a phone-width screen, holding a card at the edge scrolls the board to the next column", async ({ page }) => {
+  await newBoard(page);
+  await addCard(page, "Not started", "Sow the seeds");
+  await page.setViewportSize({ width: 390, height: 844 });
+  const view = page.viewportSize()!;
+  const done = column(page, "Done");
+  const card = page.locator(".card", { hasText: "Sow the seeds" });
+  // The phone layout (with its tab bar) takes over first, and redraws the board.
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+  // Shrunk from a desktop window, the pages drawer may have come along open.
+  const menu = page.locator(".topbar-menu");
+  if ((await menu.getAttribute("aria-expanded")) === "true") await menu.click();
+  await expect(menu).toHaveAttribute("aria-expanded", "false");
+  // Out of reach at first: a column fills most of a phone's width.
+  expect((await done.boundingBox())!.x).toBeGreaterThan(view.width);
+  const a = (await card.boundingBox())!;
+  // Nothing (a drawer sliding away) is still over the card where the finger goes down.
+  await expect
+    .poll(() => page.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest(".card"), { x: a.x + 20, y: a.y + 10 }))
+    .toBe(true);
+  await page.mouse.move(a.x + 20, a.y + 10);
+  await page.mouse.down();
+  for (let i = 1; i <= 8; i++) await page.mouse.move(a.x + 20 + ((view.width - 6 - a.x - 20) * i) / 8, a.y + 10);
+  // Held at the edge, the board scrolls until Done comes into view.
+  await expect.poll(async () => (await done.boundingBox())!.x, { timeout: 5000 }).toBeLessThan(view.width - 120);
+  const b = (await done.boundingBox())!;
+  await page.mouse.move(b.x + 40, b.y + 60, { steps: 4 });
+  await page.mouse.up();
+  await expect(done.locator(".card", { hasText: "Sow the seeds" })).toHaveCount(1);
+  await expect(column(page, "Not started").locator(".card")).toHaveCount(0);
+});
+
 test("a card opens its page, whose properties edit in place", async ({ page }) => {
   await newBoard(page);
   await addCard(page, "Not started", "Order compost");
