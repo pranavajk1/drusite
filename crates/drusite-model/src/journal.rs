@@ -28,6 +28,8 @@ pub enum PageKind {
     Page,
     /// One day of the journal.
     Journal,
+    /// A database: its subpages are its rows.
+    Database,
 }
 
 impl PageKind {
@@ -36,12 +38,14 @@ impl PageKind {
         match self {
             Self::Page => "page",
             Self::Journal => "journal",
+            Self::Database => "database",
         }
     }
 
     pub fn from_name(name: &str) -> Self {
         match name {
             "journal" => Self::Journal,
+            "database" => Self::Database,
             _ => Self::Page,
         }
     }

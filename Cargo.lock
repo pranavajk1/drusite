@@ -1921,6 +1921,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "drusite-formula"
+version = "0.1.0-alpha.4"
+dependencies = [
+ "drusite-model",
+ "proptest",
+ "regex",
+ "serde",
+ "specta",
+ "time",
+]
+
+[[package]]
 name = "drusite-markdown"
 version = "0.1.0-alpha.4"
 dependencies = [
