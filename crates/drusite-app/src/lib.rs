@@ -180,7 +180,6 @@ impl Ready {
         }
     }
 
-    #[cfg(desktop)]
     /// Starts (or stops) the local MCP endpoint as the store says.
     #[cfg(desktop)]
     async fn restart_agents(&self) {
@@ -236,6 +235,7 @@ impl Ready {
         Ok(response)
     }
 
+    #[cfg(desktop)]
     fn stop_bridge(&self) {
         let old = self.bridge.lock().ok().and_then(|mut b| b.take());
         drop(old);
