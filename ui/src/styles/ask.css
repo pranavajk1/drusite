@@ -430,6 +430,8 @@
   .ask {
     position: fixed;
     inset: 0;
+    /* Above the on-screen keyboard while it's up (set by Ask.svelte). */
+    bottom: var(--ask-keyboard, 0px);
     z-index: var(--z-modal);
     width: auto;
     height: auto;

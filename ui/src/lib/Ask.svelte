@@ -58,6 +58,12 @@
   let confirming = $state<string | null>(null);
   let rowMenu = $state<{ anchor: HTMLElement; id: string } | null>(null);
   let scroller = $state<HTMLElement | null>(null);
+  /**
+   * The on-screen keyboard's height, where it covers the window rather than shrinking it (iOS,
+   * Android 15 and later): the full-screen panel ends above it, so the question box stays in view
+   * and the page underneath isn't scrolled to reach it.
+   */
+  let keyboard = $state(0);
   let input = $state<HTMLTextAreaElement | null>(null);
 
   let seq = 0;
@@ -113,10 +119,22 @@
     });
     const focus = () => void refreshStatus().then(refreshList);
     window.addEventListener("focus", focus);
+    const vv = window.visualViewport;
+    const measure = () => {
+      if (!vv) return;
+      keyboard = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+      // The browser may have scrolled the layout to show the focused box; the panel is fixed,
+      // so put it back.
+      if (keyboard > 0 && window.matchMedia("(max-width: 700px)").matches) window.scrollTo(0, 0);
+    };
+    vv?.addEventListener("resize", measure);
+    vv?.addEventListener("scroll", measure);
     void tick().then(() => input?.focus());
     return () => {
       stop();
       window.removeEventListener("focus", focus);
+      vv?.removeEventListener("resize", measure);
+      vv?.removeEventListener("scroll", measure);
       if (request) void client.cancelAsk(request);
     };
   });
@@ -301,7 +319,7 @@
   {/each}
 {/snippet}
 
-<section class="ask" aria-label="Ask your notes">
+<section class="ask" aria-label="Ask your notes" style:--ask-keyboard="{keyboard}px">
   <header class="ask-head">
     <span class="ask-title">
       {#if view === "history"}Chats{:else}{title || "Ask your notes"}{/if}
