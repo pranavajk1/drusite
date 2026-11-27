@@ -10,7 +10,7 @@ import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
 
 import type { BlockKind } from "../core/types";
 import { type IconName, iconSvg } from "../lib/icons/icons";
-import { visibleBottom } from "../lib/ui/floating";
+import { visibleBottom, visibleTop } from "../lib/ui/floating";
 import { PICK_FILES } from "./attachments";
 import { attrsOf } from "./convert";
 import { defaultQueryJson } from "./query";
@@ -151,7 +151,7 @@ class MenuView {
     const bottom = visibleBottom();
     const below = at.bottom + 6;
     const roomBelow = bottom - 8 - below;
-    const roomAbove = at.top - 6 - 8;
+    const roomAbove = at.top - 6 - 8 - visibleTop();
     if (r.height <= roomBelow || roomBelow >= roomAbove) {
       this.dom.style.maxHeight = `${Math.max(120, roomBelow)}px`;
       this.dom.style.top = `${below}px`;

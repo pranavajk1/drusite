@@ -144,6 +144,7 @@ label {
 
 input {
   font: inherit;
+  font-size: 16px; /* under 16px, iOS zooms the page in on focus */
   height: 40px;
   padding: 0 12px;
   border: 0;

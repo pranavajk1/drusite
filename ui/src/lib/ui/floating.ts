@@ -24,13 +24,19 @@ export function visibleBottom(): number {
   return bottom;
 }
 
+/** The top of what's visible: iOS moves the visual viewport down when the keyboard opens. */
+export function visibleTop(): number {
+  return window.visualViewport?.offsetTop ?? 0;
+}
+
 /** Below `anchor` (above if there's no room), left edges lined up, kept on screen. */
 export function placeBelow(anchor: DOMRect, size: { width: number; height: number }, matchWidth = false): Place {
   const vw = window.innerWidth;
   const vh = visibleBottom();
   let top = anchor.bottom + GAP;
-  if (top + size.height > vh - EDGE && anchor.top - GAP - size.height > EDGE) top = anchor.top - GAP - size.height;
-  top = Math.max(EDGE, Math.min(top, vh - EDGE - size.height));
+  const vt = visibleTop() + EDGE;
+  if (top + size.height > vh - EDGE && anchor.top - GAP - size.height > vt) top = anchor.top - GAP - size.height;
+  top = Math.max(vt, Math.min(top, vh - EDGE - size.height));
   const left = Math.max(EDGE, Math.min(anchor.left, vw - EDGE - size.width));
   return { top, left, minWidth: matchWidth ? anchor.width : undefined };
 }
