@@ -133,6 +133,22 @@ test("a property is added, and the table, list and calendar show the rows", asyn
   await expect(page.locator(".cal-grid")).toBeVisible();
 });
 
+test("a property chip goes into a formula where the cursor is, and typing carries on there", async ({ page }) => {
+  await newBoard(page);
+  await page.getByRole("tab", { name: "All tasks" }).click();
+  await page.getByRole("button", { name: "Add a property" }).last().click();
+  await page.getByLabel("Property name").fill("Double");
+  await page.getByRole("button", { name: "Type" }).click();
+  await page.getByRole("option", { name: "Formula" }).click();
+  const formula = page.getByLabel("Formula");
+  await formula.click();
+  await page.keyboard.type("1 + ");
+  await page.locator(".formula-props .chip", { hasText: "Status" }).click();
+  await expect(formula).toBeFocused();
+  await page.keyboard.type(" == 1");
+  await expect(formula).toHaveValue('1 + prop("Status") == 1');
+});
+
 test("a task board goes inline in a page from the slash menu", async ({ page }) => {
   await openApp(page);
   await page.keyboard.type("/kanban");

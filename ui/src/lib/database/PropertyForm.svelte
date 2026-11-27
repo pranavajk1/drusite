@@ -5,6 +5,8 @@
   rollup's relation, property and function, a formula, checked as it's typed).
 -->
 <script lang="ts">
+  import { tick } from "svelte";
+
   import type { CoreClient } from "../../core/client";
   import type { FormulaCheck, PageInfo, PropertyDef, Schema, SelectOption } from "../../core/types";
   import Icon from "../ui/Icon.svelte";
@@ -108,9 +110,25 @@
     def.options = [...def.options, o];
   }
 
+  let formulaInput = $state<HTMLTextAreaElement | null>(null);
+
+  /** Puts `prop("name")` where the cursor is in the formula (replacing a selection), and leaves
+   *  the cursor after it, in the formula, so typing goes on there. */
   function insertProp(name: string) {
     if (def.kind.type !== "formula") return;
-    def.kind = { ...def.kind, expression: `${def.kind.expression}prop("${name}")` };
+    const text = `prop("${name}")`;
+    const expr = def.kind.expression;
+    const el = formulaInput;
+    const from = el && document.activeElement === el ? el.selectionStart : expr.length;
+    const to = el && document.activeElement === el ? el.selectionEnd : expr.length;
+    def.kind = { ...def.kind, expression: expr.slice(0, from) + text + expr.slice(to) };
+    const caret = from + text.length;
+    // Once the field shows the new text, before anything else is typed.
+    void tick().then(() => {
+      if (!formulaInput) return;
+      formulaInput.focus();
+      formulaInput.setSelectionRange(caret, caret);
+    });
   }
 
   async function save() {
@@ -246,6 +264,7 @@
     {:else if def.kind.type === "formula"}
       {@const k = def.kind}
       <textarea
+        bind:this={formulaInput}
         class="input formula-input"
         rows="4"
         spellcheck="false"
@@ -261,7 +280,8 @@
       {/if}
       <div class="formula-props">
         {#each schema.properties.filter((p) => p.id !== def.id) as p (p.id)}
-          <button type="button" class="chip tag-default" onclick={() => insertProp(p.name)}>{p.name}</button>
+          <!-- Pressing a chip leaves the focus (and a phone's keyboard) in the formula. -->
+          <button type="button" class="chip tag-default" onpointerdown={(e) => e.preventDefault()} onclick={() => insertProp(p.name)}>{p.name}</button>
         {/each}
       </div>
     {:else if def.kind.type === "uniqueId"}
