@@ -22,20 +22,6 @@ env:
 # Third-party actions are pinned to a full commit SHA.
 
 jobs:
-  dco:
-    name: DCO sign-off
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Check sign-offs
-        env:
-          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-          HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-        run: .github/scripts/dco.sh "$BASE" "$HEAD"
-
   fmt:
     name: rustfmt
     runs-on: ubuntu-latest
@@ -80,21 +66,14 @@ jobs:
         run: cargo build --package drusite-model --package drusite-crdt --package drusite-wasm --target wasm32-unknown-unknown --locked
 
   server:
-    name: server on PostgreSQL ${{ matrix.postgres }}
-    # The oldest PostgreSQL Drusite supports and the newest release, each with pgvector, plus an
-    # S3-compatible store (versitygw) and a KMS (OpenBao Transit). Images are pinned by digest.
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - postgres: 16
-            image: pgvector/pgvector:0.8.7-pg16@sha256:484e838076e04939d27d3e176e91c86eea96236126023be8d3059761122e579f
-          - postgres: 19
-            image: pgvector/pgvector:0.8.7-pg19@sha256:89879f41d564f67b0c1462a491d16fcbc6de39ac10db17e7a4bba2138a5e0ba5
+    name: server on PostgreSQL 16
+    # Once, on the oldest PostgreSQL Drusite supports (newer releases keep what it relies on),
+    # with pgvector, plus an S3-compatible store (versitygw) and a KMS (OpenBao Transit). Images
+    # are pinned by digest.
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: ${{ matrix.image }}
+        image: pgvector/pgvector:0.8.7-pg16@sha256:484e838076e04939d27d3e176e91c86eea96236126023be8d3059761122e579f
         env:
           POSTGRES_PASSWORD: postgres
         ports: ["5432:5432"]

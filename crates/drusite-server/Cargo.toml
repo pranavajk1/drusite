@@ -12,6 +12,8 @@ publish.workspace = true
 [dependencies]
 argon2.workspace = true
 drusite-ai.workspace = true
+drusite-mcp.workspace = true
+rmcp = { workspace = true, features = ["server", "transport-streamable-http-server"] }
 drusite-dpop.workspace = true
 http.workspace = true
 lettre = { workspace = true, features = ["builder", "smtp-transport", "pool", "hostname", "tokio1-rustls", "aws-lc-rs", "webpki-roots"] }

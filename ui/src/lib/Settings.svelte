@@ -3,6 +3,7 @@
   import { onMount } from "svelte";
 
   import type { CoreClient } from "../core/client";
+  import Agents from "./Agents.svelte";
   import type { BridgeRound, BridgeStatus, PageId, PageInfo, Setting, Settings } from "../core/types";
   import { WEEKDAYS } from "../journal/dates";
 
@@ -10,6 +11,7 @@
     client,
     settings,
     pages,
+    server = null,
     onclose,
     onerror,
     onopen,
@@ -17,6 +19,8 @@
     client: CoreClient;
     settings: Settings;
     pages: PageInfo[];
+    /** The server this device syncs with, if signed in. */
+    server?: string | null;
     onclose: () => void;
     onerror: (e: unknown) => void;
     /** Opens a page (the one an import made). */
@@ -145,5 +149,7 @@
       <button disabled={busy} onclick={importNotes}>Import a folder…</button>
       {#if imported}<p class="hint">{imported}</p>{/if}
     {/if}
+
+    <Agents {client} {server} {onerror} />
   </div>
 </div>

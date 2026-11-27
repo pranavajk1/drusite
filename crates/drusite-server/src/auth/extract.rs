@@ -99,9 +99,19 @@ impl FromRequestParts<AppState> for Authenticated {
             }
             other => Rejection::InvalidProof(other.to_string()),
         })?;
+        // An agent's token is for the MCP endpoint only (RFC 8707), and never DPoP-free here.
+        let Some(bound) = grant
+            .dpop_jkt
+            .as_deref()
+            .filter(|_| grant.resource.is_none())
+        else {
+            return Err(Rejection::InvalidToken(
+                "the access token isn't for this endpoint",
+            ));
+        };
         if !bool::from(subtle::ConstantTimeEq::ct_eq(
             proof.jkt.as_bytes(),
-            grant.dpop_jkt.as_bytes(),
+            bound.as_bytes(),
         )) {
             return Err(Rejection::InvalidProof(ProofError::WrongKey.to_string()));
         }

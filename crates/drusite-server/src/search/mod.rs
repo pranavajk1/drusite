@@ -9,7 +9,7 @@
 //! matching pages.
 
 mod index;
-mod query;
+pub(crate) mod query;
 
 use std::sync::atomic::AtomicBool;
 

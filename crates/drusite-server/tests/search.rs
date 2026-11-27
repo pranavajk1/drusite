@@ -97,9 +97,12 @@ impl Device {
                 user,
                 client_id: "drusite-app",
                 scope: "read write".to_owned(),
-                dpop_jkt: &key.jwk().thumbprint(),
+                dpop_jkt: Some(&key.jwk().thumbprint()),
                 method: Method::Password,
                 device_name: "test",
+                resource: None,
+                access: None,
+                client_name: "",
             },
         )
         .await

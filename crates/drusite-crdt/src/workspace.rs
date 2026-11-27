@@ -562,6 +562,25 @@ impl Workspace {
     pub fn version(&self) -> VersionVector {
         self.doc.oplog_vv()
     }
+
+    /// Takes back what changed between `before` and `after` as a new edit, keeping everything
+    /// else; see [`crate::Page::revert_change`]. For titles and properties: a page an edit
+    /// created is better put in the trash than taken back, since that can be undone too.
+    pub fn revert_change(&mut self, before: &VersionVector, after: &VersionVector) -> Result<()> {
+        if !after.includes_vv(before) || !self.doc.oplog_vv().includes_vv(after) {
+            return Err(Error::Invalid(
+                "that change isn't in this workspace's history".into(),
+            ));
+        }
+        let updates = self.guard.run(|| {
+            let doc = self.doc.fork_at(&self.doc.vv_to_frontiers(after))?;
+            doc.set_peer_id(u64::MAX - (LoroDoc::new().peer_id() >> 16))?;
+            doc.revert_to(&doc.vv_to_frontiers(before))?;
+            doc.commit();
+            Ok(doc.export(ExportMode::updates(after))?)
+        })?;
+        self.import(&updates)
+    }
 }
 
 /// A property value as stored: `{t: type, v: value}`, so a date stays a date and a text that

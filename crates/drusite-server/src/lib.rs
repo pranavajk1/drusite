@@ -12,6 +12,7 @@ pub mod crypto;
 pub mod db;
 pub mod health;
 pub mod keys;
+pub mod mcp;
 pub mod policy;
 pub mod search;
 pub mod storage;

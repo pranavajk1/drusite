@@ -12,6 +12,7 @@ publish.workspace = true
 [dependencies]
 drusite-model.workspace = true
 loro.workspace = true
+similar.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

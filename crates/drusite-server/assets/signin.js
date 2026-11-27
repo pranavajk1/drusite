@@ -354,20 +354,68 @@ async function showAccount() {
           showTotpSetup(setup, "/api/v1/account/totp/confirm");
         }) }, "Set up an authenticator app"));
   }
-  const devices = await api("/api/v1/account/devices");
+  const all = await api("/api/v1/account/devices");
+  const devices = all.filter((d) => !d.agent);
+  const agents = all.filter((d) => d.agent);
+  const signOut = (d, label) => h("button", { onclick: action(async () => {
+    await api(`/api/v1/account/devices/${d.id}`, undefined, "DELETE");
+    showAccount();
+  }) }, label);
   sections.push(h("h2", {}, "Signed-in devices"), devices.length
     ? h("ul", { class: "list" }, devices.map((d) => h("li", {},
         h("span", {}, d.name || "Device", h("br"), h("small", { class: "muted" }, `last used ${new Date(d.lastUsedAt).toLocaleDateString()}`)),
-        h("button", { onclick: action(async () => {
-          await api(`/api/v1/account/devices/${d.id}`, undefined, "DELETE");
-          showAccount();
-        }) }, "Sign out"))))
+        signOut(d, "Sign out"))))
     : h("p", { class: "muted" }, "None."));
+  sections.push(h("h2", {}, "Agents"),
+    h("p", { class: "muted" }, "Agents (MCP clients such as Claude Code) can read your notes, and change them if you allow it. They can never delete pages, and you can undo what they change in the app."),
+    agents.length
+      ? h("ul", { class: "list" }, agents.map((d) => h("li", {},
+          h("span", {}, d.name || "Agent", h("br"), h("small", { class: "muted" },
+            `${accessText(d.access)} · last used ${new Date(d.lastUsedAt).toLocaleDateString()}`)),
+          signOut(d, "Disconnect"))))
+      : h("p", { class: "muted" }, "None connected."),
+    agentTokenForm());
   sections.push(h("p", {}, h("button", { onclick: action(async () => {
     await api("/api/v1/account/logout", {});
     location.assign("/login");
   }) }, "Sign out of this browser")));
   show(...sections, errorLine);
+}
+
+function accessText(access) {
+  if (!access) return "";
+  if (!access.write) return "reads only";
+  return access.journal ? "reads and writes, journal too" : "reads and writes";
+}
+
+// A token for an agent that can't sign in with a browser, such as one on a server.
+function agentTokenForm() {
+  const out = h("div", {});
+  const form = h("form", { onsubmit: action(async (e) => {
+      const f = e.target;
+      const made = await api("/api/v1/account/agent-tokens", {
+        name: value(f, "name"),
+        write: f.elements.access.value === "write",
+        journal: f.elements.journal.checked,
+        days: Number(value(f, "days")),
+      });
+      f.reset();
+      out.replaceChildren(
+        h("p", {}, "Give the agent this address and token. The token is shown only now."),
+        h("label", {}, "Address", h("input", { readonly: true, value: made.mcpUrl })),
+        h("label", {}, "Token (an Authorization: Bearer header)", h("input", { readonly: true, value: made.token })),
+        h("p", { class: "muted" }, `It works until ${new Date(made.expiresAt).toLocaleDateString()}, or until you disconnect it above.`),
+        h("button", { onclick: () => showAccount() }, "Done"));
+    }) },
+    h("p", {}, "For an agent that can't sign in with a browser (one on a server), make a token:"),
+    field("name", "The agent's name", "text", { required: true, maxlength: 100, placeholder: "Hermes" }),
+    h("label", { class: "choice" }, h("input", { type: "radio", name: "access", value: "read", checked: true }), " Read only"),
+    h("label", { class: "choice" }, h("input", { type: "radio", name: "access", value: "write" }), " Read, add and edit pages"),
+    h("label", { class: "choice" }, h("input", { type: "checkbox", name: "journal" }), " Edit journal entries too"),
+    field("days", "Lasts this many days", "number", { required: true, min: 1, max: 365, value: 90 }),
+    h("button", { type: "submit" }, "Make a token"));
+  out.append(form);
+  return out;
 }
 
 async function main() {

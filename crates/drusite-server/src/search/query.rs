@@ -34,8 +34,8 @@ const fn default_limit() -> usize {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct SearchResponse {
-    hits: Vec<Hit>,
+pub(crate) struct SearchResponse {
+    pub(crate) hits: Vec<Hit>,
     /// Whether meaning was searched too (an embedding model is configured and answered).
     semantic: bool,
     /// The embedding model's ID, when it was.
@@ -44,13 +44,13 @@ pub(super) struct SearchResponse {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct Hit {
+pub(crate) struct Hit {
     workspace: Uuid,
-    page: Uuid,
-    title: String,
+    pub(crate) page: Uuid,
+    pub(crate) title: String,
     /// The block that matched best; none when it was the title.
-    block: Option<BlockId>,
-    snippet: Vec<SnippetPart>,
+    pub(crate) block: Option<BlockId>,
+    pub(crate) snippet: Vec<SnippetPart>,
     score: f64,
     /// `"words"`, `"meaning"`, or both: which searches found it.
     matched: Vec<&'static str>,
@@ -68,23 +68,37 @@ pub(super) async fn search(
     auth: Authenticated,
     Query(params): Query<Params>,
 ) -> Result<Json<SearchResponse>, AuthError> {
-    let config = &state.config().search;
-    if !config.enabled {
+    if !state.config().search.enabled {
         return Err(AuthError::BadRequest(
             "search_disabled",
             "search is turned off on this server".into(),
         ));
     }
-    let q = params.q.trim();
-    let limit = params.limit.clamp(1, 100);
-    if q.is_empty() {
-        return Ok(Json(SearchResponse {
+    let found = run(&state, auth.user, &params.q, params.limit, None)
+        .await
+        .map_err(AuthError::internal)?;
+    Ok(Json(found))
+}
+
+/// Searches what `user` can see (in `workspace` only, if given): the best `limit` pages for
+/// `q`, each with its best block.
+pub(crate) async fn run(
+    state: &AppState,
+    user: drusite_model::UserId,
+    q: &str,
+    limit: usize,
+    workspace: Option<Uuid>,
+) -> anyhow::Result<SearchResponse> {
+    let config = &state.config().search;
+    let q = q.trim();
+    let limit = limit.clamp(1, 100);
+    if q.is_empty() || !config.enabled {
+        return Ok(SearchResponse {
             hits: Vec::new(),
             semantic: false,
             model: None,
-        }));
+        });
     }
-    let internal = |e: anyhow::Error| AuthError::internal(e);
 
     // The query's vector first, outside any transaction.
     let mut query_vector = None;
@@ -100,22 +114,18 @@ pub(super) async fn search(
     }
 
     // Both rankings as the user, so row-level security limits them to their workspaces.
-    let mut tx = state
-        .db()
-        .as_user(auth.user)
-        .await
-        .map_err(|e| internal(e.into()))?;
+    let mut tx = state.db().as_user(user).await?;
     let words: Vec<(Uuid, Uuid, Uuid)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT workspace_id, page_id, block_id
          FROM search_blocks, websearch_to_tsquery($1::regconfig, $2) q
-         WHERE tsv @@ q
+         WHERE tsv @@ q AND ($3::uuid IS NULL OR workspace_id = $3)
          ORDER BY ts_rank_cd(tsv, q) DESC, page_id, block_id LIMIT {DEPTH}"
     )))
     .bind(&config.text_config)
     .bind(q)
+    .bind(workspace)
     .fetch_all(&mut *tx)
-    .await
-    .map_err(|e| internal(e.into()))?;
+    .await?;
     let mut meaning: Vec<(Uuid, Uuid, Uuid)> = Vec::new();
     let model = state.embedder().map(|e| e.model_id().to_owned());
     // Nearest neighbours always exist; only those close enough in meaning count. Cosine
@@ -126,16 +136,17 @@ pub(super) async fn search(
             "SELECT workspace_id, page_id, block_id FROM search_embeddings
              WHERE model = $2 AND vector_dims(embedding) = {dims}
                AND embedding::vector({dims}) <=> $1::vector({dims}) <= $3
+               AND ($4::uuid IS NULL OR workspace_id = $4)
              ORDER BY embedding::vector({dims}) <=> $1::vector({dims}) LIMIT {DEPTH}"
         )))
         .bind(literal)
         .bind(model)
         .bind(max_distance)
+        .bind(workspace)
         .fetch_all(&mut *tx)
-        .await
-        .map_err(|e| internal(e.into()))?;
+        .await?;
     }
-    tx.commit().await.map_err(|e| internal(e.into()))?;
+    tx.commit().await?;
 
     // Reciprocal rank fusion, then the best block of each page.
     let mut fused: HashMap<(Uuid, Uuid, Uuid), Fused> = HashMap::new();
@@ -171,11 +182,7 @@ pub(super) async fn search(
     // Snippets from the documents themselves. The workspaces came through row-level security
     // above, so the user may read them.
     let terms = fold_words(q);
-    let mut tx = state
-        .db()
-        .as_user(auth.user)
-        .await
-        .map_err(|e| internal(e.into()))?;
+    let mut tx = state.db().as_user(user).await?;
     let mut titles: HashMap<Uuid, HashMap<Uuid, String>> = HashMap::new();
     let mut hits = Vec::new();
     for ((ws, page), (block, f)) in ranked {
@@ -183,7 +190,7 @@ pub(super) async fn search(
             break;
         }
         if let std::collections::hash_map::Entry::Vacant(slot) = titles.entry(ws) {
-            let map = match store::load(&state, &mut tx, ws).await {
+            let map = match store::load(state, &mut tx, ws).await {
                 Ok(Some(doc)) => Workspace::load_all(&doc.parts())
                     .and_then(|w| w.pages())
                     .map(|ps| ps.into_iter().map(|p| (*p.id.as_uuid(), p.title)).collect())
@@ -199,7 +206,7 @@ pub(super) async fn search(
         let (block_id, text) = if block == TITLE_BLOCK {
             (None, title.clone())
         } else {
-            let text = match store::load(&state, &mut tx, page).await {
+            let text = match store::load(state, &mut tx, page).await {
                 Ok(Some(doc)) => Page::load_all(&doc.parts())
                     .ok()
                     .and_then(|p| p.block(BlockId::from_uuid(block)).ok().map(|b| b.text())),
@@ -225,10 +232,10 @@ pub(super) async fn search(
             matched,
         });
     }
-    tx.commit().await.map_err(|e| internal(e.into()))?;
-    Ok(Json(SearchResponse {
+    tx.commit().await?;
+    Ok(SearchResponse {
         hits,
         semantic: query_vector.is_some(),
         model: query_vector.and(model),
-    }))
+    })
 }

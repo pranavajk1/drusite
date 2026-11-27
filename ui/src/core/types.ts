@@ -12,6 +12,47 @@ export type AccountStatus = {
 	message: string | null,
 };
 
+/**  What an agent may do. */
+export type AgentAccess = {
+	/**  It may add to and edit pages, not only read them. */
+	write: boolean,
+	/**  It may edit journal entries too. */
+	journal: boolean,
+};
+
+/**  One agent call that changed something. */
+export type AgentCall = {
+	id: string,
+	source: AgentSource,
+	/**  The agent's name. */
+	agent: string,
+	tool: string,
+	/**  What it did, in a sentence: "Added 2 blocks to “Groceries”". */
+	summary: string,
+	/**  Unix milliseconds. */
+	at: number,
+	undoneAt: number | null,
+	/**  The pages it touched. */
+	pages: PageId[],
+};
+
+/**  Where an agent call happened. */
+export type AgentSource = 
+/**  Through this computer's local MCP endpoint. */
+"device" | 
+/**  Through the server's. */
+"server";
+
+/**  An agent connected to this computer. */
+export type AgentToken = {
+	id: string,
+	name: string,
+	access: AgentAccess,
+	/**  Unix milliseconds. */
+	createdAt: number,
+	lastUsedAt: number | null,
+};
+
 /**  Why a command failed. */
 export type ApiError = {
 	code: ErrorCode,
@@ -182,7 +223,23 @@ export type Command =
  *  Full-text search of this device's pages: every word must match, the last as a prefix.
  *  Answered with [`Response::SearchResults`], best first, one hit per page.
  */
-{ type: "search"; query: string; limit: number };
+{ type: "search"; query: string; limit: number } | 
+/**
+ *  Agents: the local MCP endpoint, the tokens made for agents on this computer, and what
+ *  agents did (here and, on the apps, on the server). Answered with [`Response::Agents`].
+ */
+{ type: "agents" } | 
+/**  Turns the local MCP endpoint (`http://127.0.0.1:<port>/mcp`) on or off. Desktops only. */
+{ type: "setLocalAgents"; enabled: boolean; port: number } | 
+/**
+ *  Makes a token for an agent on this computer. Answered with [`Response::AgentToken`]:
+ *  the only time the token is shown.
+ */
+{ type: "createAgentToken"; name: string; access: AgentAccess } | 
+/**  Disconnects an agent on this computer. */
+{ type: "revokeAgentToken"; id: string } | 
+/**  Takes back what one agent call changed, as a new edit. */
+{ type: "undoAgentCall"; id: string; source: AgentSource };
 
 /**  How a condition compares a property. */
 export type Comparison = 
@@ -246,6 +303,8 @@ export type Event =
 { type: "pagesChanged"; pages: PageInfo[] } | 
 /**  What's in the trash changed. */
 { type: "trashChanged"; pages: TrashItem[] } | 
+/**  An agent on this computer changed something, or the agents' list changed. */
+{ type: "agentsChanged" } | 
 /**  A file this device was waiting for has come from the server. */
 { type: "attachmentArrived"; blob: string } | 
 /**  The Markdown bridge ran a round that did something, or failed. */
@@ -278,6 +337,18 @@ export type ImportReport = {
 	attachments: number,
 	/**  Links and embeds that pointed at nothing in the folder, and files that couldn't be read. */
 	unresolved: string[],
+};
+
+/**  The local MCP endpoint. */
+export type LocalAgents = {
+	/**  This build can run one (desktops). */
+	available: boolean,
+	enabled: boolean,
+	port: number,
+	/**  Where agents connect: `http://127.0.0.1:<port>/mcp`. */
+	url: string,
+	/**  Why it isn't running, when it should be. */
+	problem: string | null,
 };
 
 /**  One mark, for adding or removing formatting on a range. */
@@ -365,7 +436,11 @@ export type Response = { type: "pages"; pages: PageInfo[] } | { type: "pageCreat
 /**  The journal entry for a day; `created` when it was made just now. */
 { type: "journalDay"; page: PageInfo; created: boolean } | { type: "settings"; settings: Settings } | { type: "searchResults"; hits: SearchHit[] } | { type: "trash"; pages: TrashItem[] } | { type: "attachment"; kind: BlockKind } | 
 /**  A file, in base64. */
-{ type: "attachmentData"; data: string } | { type: "bridge"; status: BridgeStatus } | { type: "imported"; report: ImportReport } | { type: "done" };
+{ type: "attachmentData"; data: string } | { type: "bridge"; status: BridgeStatus } | { type: "imported"; report: ImportReport } | { type: "agents"; local: LocalAgents; tokens: AgentToken[]; 
+/**  Newest first. */
+activity: AgentCall[]; 
+/**  Why the server's activity couldn't be listed, if it couldn't. */
+serverProblem: string | null } | { type: "agentToken"; token: string; url: string } | { type: "done" };
 
 /**  A page that matched a search, at the block that matched best (none when only the title did). */
 export type SearchHit = {

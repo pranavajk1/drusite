@@ -1902,6 +1902,14 @@ criteria = "safe-to-deploy"
 version = "0.17.11"
 criteria = "safe-to-deploy"
 
+[[exemptions.rmcp]]
+version = "3.12.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.rmcp-macros]]
+version = "3.12.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.rsa]]
 version = "0.9.10"
 criteria = "safe-to-deploy"
@@ -1998,6 +2006,10 @@ criteria = "safe-to-deploy"
 version = "0.8.22"
 criteria = "safe-to-deploy"
 
+[[exemptions.schemars_derive]]
+version = "1.2.3"
+criteria = "safe-to-deploy"
+
 [[exemptions.scoped-tls]]
 version = "1.0.1"
 criteria = "safe-to-deploy"
@@ -2056,6 +2068,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.serde_derive_internals]]
 version = "0.29.1"
+criteria = "safe-to-deploy"
+
+[[exemptions.serde_derive_internals]]
+version = "0.30.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.serde_json]]
@@ -2252,6 +2268,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.sqlx-sqlite]]
 version = "0.9.1"
+criteria = "safe-to-deploy"
+
+[[exemptions.sse-stream]]
+version = "0.2.6"
 criteria = "safe-to-deploy"
 
 [[exemptions.stable_deref_trait]]
@@ -2580,6 +2600,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.unicase]]
 version = "2.10.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.unicode-general-category]]
+version = "1.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.unicode-ident]]

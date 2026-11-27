@@ -1,21 +1,14 @@
 # Contributing to Drusite
 
-## Licence and sign-off
+## Licence and signed commits
 
 Drusite is licensed under AGPL-3.0-or-later ([`LICENSE`](LICENSE)), with the additional permission
 in [`APP-STORE-EXCEPTION.md`](APP-STORE-EXCEPTION.md). By contributing, you agree that your
 contribution is licensed under those same terms, the additional permission included.
 
-There is no CLA. Instead, every commit carries a sign-off under the
-[Developer Certificate of Origin](DCO): a line at the end of the commit message, matching the
-commit's author, certifying that you have the right to submit the change under the project's
-licence.
-
-```text
-Signed-off-by: Your Name <you@example.com>
-```
-
-`git commit -s` adds it. CI checks every commit in a pull request and fails without one.
+There is no CLA. Every commit must be signed (with a GPG or SSH key GitHub knows, so it shows as
+Verified): `main` accepts signed commits only. A sign-off under the
+[Developer Certificate of Origin](DCO) (`git commit -s`) is welcome too, but nothing checks it.
 
 ## Checks
 
@@ -31,11 +24,11 @@ cargo xtask bindings --check
 ```
 
 The server's tests need PostgreSQL with pgvector, and two of them an S3-compatible store and
-OpenBao; without them those tests are skipped (CI runs them all, on PostgreSQL 16 and the
-newest release). To run them locally:
+OpenBao; without them those tests are skipped (CI runs them all, once, on PostgreSQL 16, the oldest
+release Drusite supports). To run them locally:
 
 ```bash
-docker run -d --name drusite-pg -e POSTGRES_PASSWORD=postgres -p 55432:5432 pgvector/pgvector:0.8.7-pg19
+docker run -d --name drusite-pg -e POSTGRES_PASSWORD=postgres -p 55432:5432 pgvector/pgvector:0.8.7-pg16
 DRUSITE_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:55432/postgres cargo test -p drusite-server
 ```
 

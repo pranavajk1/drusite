@@ -24,8 +24,8 @@ use specta::Type;
 use crate::api::{ApiError, ErrorCode};
 use crate::attachments::{blob_id, guess_mime};
 use crate::bridge::PAGE_LINK;
-use crate::bridge::merge::{self, Wanted};
 use crate::engine::Core;
+use drusite_crdt::merge::{self, Wanted};
 
 /// The largest embedded file imported.
 const MAX_FILE: u64 = 100 * 1024 * 1024;

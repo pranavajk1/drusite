@@ -87,3 +87,37 @@ alone can confirm that a workspace holds a file someone already has.
 
 A reverse proxy in front of Drusite must accept request bodies that large too (for example
 Traefik's `buffering` middleware, or `client_max_body_size` in nginx).
+
+## Agents (MCP)
+
+Agents such as Claude Code connect at `https://<your server>/mcp` (MCP over Streamable HTTP).
+To connect Claude Code, run:
+
+```sh
+claude mcp add --transport http drusite https://notes.example.com/mcp
+```
+
+The agent signs in through the browser like an app does, using a
+[Client ID Metadata Document](https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/)
+(no registration step). Then a consent page asks what it may do:
+
+- which workspaces it can see;
+- read only, or read and edit;
+- whether it may edit journal entries (it can't unless you allow it).
+
+Its tokens are good at `/mcp` only (RFC 8707). Agents have no tools that delete. Every change one
+makes is recorded, and the app lists those changes with an undo button for each.
+
+An agent that can't open a browser, such as one running on a server, uses a token from the
+account page (`/account` → Agents → Make a token), sent as `Authorization: Bearer <token>`.
+Disconnecting an agent on that page ends its access at once.
+
+| Setting | Default | |
+|---|---|---|
+| `DRUSITE__AGENTS__ENABLED` | `true` | `false` turns `/mcp` off |
+| `DRUSITE__AGENTS__MAX_TOKEN_DAYS` | `365` | the longest an account-page token can last |
+| `DRUSITE__AGENTS__ALLOW_INSECURE_CLIENT_IDS` | `false` | development only: lets client IDs be plain-HTTP or private-network URLs |
+
+When the server fetches a client's metadata document, it refuses addresses on private
+networks. Your reverse proxy must pass the `/.well-known/oauth-protected-resource` paths through
+to Drusite.

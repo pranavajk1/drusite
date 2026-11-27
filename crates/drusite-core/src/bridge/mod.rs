@@ -12,7 +12,6 @@
 //! The folder holds plain text, outside the encrypted store: it is off until someone picks a
 //! folder, and only on that device.
 
-pub mod merge;
 pub mod paths;
 #[cfg(feature = "watch")]
 pub mod watch;
@@ -29,7 +28,7 @@ use crate::api::{ApiError, ErrorCode, Event};
 use crate::attachments::{blob_id, guess_mime};
 use crate::engine::{Core, patch_for};
 use crate::store::BridgeFile;
-use merge::Wanted;
+use drusite_crdt::merge::{self, Wanted};
 use paths::{ATTACHMENTS, children_dir, file_name, layout, relative, resolve};
 
 /// How a page links to another in its text.

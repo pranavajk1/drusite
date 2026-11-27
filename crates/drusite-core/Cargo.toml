@@ -17,7 +17,9 @@ sqlite = ["dep:rusqlite", "dep:tantivy"]
 # The Markdown bridge's folder watcher, for desktops.
 watch = ["sqlite", "dep:notify", "dep:notify-debouncer-full"]
 # The WebSocket sync driver, for native apps and tests.
-net = ["sqlite", "drusite-proto/zstd", "dep:tokio", "dep:tokio-tungstenite", "dep:futures-util", "dep:http", "dep:ureq", "dep:rustls"]
+net = ["sqlite", "drusite-proto/zstd", "dep:tokio", "dep:tokio-tungstenite", "dep:futures-util", "dep:http", "dep:ureq", "dep:rustls", "dep:serde_json"]
+# The local MCP endpoint, for agents on the same computer: desktops.
+mcp = ["net", "dep:drusite-mcp", "dep:axum", "dep:rmcp", "dep:tower", "tokio/net"]
 
 [dependencies]
 base64.workspace = true
@@ -28,7 +30,11 @@ url.workspace = true
 drusite-crdt.workspace = true
 drusite-model.workspace = true
 drusite-markdown.workspace = true
-similar.workspace = true
+drusite-mcp = { workspace = true, optional = true }
+axum = { workspace = true, optional = true, features = ["tokio", "http1"] }
+rmcp = { workspace = true, optional = true, features = ["server", "transport-streamable-http-server"] }
+tower = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 # Compressed frames only where there is a network driver: zstd is C, and the browser build
 # reads and writes plain frames.
 drusite-proto = { workspace = true, default-features = false }

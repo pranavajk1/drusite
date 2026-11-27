@@ -144,7 +144,101 @@ pub enum Command {
         query: String,
         limit: u32,
     },
+    /// Agents: the local MCP endpoint, the tokens made for agents on this computer, and what
+    /// agents did (here and, on the apps, on the server). Answered with [`Response::Agents`].
+    Agents,
+    /// Turns the local MCP endpoint (`http://127.0.0.1:<port>/mcp`) on or off. Desktops only.
+    SetLocalAgents {
+        enabled: bool,
+        port: u16,
+    },
+    /// Makes a token for an agent on this computer. Answered with [`Response::AgentToken`]:
+    /// the only time the token is shown.
+    CreateAgentToken {
+        name: String,
+        access: AgentAccess,
+    },
+    /// Disconnects an agent on this computer.
+    RevokeAgentToken {
+        id: String,
+    },
+    /// Takes back what one agent call changed, as a new edit.
+    UndoAgentCall {
+        id: String,
+        source: AgentSource,
+    },
 }
+
+/// What an agent may do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentAccess {
+    /// It may add to and edit pages, not only read them.
+    pub write: bool,
+    /// It may edit journal entries too.
+    pub journal: bool,
+}
+
+/// Where an agent call happened.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum AgentSource {
+    /// Through this computer's local MCP endpoint.
+    Device,
+    /// Through the server's.
+    Server,
+}
+
+/// An agent connected to this computer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentToken {
+    pub id: String,
+    pub name: String,
+    pub access: AgentAccess,
+    /// Unix milliseconds.
+    #[specta(type = u32)]
+    pub created_at: i64,
+    #[specta(type = Option<u32>)]
+    pub last_used_at: Option<i64>,
+}
+
+/// One agent call that changed something.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentCall {
+    pub id: String,
+    pub source: AgentSource,
+    /// The agent's name.
+    pub agent: String,
+    pub tool: String,
+    /// What it did, in a sentence: "Added 2 blocks to “Groceries”".
+    pub summary: String,
+    /// Unix milliseconds.
+    #[specta(type = u32)]
+    pub at: i64,
+    #[specta(type = Option<u32>)]
+    pub undone_at: Option<i64>,
+    /// The pages it touched.
+    pub pages: Vec<PageId>,
+}
+
+/// The local MCP endpoint.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalAgents {
+    /// This build can run one (desktops).
+    pub available: bool,
+    pub enabled: bool,
+    pub port: u16,
+    /// Where agents connect: `http://127.0.0.1:<port>/mcp`.
+    pub url: String,
+    /// Why it isn't running, when it should be.
+    pub problem: Option<String>,
+}
+
+/// The port the local MCP endpoint uses unless the person picks another.
+pub const LOCAL_AGENTS_PORT: u16 = 47_321;
 
 /// A page that matched a search, at the block that matched best (none when only the title did).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
@@ -344,6 +438,18 @@ pub enum Response {
     Imported {
         report: crate::import::ImportReport,
     },
+    Agents {
+        local: LocalAgents,
+        tokens: Vec<AgentToken>,
+        /// Newest first.
+        activity: Vec<AgentCall>,
+        /// Why the server's activity couldn't be listed, if it couldn't.
+        server_problem: Option<String>,
+    },
+    AgentToken {
+        token: String,
+        url: String,
+    },
     Done,
 }
 
@@ -360,6 +466,8 @@ pub enum Event {
     PagesChanged { pages: Vec<PageInfo> },
     /// What's in the trash changed.
     TrashChanged { pages: Vec<TrashItem> },
+    /// An agent on this computer changed something, or the agents' list changed.
+    AgentsChanged,
     /// A file this device was waiting for has come from the server.
     AttachmentArrived { blob: String },
     /// The Markdown bridge ran a round that did something, or failed.

@@ -8,6 +8,7 @@ import { runQuery } from "../journal/query";
 import { dayTitle } from "../journal/dates";
 import type { Transport } from "./client";
 import type {
+  AgentToken,
   ApiError,
   Block,
   BlockId,
@@ -106,6 +107,9 @@ export class MemoryCore {
   /** Attachments, in base64, by ID (here a counter, not a hash: nothing checks it). */
   private readonly files = new Map<string, string>();
   private readonly listeners = new Set<(e: Event) => void>();
+  /** Agents on "this computer": a stand-in, since nothing here can listen on a port. */
+  private localAgents = { enabled: false, port: 47321 };
+  private agentTokens: AgentToken[] = [];
 
   readonly transport: Transport = {
     call: async (command) => this.handle(command),
@@ -357,6 +361,45 @@ export class MemoryCore {
       case "setBridgeFolder":
       case "importFolder":
         fail("unsupported", "the Markdown folder is in the desktop app");
+      case "agents":
+        return {
+          type: "agents",
+          local: {
+            available: true,
+            ...this.localAgents,
+            url: `http://127.0.0.1:${this.localAgents.port}/mcp`,
+            problem: null,
+          },
+          tokens: this.agentTokens,
+          activity: [],
+          serverProblem: null,
+        };
+      case "setLocalAgents":
+        this.localAgents = { enabled: command.enabled, port: command.port };
+        this.emit({ type: "agentsChanged" });
+        return { type: "done" };
+      case "createAgentToken": {
+        const name = command.name.trim();
+        if (!name) fail("invalid", "give the agent a name of up to 100 characters");
+        this.agentTokens = [
+          ...this.agentTokens,
+          {
+            id: newId(),
+            name,
+            access: { write: command.access.write, journal: command.access.write && command.access.journal },
+            createdAt: Date.now(),
+            lastUsedAt: null,
+          },
+        ];
+        this.emit({ type: "agentsChanged" });
+        return { type: "agentToken", token: `drusite_local_${newId()}`, url: `http://127.0.0.1:${this.localAgents.port}/mcp` };
+      }
+      case "revokeAgentToken":
+        this.agentTokens = this.agentTokens.filter((t) => t.id !== command.id);
+        this.emit({ type: "agentsChanged" });
+        return { type: "done" };
+      case "undoAgentCall":
+        fail("invalid", "no such agent call");
       case "emptyTrash":
         this.deleteForever(this.trash().map((t) => t.id));
         return { type: "done" };

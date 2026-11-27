@@ -53,6 +53,8 @@ pub const OIDC_PATH: &str = "/api/v1/auth/oidc";
 pub struct AuthState {
     pub mailer: mail::Mailer,
     providers: oidc::Providers,
+    /// Agents' metadata documents, fetched lately.
+    pub clients: clients::ClientCache,
 }
 
 impl AuthState {
@@ -60,6 +62,7 @@ impl AuthState {
         Ok(Self {
             mailer,
             providers: oidc::Providers::new()?,
+            clients: clients::ClientCache::default(),
         })
     }
 }
@@ -148,6 +151,15 @@ pub fn routes(state: &AppState) -> Router<AppState> {
         .route(oauth::CONTINUE_PATH, get(oauth::resume))
         .route(oauth::TOKEN_PATH, post(oauth::token))
         .route(oauth::REVOKE_PATH, post(oauth::revoke))
+        .route(oauth::CONSENT_PATH, get(oauth::consent_page))
+        .merge(
+            Router::new()
+                .route(oauth::CONSENT_PATH, post(oauth::consent_answer))
+                .layer(axum::middleware::from_fn_with_state(
+                    state.clone(),
+                    session::same_origin_only,
+                )),
+        )
 }
 
 /// Deletes expired tokens, challenges and the like every few minutes.

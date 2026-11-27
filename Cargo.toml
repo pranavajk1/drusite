@@ -21,6 +21,7 @@ drusite-dpop = { path = "crates/drusite-dpop" }
 drusite-proto = { path = "crates/drusite-proto" }
 drusite-ai = { path = "crates/drusite-ai" }
 drusite-markdown = { path = "crates/drusite-markdown" }
+drusite-mcp = { path = "crates/drusite-mcp" }
 tauri-plugin-drusite = { path = "crates/tauri-plugin-drusite" }
 
 # Third-party. Each is the newest stable release when added; bump them together.
@@ -67,6 +68,8 @@ unicode-normalization = "0.1.26"
 tantivy = { version = "0.27.0", default-features = false, features = ["lz4-compression"] }
 toml = "1.2.3"
 tower = "0.5.3"
+rmcp = { version = "3.12.0", default-features = false }
+schemars = "1.2.3"
 tower-http = "0.7.1"
 tracing = "0.1.44"
 tracing-opentelemetry = "0.34.0"

@@ -198,6 +198,8 @@ struct Inner {
     fresh: Mutex<Option<Access>>,
     /// Set by [`Supervisor::stop`]: the loop ends when it next wakes.
     stopped: AtomicBool,
+    /// The server and the access token the loop is using, for other requests the app makes.
+    current: Mutex<Option<(Url, String)>>,
 }
 
 /// The device's connection to its server. Cheap to clone; every clone is the same supervisor.
@@ -255,6 +257,7 @@ impl Supervisor {
             wake: Notify::new(),
             fresh: Mutex::new(None),
             stopped: AtomicBool::new(false),
+            current: Mutex::new(None),
         });
         runtime.spawn(run(Arc::clone(&inner)));
         Self { inner }
@@ -420,6 +423,87 @@ impl Supervisor {
     fn set(&self, status: AccountStatus) {
         set_status(&self.inner, status);
     }
+
+    /// The server and access token, while signed in.
+    fn current(&self) -> Result<(Url, String), String> {
+        self.inner
+            .current
+            .lock()
+            .ok()
+            .and_then(|c| c.clone())
+            .ok_or_else(|| "not connected to the server".to_owned())
+    }
+
+    fn workspace(&self) -> Result<String, String> {
+        self.inner
+            .core
+            .lock()
+            .map(|c| c.workspace_id().to_string())
+            .map_err(|_| "the core crashed".to_owned())
+    }
+
+    /// What agents did through the server in this device's workspace, newest first.
+    pub async fn server_agent_activity(&self) -> Result<Vec<crate::api::AgentCall>, String> {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Item {
+            id: String,
+            agent: String,
+            tool: String,
+            summary: String,
+            at: i64,
+            undone_at: Option<i64>,
+            pages: Vec<drusite_model::PageId>,
+        }
+        let (server, token) = self.current()?;
+        let ws = self.workspace()?;
+        let items: Vec<Item> = get_json(
+            &server,
+            &format!("api/v1/workspaces/{ws}/agent-activity"),
+            &token,
+            &self.inner.key,
+        )
+        .await
+        .map_err(|e| AccountError::from(e).to_string())?;
+        Ok(items
+            .into_iter()
+            .map(|i| crate::api::AgentCall {
+                id: i.id,
+                source: crate::api::AgentSource::Server,
+                agent: i.agent,
+                tool: i.tool,
+                summary: i.summary,
+                at: i.at,
+                undone_at: i.undone_at,
+                pages: i.pages,
+            })
+            .collect())
+    }
+
+    /// Undoes an agent's call on the server; the change comes back here by sync.
+    pub async fn undo_server_agent_call(&self, id: &str) -> Result<(), String> {
+        let (server, token) = self.current()?;
+        let ws = self.workspace()?;
+        let url = server
+            .join(&format!("api/v1/workspaces/{ws}/agent-activity/{id}/undo"))
+            .map_err(|e| e.to_string())?;
+        let proof = auth::proof(&*self.inner.key, "POST", &url, Some(&token), now())
+            .map_err(|e| e.to_string())?;
+        let authorization = format!("DPoP {token}");
+        let agent = agent();
+        let _: serde_json::Value = blocking(move || {
+            read(
+                agent
+                    .post(url.as_str())
+                    .header("Authorization", &authorization)
+                    .header("DPoP", &proof)
+                    .send_empty(),
+            )
+        })
+        .await
+        .map_err(|e| AccountError::from(e).to_string())?;
+        Ok(())
+    }
 }
 
 fn set_status(inner: &Inner, status: AccountStatus) {
@@ -574,6 +658,9 @@ async fn attempt(inner: &Arc<Inner>, access: &mut Option<Access>, backoff: &mut 
     let Some(token) = access.as_ref().map(|a| a.token.clone()) else {
         return Next::Now;
     };
+    if let Ok(mut current) = inner.current.lock() {
+        *current = Some((server.clone(), token.clone()));
+    }
 
     let join = match workspace_to_join(inner, &server, &token).await {
         Ok(join) => join,

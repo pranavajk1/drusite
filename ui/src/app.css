@@ -463,6 +463,10 @@ button {
   padding: 20px 22px;
   box-shadow: 0 12px 40px rgb(0 0 0 / 0.25);
   font-size: 15px;
+  /* A long sheet (Settings) scrolls inside the screen. */
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .sheet-head {
@@ -1249,6 +1253,53 @@ button {
 
 .bridge-error {
   color: var(--danger);
+}
+
+/* Agents, in Settings */
+.agent-command {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.sheet label.agent-toggle,
+.sheet label.agent-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 400;
+  margin: 8px 0;
+}
+
+.sheet .agent-toggle input,
+.sheet .agent-choice input {
+  flex: none;
+}
+
+.agent-form {
+  margin: 12px 0;
+}
+
+.agent-made {
+  margin: 12px 0;
+}
+
+.agent-made button {
+  margin-right: 8px;
+}
+
+.agent-subhead {
+  margin: 16px 0 4px;
+  font-size: 14px;
+}
+
+.agent-undone {
+  color: var(--muted);
 }
 
 .editor a[href^="drusite:page/"] {

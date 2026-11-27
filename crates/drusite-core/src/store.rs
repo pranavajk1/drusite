@@ -29,7 +29,44 @@ use crate::{Error, Result};
 pub const STORE_FILE: &str = "workspace.drusite";
 
 /// The layout of the database itself (not of the documents in it).
-const STORE_SCHEMA: i32 = 5;
+const STORE_SCHEMA: i32 = 6;
+
+/// A token the person made for an agent on this computer (the token itself isn't kept).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentTokenRow {
+    pub id: String,
+    pub name: String,
+    /// `drusite_mcp::Access`, as JSON.
+    pub access: String,
+    pub created_at: i64,
+    pub last_used_at: Option<i64>,
+}
+
+/// One agent call that changed something, on this computer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentActivityRow {
+    pub id: String,
+    pub agent: String,
+    pub tool: String,
+    pub summary: String,
+    /// `Vec<drusite_mcp::Effect>`, as JSON.
+    pub effects: String,
+    /// Unix milliseconds.
+    pub at: i64,
+    pub undone_at: Option<i64>,
+}
+
+fn activity_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<AgentActivityRow> {
+    Ok(AgentActivityRow {
+        id: r.get(0)?,
+        agent: r.get(1)?,
+        tool: r.get(2)?,
+        summary: r.get(3)?,
+        effects: r.get(4)?,
+        at: r.get(5)?,
+        undone_at: r.get(6)?,
+    })
+}
 
 /// Compact a document after this many logged updates…
 pub const COMPACT_AFTER_UPDATES: u64 = 500;
@@ -227,6 +264,37 @@ impl Store {
                      size    INTEGER NOT NULL
                  ) STRICT;
                  PRAGMA user_version = 5;",
+            )?;
+            tx.commit()?;
+        }
+        if version < 6 {
+            // Agents on this computer: whether the local MCP endpoint is on and where, the
+            // tokens the person made for agents (only their hashes), and what agents did.
+            let tx = self.conn.transaction()?;
+            tx.execute_batch(
+                "CREATE TABLE local_agents (
+                     id      INTEGER PRIMARY KEY CHECK (id = 1),
+                     enabled INTEGER NOT NULL,
+                     port    INTEGER NOT NULL
+                 ) STRICT;
+                 CREATE TABLE agent_tokens (
+                     id           TEXT PRIMARY KEY,
+                     name         TEXT NOT NULL,
+                     token_hash   BLOB NOT NULL UNIQUE,
+                     access       TEXT NOT NULL,
+                     created_at   INTEGER NOT NULL,
+                     last_used_at INTEGER
+                 ) STRICT;
+                 CREATE TABLE agent_activity (
+                     id        TEXT PRIMARY KEY,
+                     agent     TEXT NOT NULL,
+                     tool      TEXT NOT NULL,
+                     summary   TEXT NOT NULL,
+                     effects   TEXT NOT NULL,
+                     at        INTEGER NOT NULL,
+                     undone_at INTEGER
+                 ) STRICT;
+                 PRAGMA user_version = 6;",
             )?;
             tx.commit()?;
         }
@@ -505,6 +573,131 @@ impl Store {
     pub fn blob_uploaded(&mut self, id: &str) -> Result<()> {
         self.conn
             .execute("UPDATE blobs SET uploaded = 1 WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
+    // ---- Agents on this computer ----
+
+    /// Whether the local MCP endpoint is on, and its port.
+    pub fn local_agents(&self) -> Result<Option<(bool, u16)>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT enabled, port FROM local_agents WHERE id = 1",
+                [],
+                |r| Ok((r.get::<_, i64>(0)? != 0, r.get::<_, i64>(1)?)),
+            )
+            .optional()?
+            .map(|(on, port)| (on, u16::try_from(port).unwrap_or(0))))
+    }
+
+    pub fn set_local_agents(&mut self, enabled: bool, port: u16) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO local_agents (id, enabled, port) VALUES (1, ?1, ?2)
+             ON CONFLICT (id) DO UPDATE SET enabled = excluded.enabled, port = excluded.port",
+            params![i64::from(enabled), i64::from(port)],
+        )?;
+        Ok(())
+    }
+
+    pub fn agent_tokens(&self) -> Result<Vec<AgentTokenRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, access, created_at, last_used_at FROM agent_tokens
+             ORDER BY created_at",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(AgentTokenRow {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                access: r.get(2)?,
+                created_at: r.get(3)?,
+                last_used_at: r.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<_, _>>()?)
+    }
+
+    pub fn add_agent_token(&mut self, row: &AgentTokenRow, hash: &[u8]) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO agent_tokens (id, name, token_hash, access, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![row.id, row.name, hash, row.access, row.created_at],
+        )?;
+        Ok(())
+    }
+
+    pub fn remove_agent_token(&mut self, id: &str) -> Result<bool> {
+        Ok(self
+            .conn
+            .execute("DELETE FROM agent_tokens WHERE id = ?1", [id])?
+            > 0)
+    }
+
+    /// The token with this hash, marked as used at `now`.
+    pub fn use_agent_token(&mut self, hash: &[u8], now: i64) -> Result<Option<AgentTokenRow>> {
+        let row = self
+            .conn
+            .query_row(
+                "UPDATE agent_tokens SET last_used_at = ?2 WHERE token_hash = ?1
+                 RETURNING id, name, access, created_at, last_used_at",
+                params![hash, now],
+                |r| {
+                    Ok(AgentTokenRow {
+                        id: r.get(0)?,
+                        name: r.get(1)?,
+                        access: r.get(2)?,
+                        created_at: r.get(3)?,
+                        last_used_at: r.get(4)?,
+                    })
+                },
+            )
+            .optional()?;
+        Ok(row)
+    }
+
+    pub fn add_agent_activity(&mut self, row: &AgentActivityRow) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO agent_activity (id, agent, tool, summary, effects, at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                row.id,
+                row.agent,
+                row.tool,
+                row.summary,
+                row.effects,
+                row.at
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// The newest `limit` calls, newest first.
+    pub fn agent_activity(&self, limit: u32) -> Result<Vec<AgentActivityRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, agent, tool, summary, effects, at, undone_at FROM agent_activity
+             ORDER BY at DESC, id DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map([limit], activity_row)?;
+        Ok(rows.collect::<std::result::Result<_, _>>()?)
+    }
+
+    pub fn agent_call(&self, id: &str) -> Result<Option<AgentActivityRow>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT id, agent, tool, summary, effects, at, undone_at FROM agent_activity
+                 WHERE id = ?1",
+                [id],
+                activity_row,
+            )
+            .optional()?)
+    }
+
+    pub fn mark_agent_call_undone(&mut self, id: &str, now: i64) -> Result<()> {
+        self.conn.execute(
+            "UPDATE agent_activity SET undone_at = ?2 WHERE id = ?1 AND undone_at IS NULL",
+            params![id, now],
+        )?;
         Ok(())
     }
 

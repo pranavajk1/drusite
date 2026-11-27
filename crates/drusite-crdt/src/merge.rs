@@ -11,11 +11,10 @@
 
 use std::collections::{HashMap, HashSet};
 
-use drusite_crdt::{Page, Patch, VersionVector};
 use drusite_model::{Block, BlockId, BlockKind, Mark, Marks, Span};
 use similar::{Algorithm, DiffOp, capture_diff_slices};
 
-use crate::Result;
+use crate::{Page, Patch, Result, VersionVector};
 
 /// A block as a file wants it. `id` is the block it was, if it names one of the page's.
 #[derive(Debug, Clone, PartialEq)]
@@ -32,7 +31,7 @@ pub fn merge(page: &mut Page, base: &VersionVector, wanted: &[Wanted]) -> Result
     let mut fork = page.fork_at(base)?;
     apply(&mut fork, wanted)?;
     let updates = fork.export_updates(base)?;
-    Ok(page.import(&updates)?)
+    page.import(&updates)
 }
 
 /// Turns `page` into `wanted`, changing as little as it can: blocks keep their identity, text
