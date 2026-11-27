@@ -49,3 +49,23 @@ helm install drusite deploy/helm/drusite --set secret.name=drusite -f my-values.
 Whatever sits in front of the server must pass WebSockets (`/api/v1/sync`). Auth lives in
 Drusite, so don't put forward-auth or other proxy login in front of it: the apps can't follow
 it.
+
+## Search
+
+Server search is on by default: Postgres full-text search over every block, kept up to date by
+a background indexer a couple of seconds after each change. Add an embedding model to search by
+meaning too; any OpenAI-compatible endpoint works (OpenAI, LiteLLM, Ollama, vLLM, …):
+
+```sh
+DRUSITE__SEARCH__EMBEDDINGS__BASE_URL=http://litellm:4000/v1
+DRUSITE__SEARCH__EMBEDDINGS__MODEL=text-embedding-3-small
+DRUSITE__SEARCH__EMBEDDINGS__API_KEY_FILE=/run/secrets/embeddings
+```
+
+The database holds each block's words (a `tsvector`) and its embedding, never its text: snippets
+are made by opening the sealed document when someone searches. Words and embeddings are still
+derived from the text and reveal what it's about to anyone who can read the database or its
+backups. `DRUSITE__SEARCH__ENABLED=false` keeps them out (and turns server search off).
+
+Every vector is stored with its model's ID. Changing the model embeds everything again in the
+background; searches use only vectors from the current model.

@@ -14,6 +14,7 @@ use specta::Type;
 use uuid::Uuid;
 
 pub mod journal;
+pub mod search;
 pub use journal::{
     Comparison, Condition, Day, DayError, Mood, PageKind, PageQuery, Property, PropertyValue, Sort,
 };

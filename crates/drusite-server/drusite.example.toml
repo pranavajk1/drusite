@@ -88,6 +88,23 @@ auto_create = true
 # password_file = "/run/secrets/smtp-password"
 # from = "Drusite <notes@example.com>"
 
+[search]
+# Server search: Postgres full-text search, plus semantic search when [search.embeddings] is set.
+# The database then holds each block's words (a tsvector) and embedding, never its text, but
+# both are derived from the text and reveal what it's about. Off keeps them out.
+enabled = true
+# A PostgreSQL text search configuration: "simple" works for any language; a language's
+# ("english", "german", …) adds stemming for it.
+text_config = "simple"
+
+# [search.embeddings]
+# Any OpenAI-compatible endpoint: OpenAI, LiteLLM, Ollama, vLLM, …
+# base_url = "http://litellm:4000/v1"
+# model = "text-embedding-3-small"
+# api_key_file = "/run/secrets/embeddings"
+# dimensions = 512          # for models that can shorten their vectors
+# id = "openai/text-embedding-3-small@512"   # names the vector space; defaults to the model
+
 [telemetry]
 # log_format = "json"   # or "pretty"
 # Traces, metrics and logs go over OTLP/HTTP when OTEL_EXPORTER_OTLP_ENDPOINT is set; the other

@@ -1804,6 +1804,16 @@ dependencies = [
 [[package]]
 name = "drusite-ai"
 version = "0.1.0-alpha.2"
+dependencies = [
+ "axum",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "url",
+ "zeroize",
+]
 
 [[package]]
 name = "drusite-app"
@@ -1887,6 +1897,7 @@ dependencies = [
  "specta",
  "thiserror 2.0.21",
  "time",
+ "unicode-normalization",
  "uuid",
 ]
 
@@ -1912,6 +1923,7 @@ dependencies = [
  "cedar-policy",
  "chacha20poly1305",
  "clap",
+ "drusite-ai",
  "drusite-core",
  "drusite-crdt",
  "drusite-dpop",

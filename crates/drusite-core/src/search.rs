@@ -19,14 +19,14 @@ use tantivy::schema::{
 use tantivy::tokenizer::{AsciiFoldingFilter, LowerCaser, SimpleTokenizer, TextAnalyzer};
 use tantivy::{Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, Term};
 
-use crate::api::{ApiError, ErrorCode, SearchHit, SnippetPart};
+use drusite_model::search::{fold_words, snippet};
+
+use crate::api::{ApiError, ErrorCode, SearchHit};
 use crate::engine::Core;
 
 const TOKENIZER: &str = "drusite";
 /// Memory the index writer may use before it flushes; tantivy's minimum.
 const WRITER_MEMORY: usize = 15_000_000;
-/// How much text a snippet shows around the first match, in characters.
-const SNIPPET_CHARS: usize = 160;
 
 /// The search state the core keeps: the index once built, and what changed since.
 #[derive(Default)]
@@ -78,7 +78,7 @@ fn analyzer() -> TextAnalyzer {
         .build()
 }
 
-/// The words of `text` as the index sees them.
+/// The words of `text` as the index sees them: lower case, accents folded.
 fn words(text: &str) -> Vec<String> {
     let mut analyzer = analyzer();
     let mut stream = analyzer.token_stream(text);
@@ -219,6 +219,7 @@ impl Core {
     /// Pages matching every word of `query`, the last word as a prefix (so results follow the
     /// typing), best first: at most one hit per page, at the block that matched best.
     pub(crate) fn search(&mut self, query: &str, limit: u32) -> Result<Vec<SearchHit>, ApiError> {
+        let marked = fold_words(query);
         let words = words(query);
         if words.is_empty() || limit == 0 {
             return Ok(Vec::new());
@@ -289,8 +290,8 @@ impl Core {
             }
             let block = text_of(f.block).and_then(|s| s.parse::<BlockId>().ok());
             let snippet = match &block {
-                Some(_) => snippet(&text_of(f.text).unwrap_or_default(), &words),
-                None => snippet(title, &words),
+                Some(_) => snippet(&text_of(f.text).unwrap_or_default(), &marked),
+                None => snippet(title, &marked),
             };
             hits.push(SearchHit {
                 page,
@@ -304,71 +305,6 @@ impl Core {
         }
         Ok(hits)
     }
-}
-
-/// A window of `text` around its first matching word, with every word that starts with one of
-/// `words` marked.
-fn snippet(text: &str, words: &[String]) -> Vec<SnippetPart> {
-    // Find word boundaries the same way the index does, but keep the original text.
-    let mut spans: Vec<(usize, usize, bool)> = Vec::new(); // byte ranges of words, matched?
-    let mut start = None;
-    for (i, c) in text
-        .char_indices()
-        .chain(std::iter::once((text.len(), ' ')))
-    {
-        if c.is_alphanumeric() {
-            start.get_or_insert(i);
-        } else if let Some(s) = start.take() {
-            let folded = self::words(&text[s..i]).concat();
-            let hit = words.iter().any(|w| folded.starts_with(w.as_str()));
-            spans.push((s, i, hit));
-        }
-    }
-    let first = spans.iter().find(|s| s.2).map_or(0, |s| s.0);
-    // Start a little before the first hit, on a word boundary, and end after SNIPPET_CHARS.
-    let lead = text[..first]
-        .char_indices()
-        .rev()
-        .nth(40)
-        .map_or(0, |(i, _)| i);
-    let from = spans
-        .iter()
-        .map(|s| s.0)
-        .find(|&s| s >= lead)
-        .unwrap_or(first)
-        .min(first);
-    let to = text[from..]
-        .char_indices()
-        .nth(SNIPPET_CHARS)
-        .map_or(text.len(), |(i, _)| from + i);
-
-    let mut out: Vec<SnippetPart> = Vec::new();
-    let mut push = |s: &str, highlight: bool| {
-        if s.is_empty() {
-            return;
-        }
-        match out.last_mut() {
-            Some(last) if last.highlight == highlight => last.text.push_str(s),
-            _ => out.push(SnippetPart {
-                text: s.to_owned(),
-                highlight,
-            }),
-        }
-    };
-    if from > 0 {
-        push("…", false);
-    }
-    let mut at = from;
-    for &(s, e, hit) in spans.iter().filter(|s| s.2 && s.0 >= from && s.1 <= to) {
-        push(&text[at..s], false);
-        push(&text[s..e], hit);
-        at = e;
-    }
-    push(&text[at..to], false);
-    if to < text.len() {
-        push("…", false);
-    }
-    out
 }
 
 #[cfg(test)]
@@ -506,15 +442,5 @@ mod tests {
         core.handle(Command::DeletePage { page: recipes }).unwrap();
         assert!(search(&mut core, "trout").is_empty());
         assert!(search(&mut core, "  ").is_empty());
-    }
-
-    #[test]
-    fn snippets_window_long_text() {
-        let long = format!("{} needle {}", "word ".repeat(60), "tail ".repeat(60));
-        let parts = snippet(&long, &["needle".into()]);
-        let text: String = parts.iter().map(|p| p.text.as_str()).collect();
-        assert!(text.starts_with('…') && text.ends_with('…'));
-        assert!(text.chars().count() < SNIPPET_CHARS + 50);
-        assert!(parts.iter().any(|p| p.highlight && p.text == "needle"));
     }
 }

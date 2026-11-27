@@ -10,6 +10,7 @@
 //!
 //! Positions are UTF-16 code units within one block's text, as in the browser.
 
+pub use drusite_model::search::SnippetPart;
 use drusite_model::{
     Block, BlockId, BlockKind, Day, Mark, PageId, PageKind, PageQuery, Property, PropertyValue,
 };
@@ -109,14 +110,6 @@ pub struct SearchHit {
     pub title: String,
     pub block: Option<BlockId>,
     pub snippet: Vec<SnippetPart>,
-}
-
-/// A piece of a search snippet; `highlight` marks the words that matched.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct SnippetPart {
-    pub text: String,
-    pub highlight: bool,
 }
 
 /// The settings that live in the workspace, so they sync with the account and a new device has

@@ -2,4 +2,10 @@
 
 //! The AI provider interface and its adapters, shared by clients and the server.
 //!
-//! A stub until Phase 3.
+//! For now, embeddings through any OpenAI-compatible endpoint (OpenAI itself, LiteLLM, Ollama,
+//! vLLM and the like), which search needs. The full provider interface, with native adapters
+//! per vendor, chat and a connection test, is built on top of it.
+
+pub mod embeddings;
+
+pub use embeddings::{EmbeddingError, Embeddings, OpenAiCompatible};

@@ -12,6 +12,7 @@ pub mod db;
 pub mod health;
 pub mod keys;
 pub mod policy;
+pub mod search;
 pub mod storage;
 pub mod sync;
 pub mod telemetry;

@@ -99,6 +99,72 @@ pub struct Config {
     pub smtp: Option<SmtpConfig>,
     #[serde(default)]
     pub telemetry: TelemetryConfig,
+    #[serde(default)]
+    pub search: SearchConfig,
+}
+
+/// Search over the live documents: Postgres full-text search, plus semantic search when an
+/// embedding model is configured.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SearchConfig {
+    /// Off keeps even derived data (words and embeddings) out of the database.
+    #[serde(default = "yes")]
+    pub enabled: bool,
+    /// The PostgreSQL text search configuration: `simple` (any language, no stemming) or a
+    /// language's, such as `english`.
+    #[serde(default = "default_text_config")]
+    pub text_config: String,
+    #[serde(default)]
+    pub embeddings: Option<EmbeddingsConfig>,
+}
+
+impl Default for SearchConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            text_config: default_text_config(),
+            embeddings: None,
+        }
+    }
+}
+
+fn default_text_config() -> String {
+    "simple".to_owned()
+}
+
+/// An OpenAI-compatible embeddings endpoint: OpenAI, LiteLLM, Ollama, vLLM and others.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EmbeddingsConfig {
+    /// The API's base URL, e.g. `https://api.openai.com/v1` or `http://litellm:4000/v1`.
+    pub base_url: Url,
+    pub model: String,
+    /// Names the vector space stored with every vector; the model name unless set. Changing it
+    /// (or the model) embeds everything again.
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub api_key: Option<Secret>,
+    /// Asks for vectors of this size, for models that can shorten them.
+    #[serde(default)]
+    pub dimensions: Option<u32>,
+    /// How many blocks go in one request.
+    #[serde(default = "default_embedding_batch")]
+    pub batch: usize,
+    /// How close in meaning (cosine similarity, -1 to 1) a block must be to count as a match.
+    /// Nearest neighbours always exist; this keeps unrelated ones out. Models differ: raise it
+    /// if searches return unrelated pages, lower it if they miss related ones.
+    #[serde(default = "default_min_similarity")]
+    pub min_similarity: f64,
+}
+
+const fn default_min_similarity() -> f64 {
+    0.3
+}
+
+const fn default_embedding_batch() -> usize {
+    64
 }
 
 #[derive(Debug, Deserialize)]
@@ -513,6 +579,30 @@ impl Config {
                 ));
             }
             other => return invalid(format!("public_url has unsupported scheme {other:?}")),
+        }
+
+        let search = &self.search;
+        if search.text_config.is_empty()
+            || !search
+                .text_config
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c == '_')
+        {
+            return invalid(format!(
+                "[search] text_config {:?} isn't a text search configuration name",
+                search.text_config
+            ));
+        }
+        if let Some(e) = &search.embeddings
+            && (e.model.trim().is_empty()
+                || e.batch == 0
+                || !(-1.0..=1.0).contains(&e.min_similarity))
+        {
+            return invalid(
+                "[search.embeddings] needs a model, a batch of at least 1 and a min_similarity \
+                 between -1 and 1"
+                    .into(),
+            );
         }
 
         let auth = &self.auth;
