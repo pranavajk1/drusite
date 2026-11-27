@@ -19,13 +19,26 @@ use crate::sync::store;
 const SETTLE: &str = "2 seconds";
 /// Documents taken per round.
 const BATCH: i64 = 8;
-/// A document that keeps failing is given up after this many tries.
+/// A document that keeps failing is given up after this many tries; the next sweep queues it
+/// again if it still has no vectors.
 const MAX_ATTEMPTS: i32 = 8;
+/// How often the indexer looks for documents that aren't indexed (or have no vectors from the
+/// current model), say after the embedding model was down for longer than the retries last.
+const SWEEP: Duration = Duration::from_secs(10 * 60);
 
 /// Runs the indexer until the server stops. Every node runs one; `SKIP LOCKED` shares the work.
 pub fn spawn_indexer(state: AppState) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
+        let mut swept = tokio::time::Instant::now();
         loop {
+            if swept.elapsed() >= SWEEP {
+                swept = tokio::time::Instant::now();
+                match queue_missing(&state, false).await {
+                    Ok(0) => {}
+                    Ok(n) => tracing::info!(documents = n, "queued again for search indexing"),
+                    Err(error) => tracing::warn!(%error, "looking for documents to index"),
+                }
+            }
             match round(&state).await {
                 Ok(0) => tokio::time::sleep(Duration::from_secs(1)).await,
                 Ok(_) => {}
@@ -41,6 +54,13 @@ pub fn spawn_indexer(state: AppState) -> tokio::task::JoinHandle<()> {
 /// Queues every document that isn't indexed yet (or has no vector from the current model), so
 /// a server that turns search on, or changes model, catches up. Run at startup.
 pub async fn backfill(state: &AppState) -> anyhow::Result<u64> {
+    queue_missing(state, true).await
+}
+
+/// Queues the documents with nothing indexed or no vectors from the current model, and every
+/// workspace document if `workspaces` (titles are cheap, and a page's place in the tree may have
+/// changed while the server was down).
+async fn queue_missing(state: &AppState, workspaces: bool) -> anyhow::Result<u64> {
     if !state.config().search.enabled {
         return Ok(0);
     }
@@ -49,7 +69,7 @@ pub async fn backfill(state: &AppState) -> anyhow::Result<u64> {
     let queued = sqlx::query(
         "INSERT INTO search_queue (doc_id, workspace_id)
          SELECT d.id, d.workspace_id FROM documents d
-         WHERE d.kind = 'workspace'
+         WHERE ($2 AND d.kind = 'workspace')
             OR NOT EXISTS (SELECT 1 FROM search_blocks b
                            WHERE b.workspace_id = d.workspace_id AND b.page_id = d.id)
             OR ($1::text IS NOT NULL AND NOT EXISTS (
@@ -58,11 +78,47 @@ pub async fn backfill(state: &AppState) -> anyhow::Result<u64> {
          ON CONFLICT (doc_id) DO NOTHING",
     )
     .bind(model)
+    .bind(workspaces)
     .execute(&mut *tx)
     .await?
     .rows_affected();
     tx.commit().await?;
     Ok(queued)
+}
+
+/// When the embedding model changed: drops the vectors (and vector indexes) of every other
+/// model. They can't be compared with the new model's, so they'd only take room and reveal what
+/// the notes were about. The new model's are made in the background ([`backfill`]); until it's
+/// done, semantic search finds less and full-text search carries on. Run at startup.
+pub async fn forget_other_models(state: &AppState) -> anyhow::Result<u64> {
+    let Some(embedder) = state.embedder() else {
+        return Ok(0);
+    };
+    let model = embedder.model_id();
+    let mut tx = state.db().as_system().await?;
+    let gone = sqlx::query("DELETE FROM search_embeddings WHERE model <> $1")
+        .bind(model)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    tx.commit().await?;
+    let indexes: Vec<(String, String)> = sqlx::query_as(
+        "SELECT indexname, indexdef FROM pg_indexes
+         WHERE tablename = 'search_embeddings' AND indexname LIKE 'search_embeddings_hnsw_%'",
+    )
+    .fetch_all(state.db().pool())
+    .await?;
+    let ours = format!("(model = {}::text)", quote_literal(model));
+    for (name, definition) in indexes {
+        if !definition.contains(&ours)
+            && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            sqlx::query(sqlx::AssertSqlSafe(format!("DROP INDEX IF EXISTS {name}")))
+                .execute(state.db().pool())
+                .await?;
+        }
+    }
+    Ok(gone)
 }
 
 /// Takes the documents that are due and indexes them. Returns how many it took.
@@ -241,6 +297,21 @@ async fn index_doc(state: &AppState, doc: Uuid) -> anyhow::Result<()> {
     tx.commit().await?;
 
     if let Some(embedder) = state.embedder() {
+        // Vectors another model made for these blocks (another node, mid-rollout, or before a
+        // restart dropped them all) can't be compared with this model's.
+        let mut tx = state.db().as_system().await?;
+        sqlx::query(
+            "DELETE FROM search_embeddings WHERE workspace_id = $1 AND model <> $5
+               AND (CASE WHEN $2 THEN block_id = $3 ELSE page_id = $4 AND block_id <> $3 END)",
+        )
+        .bind(ws)
+        .bind(titles)
+        .bind(TITLE_BLOCK)
+        .bind(doc)
+        .bind(embedder.model_id())
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
         embed(state, embedder, ws, doc, titles, &wanted).await?;
     }
     Ok(())
@@ -283,7 +354,26 @@ async fn embed(
         .map_or(64, |e| e.batch);
     for chunk in todo.chunks(batch) {
         let texts: Vec<String> = chunk.iter().map(|(_, (t, _))| t.clone()).collect();
-        let vectors = embedder.embed(&texts).await?;
+        let call = crate::ask::audit::Call {
+            workspace: Some(ws),
+            user: None,
+            feature: "index",
+            provider: embedder.provider(),
+            model: &model,
+            blocks: serde_json::json!([doc]),
+            items: texts.len(),
+            chars: texts.iter().map(|t| t.chars().count()).sum(),
+        };
+        let vectors = match embedder.embed(&texts).await {
+            Ok(v) => {
+                crate::ask::audit::record(state, &call, "ok").await;
+                v
+            }
+            Err(e) => {
+                crate::ask::audit::record(state, &call, crate::ask::audit::outcome_of(&e)).await;
+                return Err(e.into());
+            }
+        };
         if let Some(first) = vectors.first() {
             ensure_ann_index(state, embedder, &model, first.len()).await;
         }

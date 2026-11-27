@@ -82,8 +82,100 @@ are made by opening the sealed document when someone searches. Words and embeddi
 derived from the text and reveal what it's about to anyone who can read the database or its
 backups. `DRUSITE__SEARCH__ENABLED=false` keeps them out (and turns server search off).
 
-Every vector is stored with its model's ID. Changing the model embeds everything again in the
-background; searches use only vectors from the current model.
+Every vector is stored with its model's ID (with `@<dimensions>` added when `DIMENSIONS` is set,
+since a shorter vector is another space). Changing the model, or its dimensions, embeds everything
+again in the background: when the server starts, the old model's vectors and vector indexes are
+dropped, and the indexer re-embeds every page. Until it's done, search by meaning finds less and
+full-text search carries on. A sweep every ten minutes picks up any page left without vectors (say,
+after the embedding model was down for a while). Any size of vector works; past 2,000 dimensions
+pgvector can't build its HNSW index, so searches scan instead, which is fine for a personal
+notebook.
+
+## Ask your notes
+
+People can ask their notes a question in the apps and get an answer written by a chat model from
+their own pages, with a link to each block it used. Answers are made on the server, the same way for
+every app: the server finds the blocks (full-text search, plus semantic search when
+`[search.embeddings]` is set), only in a workspace the person can read, sends them with the
+question to the chat model, and streams the answer back. Conversations are saved in the account, so
+every device has them.
+
+It needs a chat model, configured apart from the embedding model. Without one, the apps say Ask
+isn't set up and point here. Any provider works:
+
+```sh
+# A self-hosted model behind an OpenAI-compatible endpoint: LiteLLM, Ollama, vLLM, SGLang,
+# llama.cpp's server, LM Studio, …
+DRUSITE__ASK__CHAT__BASE_URL=http://ollama:11434/v1
+DRUSITE__ASK__CHAT__MODEL=qwen3:4b
+# Optional: a key if the endpoint wants one, and the name the apps show.
+DRUSITE__ASK__CHAT__API_KEY_FILE=/run/secrets/chat
+DRUSITE__ASK__CHAT__NAME="Qwen 3 (home server)"
+```
+
+Or a vendor through its own API: `PROVIDER` is `anthropic`, `openai`, `google`, `mistral` or
+`openrouter`. A vendor needs a key and no address; `BASE_URL` replaces its address if set.
+
+```sh
+DRUSITE__ASK__CHAT__PROVIDER=anthropic
+DRUSITE__ASK__CHAT__MODEL=claude-sonnet-5-5
+DRUSITE__ASK__CHAT__API_KEY_FILE=/run/secrets/anthropic
+```
+
+Embeddings and chat can be different providers: say, a small local embedding model and a vendor's
+chat model, or the reverse. With no embedding model, Ask finds blocks by their words alone, which
+works but misses blocks that say the same thing in other words.
+
+| Setting | Default | |
+|---|---|---|
+| `DRUSITE__ASK__ENABLED` | `true` | `false` turns Ask off |
+| `DRUSITE__ASK__CHAT__MAX_TOKENS` | `4096` | the longest answer; a reasoning model's thinking counts too |
+| `DRUSITE__ASK__CHAT__TEMPERATURE` | the model's | |
+| `DRUSITE__ASK__SOURCES` | `12` | the most blocks an answer draws on |
+| `DRUSITE__ASK__MAX_CONTEXT_CHARS` | `24000` | the most text from pages sent with one question |
+| `DRUSITE__ASK__HISTORY_TURNS` | `4` | earlier questions and answers sent with a follow-up |
+| `DRUSITE__ASK__PER_MINUTE` / `PER_DAY` | `10` / `500` | questions one person may ask; two at once at most |
+| `DRUSITE__ASK__TIMEOUT_SECS` | `300` | the longest an answer may take |
+| `DRUSITE__ASK__IDLE_SECS` | `120` | the longest the model may go quiet once it has started answering |
+| `DRUSITE__ASK__AUDIT_DAYS` | `90` | how long the record of what was sent is kept |
+
+What to know before turning it on:
+
+- **The provider sees the blocks it's sent.** Each question sends up to `SOURCES` blocks of the
+  person's notes (and the question) to the chat model. With a vendor, that's the vendor; with a
+  self-hosted model, it stays on your hardware. The question also goes to the embedding model.
+- **Journal entries are left out** unless the person turns on Settings › Journal › "Ask your notes
+  reads the journal". The setting syncs with the account.
+- **Who can read what.** Only workspaces the person belongs to are searched, checked with the same
+  Cedar policy and row-level security as everything else. Conversations are the asker's alone: other
+  members of a workspace don't see them. Titles and messages are sealed with the workspace's key.
+- **Text from pages is data, not instructions.** Each block goes to the model inside an element
+  named with a random tag made for that question, which a page can't close, and the instructions say
+  never to obey what a source says. The model has no tools, and the apps show answers as plain text
+  with citations: nothing in an answer can load an image or follow a link.
+- **What was sent where is recorded** in `ai_audit`: for each call that carried something from the
+  notes (an answer, a question's or a search's vector, indexing), the feature, provider, host, model,
+  the IDs of the blocks sent, how many characters and tokens, and how it went. Never the text.
+  Workspace owners can read it at `GET /api/v1/workspaces/<id>/ai-audit`. The per-person limits
+  count these records, so they hold across replicas.
+- **No note text in the logs.** Provider errors are logged as a category (`unauthorized`,
+  `rate_limited`, `network`, …), never with the provider's message, which can quote the request.
+- **Reasoning models** (Qwen 3, DeepSeek R1 and the like) are fine: a `<think>` block at the start
+  of an answer is held back, and reasoning sent in its own field is never read. Their thinking
+  counts toward `MAX_TOKENS`; if answers come back empty, raise it.
+- An answer is written by a task of its own on the server, so if the phone sleeps or the
+  connection drops, it's still saved, and the conversation shows it when opened again.
+
+To try it on your own machine with a small model:
+
+```sh
+docker run -d --name ollama -p 11434:11434 ollama/ollama
+docker exec ollama ollama pull qwen3:0.6b
+docker exec ollama ollama pull nomic-embed-text
+DRUSITE__ASK__CHAT__BASE_URL=http://localhost:11434/v1 DRUSITE__ASK__CHAT__MODEL=qwen3:0.6b \
+DRUSITE__SEARCH__EMBEDDINGS__BASE_URL=http://localhost:11434/v1 \
+DRUSITE__SEARCH__EMBEDDINGS__MODEL=nomic-embed-text drusite-server
+```
 
 ## Attachments
 

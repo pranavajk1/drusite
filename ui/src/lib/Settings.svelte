@@ -40,6 +40,7 @@
   import Icon from "./ui/Icon.svelte";
   import Modal from "./ui/Modal.svelte";
   import Select from "./ui/Select.svelte";
+  import Switch from "./ui/Switch.svelte";
 
   let {
     client,
@@ -246,6 +247,15 @@
               options={pageOptions("An empty page")}
               onchange={(v) => set({ type: "journalTemplate", value: page(v) })}
             />
+          </div>
+          <div class="set-row">
+            <div class="set-row-text">
+              <label class="set-label" for="ask-journal">Ask your notes reads the journal</label>
+              <span class="set-desc">
+                Off, answers leave journal entries out. For this account, on every device.
+              </span>
+            </div>
+            <Switch id="ask-journal" checked={settings.askJournal} onchange={(on) => set({ type: "askJournal", value: on })} />
           </div>
           <div class="set-row">
             <div class="set-row-text">

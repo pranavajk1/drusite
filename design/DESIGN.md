@@ -15,6 +15,7 @@ The code is the other half of the standard:
 | Page, editor, journal | `ui/src/styles/page.css`, `editor.css`, `journal.css` |
 | Modals, search, toasts, menus | `ui/src/styles/overlays.css` |
 | Settings | `ui/src/styles/settings.css` |
+| Ask your notes | `ui/src/styles/ask.css` |
 | Icons | `ui/src/lib/icons/icons.ts` (Lucide, ISC) |
 | Server pages (sign-in, consent) | `crates/drusite-server/assets/signin.css` |
 
@@ -135,6 +136,7 @@ A **4 px scale**: `--space-1` 4, `-2` 8, `-3` 12, `-4` 16, `-5` 20, `-6` 24, `-8
 | `--row` | 28 px (40 on touch) | Sidebar rows, menu items, small buttons, inline selects |
 | `--control` | 32 px (44 on touch) | Inputs and buttons |
 | `--sidebar-width` | 248 px | Desktop sidebar, by default; it can be dragged from 200 to 480 px |
+| `--ask-width` | 400 px | The Ask panel beside the page |
 | `--page-width` | 720 px | The text column |
 | `--page-pad` | 96 px (16 on phones) | Side padding around the column |
 | `--topbar` | 44 px | Top bar |
@@ -199,6 +201,9 @@ Moods use Lucide faces (angry, frown, meh, smile, laugh) in the mood colours.
 | Fold, expand | `chevron-right`, turned 90° when open |
 | Sidebar | `panel-left` (phone: `menu`) |
 | Restore | `rotate-ccw` |
+| Ask your notes | `sparkles` |
+| Saved chats / a chat | `history` / `message-square-text` |
+| Ask (send) / stop | `arrow-up` / `square` |
 | Sync off | `cloud-off` |
 
 ## 7. Components and surfaces
@@ -312,6 +317,35 @@ Moods use Lucide faces (angry, frown, meh, smile, laugh) in the mood colours.
 - Settings opens from ⌘, or the account menu (at the list on phones), and at Account & sync from the
   top bar's sync status or "Sign in to sync".
 - Markdown folder and Import appear only where the core supports them (desktops).
+
+### 7.9 Ask your notes (`Ask.svelte`, `ask.css`)
+
+- **Where**: a panel at the right of the page, as in Notion AI, 400 px, `--bg` with a hairline on its left,
+  the full height of the window. It opens from the top bar's `sparkles` button, the sidebar's "Ask" row,
+  or ⌘J, and stays open per device. Between 701 and 1100 px it lies over the page (`--bg-elevated`,
+  `--shadow-lg`) rather than squeezing it. On phones it's the whole screen, from the tab bar's "Ask"
+  tab; the top bar's button is hidden there.
+- **Head**: 44 px: the chat's title (or "Ask your notes"), then Chats (`history`, pressed while the list
+  shows), New chat and Close. Esc closes the panel when it has the focus, or nothing does.
+- **Messages**: questions are `--bg-subtle` bubbles at the right, radius 12. Answers are plain text at
+  the left, line height 1.6, in a safe Markdown subset (paragraphs, lists, bold, italic, code): never
+  HTML, images or live links, since an answer can quote any page. Until the first words, a spinning
+  `loader-circle` says "Searching your notes…", then "Writing…".
+- **Citations**: `[n]` becomes an 18 px accent-soft pill with the number (22 px on touch). Under a
+  finished answer, the cited sources are hairline chips: the number, a `file-text` icon and the page
+  title. Either opens the page at that block, which flashes as a search hit does. On phones the panel
+  gives way to the page. A source whose page is gone is grey and does nothing.
+- **Question box**: a raised card pinned at the bottom (`--bg-elevated`, `--shadow-sm`, radius 12) with
+  a growing textarea (16 px on phones) and a round accent send button, which becomes Stop while an
+  answer streams. Enter asks, Shift+Enter adds a line.
+- **Empty and unavailable**: a 28 px `sparkles`, a 600-weight line and `--text-2` lines below: where
+  answers come from and which model writes them, whether journal entries are in ("Change" opens
+  Settings › Journal), and whether the server searches only words. When Ask can't work (not signed
+  in, no chat model on the server, search off) it says why and what to do.
+- **Saved chats**: rows like the sidebar's (`message-square-text`, title, a short time on the right,
+  "…" on hover with Rename and Delete). Rename edits in place; Delete confirms inline.
+- **Settings › Journal** has the switch "Ask your notes reads the journal", off by default, which
+  syncs with the account.
 
 ### 7.8 Server pages
 

@@ -496,3 +496,18 @@ kbd,
 .empty .icon {
   color: var(--text-3);
 }
+
+/* A button that reads as a link inside text: "Journal entries are left out. Change". */
+.link-btn {
+  display: inline;
+  padding: 0;
+  color: var(--accent-text);
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--accent-soft-2);
+  text-underline-offset: 2px;
+}
+
+.link-btn:hover {
+  text-decoration-color: currentColor;
+}

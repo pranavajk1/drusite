@@ -105,6 +105,117 @@ pub struct Config {
     pub attachments: AttachmentsConfig,
     #[serde(default)]
     pub agents: AgentsConfig,
+    #[serde(default)]
+    pub ask: AskConfig,
+}
+
+/// Ask your notes: answers from the asker's pages, made by a chat model, with citations to the
+/// blocks they came from. Finds the blocks with server search, so it needs `[search]` on; an
+/// embedding model (`[search.embeddings]`) helps but isn't needed.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AskConfig {
+    /// On unless set; without `[ask.chat]` it's unavailable anyway, and the apps say how to set
+    /// it up.
+    #[serde(default = "yes")]
+    pub enabled: bool,
+    /// The chat model that writes the answers.
+    #[serde(default)]
+    pub chat: Option<ChatConfig>,
+    /// How many blocks an answer may draw on.
+    #[serde(default = "default_ask_sources")]
+    pub sources: usize,
+    /// The most text from pages sent with one question, in characters.
+    #[serde(default = "default_ask_context")]
+    pub max_context_chars: usize,
+    /// How many earlier questions and answers of the conversation go with a new question.
+    #[serde(default = "default_ask_history")]
+    pub history_turns: usize,
+    /// Questions one person may ask a minute, and a day.
+    #[serde(default = "default_ask_per_minute")]
+    pub per_minute: u32,
+    #[serde(default = "default_ask_per_day")]
+    pub per_day: u32,
+    /// The longest an answer may take, in seconds, and the longest the model may go quiet
+    /// partway.
+    #[serde(default = "default_ask_timeout")]
+    pub timeout_secs: u64,
+    #[serde(default = "default_ask_idle")]
+    pub idle_secs: u64,
+    /// How long the record of what was sent to which provider is kept, in days.
+    #[serde(default = "default_audit_days")]
+    pub audit_days: u32,
+}
+
+impl Default for AskConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            chat: None,
+            sources: default_ask_sources(),
+            max_context_chars: default_ask_context(),
+            history_turns: default_ask_history(),
+            per_minute: default_ask_per_minute(),
+            per_day: default_ask_per_day(),
+            timeout_secs: default_ask_timeout(),
+            idle_secs: default_ask_idle(),
+            audit_days: default_audit_days(),
+        }
+    }
+}
+
+const fn default_ask_sources() -> usize {
+    12
+}
+const fn default_ask_context() -> usize {
+    24_000
+}
+const fn default_ask_history() -> usize {
+    4
+}
+const fn default_ask_per_minute() -> u32 {
+    10
+}
+const fn default_ask_per_day() -> u32 {
+    500
+}
+const fn default_ask_timeout() -> u64 {
+    300
+}
+const fn default_ask_idle() -> u64 {
+    120
+}
+const fn default_audit_days() -> u32 {
+    90
+}
+
+/// A chat model on any provider: a vendor's own API (Anthropic, OpenAI, Google, Mistral,
+/// OpenRouter) or an OpenAI-compatible endpoint (LiteLLM, Ollama, vLLM, SGLang, llama.cpp, …).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChatConfig {
+    /// `anthropic`, `openai`, `google`, `mistral`, `openrouter` or `openai-compatible` (the
+    /// default).
+    #[serde(default = "default_embeddings_provider")]
+    pub provider: drusite_ai::Kind,
+    /// Needed for `openai-compatible`; for a vendor it replaces the vendor's own address.
+    #[serde(default)]
+    pub base_url: Option<Url>,
+    pub model: String,
+    #[serde(default)]
+    pub api_key: Option<Secret>,
+    /// What the apps show it as; the model name unless set.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// The longest answer, in tokens. Reasoning models count their thinking in it too.
+    #[serde(default = "default_chat_max_tokens")]
+    pub max_tokens: u32,
+    #[serde(default)]
+    pub temperature: Option<f32>,
+}
+
+const fn default_chat_max_tokens() -> u32 {
+    4096
 }
 
 /// Agents (MCP clients) reading and writing notes at `/mcp`.
@@ -688,6 +799,37 @@ impl Config {
                     e.provider.label()
                 ));
             }
+        }
+
+        if let Some(c) = &self.ask.chat {
+            if c.model.trim().is_empty() || c.max_tokens == 0 {
+                return invalid("[ask.chat] needs a model and max_tokens of at least 1".into());
+            }
+            if c.base_url.is_none() && c.provider.default_base().is_none() {
+                return invalid(
+                    "[ask.chat] base_url is needed for an openai-compatible provider".into(),
+                );
+            }
+            if c.provider.needs_key() && c.api_key.is_none() {
+                return invalid(format!(
+                    "[ask.chat] api_key is needed for {}",
+                    c.provider.label()
+                ));
+            }
+        }
+        let ask = &self.ask;
+        if ask.sources == 0
+            || ask.max_context_chars < 1000
+            || ask.per_minute == 0
+            || ask.per_day == 0
+            || ask.timeout_secs == 0
+            || ask.idle_secs == 0
+        {
+            return invalid(
+                "[ask] sources, per_minute, per_day, timeout_secs and idle_secs must be at least \
+                 1, and max_context_chars at least 1000"
+                    .into(),
+            );
         }
 
         let auth = &self.auth;
