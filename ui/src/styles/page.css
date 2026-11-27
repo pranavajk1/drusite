@@ -260,8 +260,9 @@
     font-size: var(--text-title-phone);
   }
 
-  /* Leave room for the toolbar at the end of the page. */
+  /* Leave room at the end of the page for the toolbar and the keyboard, so the last line can
+     scroll above them. */
   .page-tail {
-    min-height: 40vh;
+    min-height: max(40vh, calc(var(--keyboard, 0px) + 120px));
   }
 }

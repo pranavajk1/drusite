@@ -23,6 +23,15 @@
     const place = () => {
       keyboard = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
       document.documentElement.style.setProperty("--keyboard", `${keyboard}px`);
+      // Where the keyboard covers the window rather than shrinking it (Android 15 and later draw
+      // edge to edge), the editor has to keep the cursor above the keyboard and this bar itself.
+      const bar = 64;
+      view.setProps({ scrollMargin: { top: 64, left: 5, right: 5, bottom: keyboard + bar } });
+      if (keyboard > 0 && view.hasFocus()) {
+        const caret = view.coordsAtPos(view.state.selection.head);
+        const limit = vv.offsetTop + vv.height - bar;
+        if (caret.bottom > limit) window.scrollBy({ top: caret.bottom - limit + 8 });
+      }
     };
     place();
     vv.addEventListener("resize", place);
