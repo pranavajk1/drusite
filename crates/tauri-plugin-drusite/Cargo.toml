@@ -20,6 +20,9 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["net", "io-util", "rt"] }
 url.workspace = true
 
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
+
 [build-dependencies]
 tauri-plugin = { workspace = true, features = ["build"] }
 
