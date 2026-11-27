@@ -24,11 +24,16 @@ class DrusitePlugin: Plugin, ASWebAuthenticationPresentationContextProviding {
   private var session: ASWebAuthenticationSession?
   private var pending: Invoke?
 
+  /// Swiping in from the left edge goes back, as in Notion's and other iOS apps: the app keeps
+  /// its pages and what's open over them (sheets, menus, Settings sections) in the webview's
+  /// history, so the swipe closes what's open, then goes back a page (`ui/src/lib/back.ts`).
+  ///
   /// Hides WKWebView's form accessory bar (the ^ ⌄ ✓ strip above the keyboard), which native
   /// editors don't show, by giving the web content view a runtime subclass whose
   /// `inputAccessoryView` is nil. A common trick, but it depends on WebKit's private
   /// class-name prefix ("WKContent"); if that changes, the bar simply comes back.
   override func load(webview: WKWebView) {
+    webview.allowsBackForwardNavigationGestures = true
     guard
       let content = webview.scrollView.subviews.first(where: {
         String(describing: type(of: $0)).hasPrefix("WKContent")
