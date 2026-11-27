@@ -97,14 +97,79 @@ fn concurrent_title_edits_merge() {
 }
 
 #[test]
-fn deleting_a_page_takes_its_subpages_out_of_the_tree() {
+fn deleting_a_page_forever_takes_its_subpages_with_it() {
     let mut ws = Workspace::create().unwrap();
     let a = ws.create_page(None, "A").unwrap().id();
-    ws.create_page(Some(a), "A child").unwrap();
+    let child = ws.create_page(Some(a), "A child").unwrap().id();
     ws.create_page(None, "B").unwrap();
-    ws.delete_page(a).unwrap();
+    let mut gone = ws.delete_page(a).unwrap();
+    gone.sort();
+    let mut expected = vec![a, child];
+    expected.sort();
+    assert_eq!(gone, expected);
     assert_eq!(outline(&ws), "B");
     assert!(matches!(ws.title(a), Err(Error::UnknownPage(_))));
+}
+
+mod trash {
+    use super::*;
+
+    #[test]
+    fn a_trashed_page_is_hidden_with_its_subpages_and_restores_in_place() {
+        let mut ws = Workspace::create().unwrap();
+        let a = ws.create_page(None, "A").unwrap().id();
+        let child = ws.create_page(Some(a), "A child").unwrap().id();
+        ws.create_page(None, "B").unwrap();
+        ws.trash_page(a, 1_000).unwrap();
+        assert_eq!(outline(&ws), "B");
+        assert!(ws.is_trashed(child).unwrap());
+        let trash = ws.trash().unwrap();
+        assert_eq!(trash.len(), 1);
+        assert_eq!(trash[0].id, a);
+        assert_eq!(trash[0].title, "A");
+        assert_eq!(trash[0].trashed_at, 1_000);
+        assert_eq!(trash[0].subpages, 1);
+        // Its title and document are still there.
+        assert_eq!(ws.title(child).unwrap(), "A child");
+
+        ws.restore_page(a).unwrap();
+        assert_eq!(outline(&ws), "A(A child) B");
+        assert!(ws.trash().unwrap().is_empty());
+        assert!(!ws.is_trashed(child).unwrap());
+    }
+
+    #[test]
+    fn a_subpage_restored_from_a_trashed_parent_comes_back_at_the_top() {
+        let mut ws = Workspace::create().unwrap();
+        let a = ws.create_page(None, "A").unwrap().id();
+        let child = ws.create_page(Some(a), "C").unwrap().id();
+        ws.trash_page(child, 1).unwrap();
+        ws.trash_page(a, 2).unwrap();
+        let listed: Vec<_> = ws.trash().unwrap().into_iter().map(|t| t.id).collect();
+        assert_eq!(listed, [a, child], "most recent first");
+        ws.restore_page(child).unwrap();
+        assert_eq!(outline(&ws), "C");
+        assert!(matches!(
+            ws.move_page(child, Some(a), 0),
+            Err(Error::Invalid(_))
+        ));
+    }
+
+    #[test]
+    fn edits_and_moves_on_another_device_survive_the_trash() {
+        let mut a = Workspace::create().unwrap();
+        let p = a.create_page(None, "Draft").unwrap().id();
+        let q = a.create_page(None, "Folder").unwrap().id();
+        let mut b = fork(&a);
+        a.trash_page(p, 5).unwrap();
+        b.set_title(p, "Draft two").unwrap();
+        b.move_page(p, Some(q), 0).unwrap();
+        sync(&mut a, &mut b);
+        assert_eq!(outline(&a), "Folder");
+        assert_eq!(outline(&b), outline(&a));
+        a.restore_page(p).unwrap();
+        assert_eq!(outline(&a), "Folder(Draft two)");
+    }
 }
 
 #[test]

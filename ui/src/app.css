@@ -184,8 +184,7 @@ button {
 }
 
 .tree-row:hover .tree-action,
-.tree-row:focus-within .tree-action,
-.tree-action.confirm {
+.tree-row:focus-within .tree-action {
   visibility: visible;
 }
 
@@ -193,9 +192,6 @@ button {
   background: var(--line);
 }
 
-.tree-action.confirm {
-  color: var(--danger);
-}
 
 .tree-root-drop {
   margin-top: 8px;
@@ -1124,4 +1120,72 @@ button {
   from {
     background: var(--accent-soft);
   }
+}
+
+/* The trash */
+.trash-list {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+  max-height: 55vh;
+  overflow-y: auto;
+}
+
+.trash-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.trash-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.trash-title span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trash-title small {
+  color: var(--muted);
+}
+
+.trash-item button,
+.trash-empty {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}
+
+.trash-item .danger,
+.trash-empty {
+  color: var(--danger);
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--text);
+  color: var(--bg);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+  max-width: calc(100vw - 32px);
+}
+
+.toast button {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
 }

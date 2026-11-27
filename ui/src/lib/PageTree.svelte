@@ -43,23 +43,10 @@
     for (const id of expanded) if (!byId.has(id)) expanded.delete(id);
     localStorage.setItem(EXPANDED, JSON.stringify([...expanded]));
   });
-  let confirming = $state<PageId | null>(null);
   let dragging = $state<PageId | null>(null);
   // Where a dragged page would land: before or after a row, inside it, or at the end of the top level.
   type Zone = "before" | "inside" | "after";
   let dropTarget = $state<{ id: PageId; zone: Zone } | "root" | null>(null);
-
-  function askDelete(id: PageId) {
-    if (confirming === id) {
-      confirming = null;
-      ondelete(id);
-      return;
-    }
-    confirming = id;
-    setTimeout(() => {
-      if (confirming === id) confirming = null;
-    }, 3000);
-  }
 
   /** Whether `id` is `ancestor` or inside it, so dropping `ancestor` there would make a loop. */
   function within(id: PageId | null, ancestor: PageId): boolean {
@@ -165,13 +152,12 @@
         >
         <button
           class="tree-action"
-          class:confirm={confirming === id}
-          title="Delete"
+          title="Move to Trash"
           aria-label="Delete page"
           onclick={(e) => {
             e.stopPropagation();
-            askDelete(id);
-          }}>{confirming === id ? "Delete?" : "×"}</button
+            ondelete(id);
+          }}>×</button
         >
       </div>
       {#if page.children.length > 0 && expanded.has(id)}

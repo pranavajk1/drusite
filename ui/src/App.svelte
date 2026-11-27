@@ -11,6 +11,7 @@
   import PageTree from "./lib/PageTree.svelte";
   import SearchPalette from "./lib/Search.svelte";
   import SettingsSheet from "./lib/Settings.svelte";
+  import TrashSheet from "./lib/Trash.svelte";
 
   let { client }: { client: CoreClient } = $props();
 
@@ -22,6 +23,10 @@
   let showAccount = $state(false);
   let showSettings = $state(false);
   let showSearch = $state(false);
+  let showTrash = $state(false);
+  /** The page just moved to the trash, for the Undo toast. */
+  let trashed = $state<{ id: PageId; title: string } | null>(null);
+  let toastTimer: ReturnType<typeof setTimeout> | undefined;
   /** The block a search hit points at, for the editor to show; bumped so the same one can repeat. */
   let reveal = $state<{ block: BlockId; seq: number } | null>(null);
   let settings = $state<Settings>({ journalParent: null, journalTemplate: null, weekStart: 1 });
@@ -111,15 +116,31 @@
 
   async function deletePage(id: PageId) {
     try {
-      const parent = pages.find((p) => p.id === id)?.parent ?? null;
+      const page = pages.find((p) => p.id === id);
+      const parent = page?.parent ?? null;
       await client.deletePage(id);
-      // Deleting a page deletes the pages inside it, which may include the open one.
+      trashed = { id, title: page?.title || "Untitled" };
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => (trashed = null), 6000);
+      // The pages inside go to the trash with it, and may include the open one.
       const rest = await client.listPages();
       if (current === null || !rest.some((p) => p.id === current)) {
         const next = rest.find((p) => p.id === parent)?.id ?? rest[0]?.id;
         if (next) select(next);
         else await createPage(null);
       }
+    } catch (e) {
+      show(e);
+    }
+  }
+
+  async function undoDelete() {
+    if (!trashed) return;
+    const { id } = trashed;
+    trashed = null;
+    try {
+      await client.restorePage(id);
+      select(id);
     } catch (e) {
       show(e);
     }
@@ -163,6 +184,7 @@
       {/if}
     </div>
     <PageTree {pages} {current} onselect={select} oncreate={createPage} ondelete={deletePage} onmove={movePage} />
+    <button class="sidebar-action" onclick={() => (showTrash = true)}>🗑️ Trash</button>
     <button class="sidebar-action" onclick={() => (showSettings = true)}>⚙️ Settings</button>
     <button class="sync-status" onclick={() => (showAccount = true)}>
       <span class="sync-dot {account.phase}"></span>
@@ -202,6 +224,15 @@
 {/if}
 {#if showSearch}
   <SearchPalette {client} onopen={openHit} onclose={() => (showSearch = false)} />
+{/if}
+{#if showTrash}
+  <TrashSheet {client} onrestore={select} onclose={() => (showTrash = false)} onerror={show} />
+{/if}
+{#if trashed}
+  <div class="toast" role="status">
+    <span>Moved “{trashed.title}” to the trash</span>
+    <button onclick={undoDelete}>Undo</button>
+  </div>
 {/if}
 {#if showSettings}
   <SettingsSheet {client} {settings} {pages} onclose={() => (showSettings = false)} onerror={show} />

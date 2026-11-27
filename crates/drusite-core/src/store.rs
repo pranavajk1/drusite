@@ -405,6 +405,13 @@ impl Store {
         Ok(())
     }
 
+    /// Removes a document and everything kept about it. Its log, snapshots and sync state go
+    /// with it (foreign keys cascade).
+    pub fn delete_doc(&mut self, id: &str) -> Result<()> {
+        self.conn.execute("DELETE FROM docs WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
     // ---- Drusite documents on top of the raw log ----
 
     /// Saves a newly created page.

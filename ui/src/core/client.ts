@@ -20,6 +20,7 @@ import type {
   SearchHit,
   Setting,
   Settings,
+  TrashItem,
 } from "./types";
 
 export type * from "./types";
@@ -87,6 +88,23 @@ export class CoreClient {
 
   async deletePage(page: PageId): Promise<void> {
     await this.call({ type: "deletePage", page }, "done");
+  }
+
+  /** What's in the trash, most recent first. */
+  async trash(): Promise<TrashItem[]> {
+    return (await this.call({ type: "trash" }, "trash")).pages;
+  }
+
+  async restorePage(page: PageId): Promise<void> {
+    await this.call({ type: "restorePage", page }, "done");
+  }
+
+  async deleteForever(page: PageId): Promise<void> {
+    await this.call({ type: "deleteForever", page }, "done");
+  }
+
+  async emptyTrash(): Promise<void> {
+    await this.call({ type: "emptyTrash" }, "done");
   }
 
   async openPage(page: PageId): Promise<PageView> {

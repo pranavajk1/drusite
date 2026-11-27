@@ -25,6 +25,7 @@ import type {
   SearchHit,
   Settings,
   Span,
+  TrashItem,
 } from "./types";
 
 type MarkKey = "bold" | "italic" | "underline" | "strikethrough" | "code" | "link";
@@ -49,7 +50,12 @@ interface MemPage {
   blocks: MemBlock[];
   kind: PageKind;
   properties: Property[];
+  /** When it went in the trash (Unix ms), if it did. */
+  trashedAt?: number;
 }
+
+/** How long the trash keeps a page, as in the core. */
+const KEEP_MS = 30 * 24 * 60 * 60 * 1000;
 
 let counter = 0;
 function newId(): string {
@@ -113,25 +119,61 @@ export class MemoryCore {
 
   private info(): PageInfo[] {
     const out: PageInfo[] = [];
+    const shown = (id: PageId) => this.page(id).trashedAt === undefined;
     const walk = (p: MemPage) => {
       out.push({
         id: p.id,
         parent: p.parent,
         title: p.title,
-        children: [...p.children],
+        children: p.children.filter(shown),
         kind: p.kind,
         properties: [...p.properties].sort((a, b) => (a.name < b.name ? -1 : 1)),
       });
-      for (const c of p.children) walk(this.page(c));
+      for (const c of p.children.filter(shown)) walk(this.page(c));
     };
-    for (const p of this.pages.filter((p) => p.parent === null)) walk(p);
+    for (const p of this.pages.filter((p) => p.parent === null && shown(p.id))) walk(p);
     return out;
+  }
+
+  /** Whether a page is in the trash, itself or under one that is. */
+  private trashed(id: PageId): boolean {
+    for (let at: PageId | null = id; at !== null; at = this.page(at).parent) {
+      if (this.page(at).trashedAt !== undefined) return true;
+    }
+    return false;
+  }
+
+  private subtree(id: PageId): PageId[] {
+    return [id, ...this.page(id).children.flatMap((c) => this.subtree(c))];
+  }
+
+  private trash(): TrashItem[] {
+    return this.pages
+      .filter((p) => p.trashedAt !== undefined)
+      .map((p) => ({
+        id: p.id,
+        title: p.title,
+        parent: p.parent,
+        trashedAt: p.trashedAt!,
+        deletedAt: p.trashedAt! + KEEP_MS,
+        subpages: this.subtree(p.id).length - 1,
+      }))
+      .sort((a, b) => b.trashedAt - a.trashedAt);
+  }
+
+  private deleteForever(ids: PageId[]): void {
+    const gone = new Set(ids.flatMap((id) => this.subtree(id)));
+    for (const p of this.pages) p.children = p.children.filter((c) => !gone.has(c));
+    this.pages = this.pages.filter((p) => !gone.has(p.id));
+    for (const id of gone) this.open.delete(id);
+    this.workspaceChanged();
   }
 
   private settings: Settings = { journalParent: null, journalTemplate: null, weekStart: 1 };
 
   private currentSettings(): Settings {
-    const exists = (id: PageId | null) => (id !== null && this.pages.some((p) => p.id === id) ? id : null);
+    const exists = (id: PageId | null) =>
+      id !== null && this.pages.some((p) => p.id === id) && !this.trashed(id) ? id : null;
     return {
       ...this.settings,
       journalParent: exists(this.settings.journalParent),
@@ -142,6 +184,7 @@ export class MemoryCore {
   private workspaceChanged(): void {
     this.emit({ type: "pagesChanged", pages: this.info() });
     this.emit({ type: "settingsChanged", settings: this.currentSettings() });
+    this.emit({ type: "trashChanged", pages: this.trash() });
   }
 
   private addPage(parent: PageId | null, title: string, kind: PageKind, properties: Property[]): MemPage {
@@ -272,19 +315,33 @@ export class MemoryCore {
         return { type: "done" };
       }
       case "deletePage": {
-        const gone = new Set<PageId>();
-        const walk = (id: PageId) => {
-          gone.add(id);
-          for (const c of this.page(id).children) walk(c);
-        };
-        walk(command.page);
         const p = this.page(command.page);
-        if (p.parent !== null) this.page(p.parent).children = this.page(p.parent).children.filter((c) => c !== p.id);
-        this.pages = this.pages.filter((x) => !gone.has(x.id));
-        this.open.delete(command.page);
-        this.emit({ type: "pagesChanged", pages: this.info() });
+        p.trashedAt ??= Date.now();
+        this.workspaceChanged();
         return { type: "done" };
       }
+      case "trash":
+        return { type: "trash", pages: this.trash() };
+      case "restorePage": {
+        const p = this.page(command.page);
+        delete p.trashedAt;
+        if (p.parent !== null && this.trashed(p.parent)) {
+          this.page(p.parent).children = this.page(p.parent).children.filter((c) => c !== p.id);
+          p.parent = null;
+          this.pages = [...this.pages.filter((x) => x.id !== p.id), p];
+        }
+        this.workspaceChanged();
+        return { type: "done" };
+      }
+      case "deleteForever":
+        if (this.page(command.page).trashedAt === undefined) {
+          fail("invalid", "only a page in the trash can be deleted for good");
+        }
+        this.deleteForever([command.page]);
+        return { type: "done" };
+      case "emptyTrash":
+        this.deleteForever(this.trash().map((t) => t.id));
+        return { type: "done" };
       case "openPage": {
         const p = this.page(command.page);
         this.open.set(p.id, (this.open.get(p.id) ?? 0) + 1);

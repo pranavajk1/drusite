@@ -42,9 +42,24 @@ pub enum Command {
         parent: Option<PageId>,
         index: u32,
     },
+    /// Moves a page, with its subpages, to the trash. Answered with [`Response::Done`].
     DeletePage {
         page: PageId,
     },
+    /// What's in the trash. Answered with [`Response::Trash`].
+    Trash,
+    /// Puts a page back from the trash where it was (at the top level if the page it was under
+    /// is still in the trash).
+    RestorePage {
+        page: PageId,
+    },
+    /// Deletes a page in the trash, and its subpages, for good. Refused for a page that isn't
+    /// in the trash.
+    DeleteForever {
+        page: PageId,
+    },
+    /// Deletes everything in the trash for good.
+    EmptyTrash,
     /// Loads a page for editing. Answered with [`Response::Opened`]. Each open is matched by a
     /// [`Command::ClosePage`]; the page stays open until every view that opened it has closed it.
     OpenPage {
@@ -110,6 +125,25 @@ pub struct SearchHit {
     pub title: String,
     pub block: Option<BlockId>,
     pub snippet: Vec<SnippetPart>,
+}
+
+/// A page in the trash.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TrashItem {
+    pub id: PageId,
+    pub title: String,
+    /// The page it goes back under when restored.
+    pub parent: Option<PageId>,
+    /// When it went in the trash, in Unix milliseconds. (A plain number for TypeScript: these
+    /// are never NaN, which is what would make specta's `f64` nullable.)
+    #[specta(type = u32)]
+    pub trashed_at: f64,
+    /// When it will be deleted for good, in Unix milliseconds.
+    #[specta(type = u32)]
+    pub deleted_at: f64,
+    /// How many pages went with it.
+    pub subpages: u32,
 }
 
 /// The settings that live in the workspace, so they sync with the account and a new device has
@@ -237,6 +271,9 @@ pub enum Response {
     SearchResults {
         hits: Vec<SearchHit>,
     },
+    Trash {
+        pages: Vec<TrashItem>,
+    },
     Done,
 }
 
@@ -251,6 +288,8 @@ pub enum Response {
 pub enum Event {
     /// The page tree or a title changed.
     PagesChanged { pages: Vec<PageInfo> },
+    /// What's in the trash changed.
+    TrashChanged { pages: Vec<TrashItem> },
     /// An open page changed other than through the edits just answered (another device, or the
     /// part of a batch that was applied before one edit failed).
     PageChanged { page: PageId, patch: PagePatch },

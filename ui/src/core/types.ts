@@ -58,7 +58,23 @@ export type Command =
 /**  Answered with [`Response::PageCreated`]. */
 { type: "createPage"; parent: PageId | null; title: string } | { type: "renamePage"; page: PageId; title: string } | 
 /**  Moves a page to position `index` among `parent`'s children (or the top-level pages). */
-{ type: "movePage"; page: PageId; parent: PageId | null; index: number } | { type: "deletePage"; page: PageId } | 
+{ type: "movePage"; page: PageId; parent: PageId | null; index: number } | 
+/**  Moves a page, with its subpages, to the trash. Answered with [`Response::Done`]. */
+{ type: "deletePage"; page: PageId } | 
+/**  What's in the trash. Answered with [`Response::Trash`]. */
+{ type: "trash" } | 
+/**
+ *  Puts a page back from the trash where it was (at the top level if the page it was under
+ *  is still in the trash).
+ */
+{ type: "restorePage"; page: PageId } | 
+/**
+ *  Deletes a page in the trash, and its subpages, for good. Refused for a page that isn't
+ *  in the trash.
+ */
+{ type: "deleteForever"; page: PageId } | 
+/**  Deletes everything in the trash for good. */
+{ type: "emptyTrash" } | 
 /**
  *  Loads a page for editing. Answered with [`Response::Opened`]. Each open is matched by a
  *  [`Command::ClosePage`]; the page stays open until every view that opened it has closed it.
@@ -160,6 +176,8 @@ export type ErrorCode = "unknownPage" | "unknownBlock" |
 export type Event = 
 /**  The page tree or a title changed. */
 { type: "pagesChanged"; pages: PageInfo[] } | 
+/**  What's in the trash changed. */
+{ type: "trashChanged"; pages: TrashItem[] } | 
 /**
  *  An open page changed other than through the edits just answered (another device, or the
  *  part of a batch that was applied before one edit failed).
@@ -261,7 +279,7 @@ export type PropertyValue = { type: "text"; value: string } | { type: "number"; 
 /**  The core's answer to a [`Command`]. */
 export type Response = { type: "pages"; pages: PageInfo[] } | { type: "pageCreated"; page: PageInfo } | { type: "opened"; view: PageView } | { type: "edited"; outcome: EditOutcome } | { type: "account"; status: AccountStatus } | 
 /**  The journal entry for a day; `created` when it was made just now. */
-{ type: "journalDay"; page: PageInfo; created: boolean } | { type: "settings"; settings: Settings } | { type: "searchResults"; hits: SearchHit[] } | { type: "done" };
+{ type: "journalDay"; page: PageInfo; created: boolean } | { type: "settings"; settings: Settings } | { type: "searchResults"; hits: SearchHit[] } | { type: "trash"; pages: TrashItem[] } | { type: "done" };
 
 /**  A page that matched a search, at the block that matched best (none when only the title did). */
 export type SearchHit = {
@@ -322,3 +340,20 @@ export type SyncPhase =
 "offline" | 
 /**  Stopped by something a retry won't fix (see the message). */
 "failed";
+
+/**  A page in the trash. */
+export type TrashItem = {
+	id: PageId,
+	title: string,
+	/**  The page it goes back under when restored. */
+	parent: PageId | null,
+	/**
+	 *  When it went in the trash, in Unix milliseconds. (A plain number for TypeScript: these
+	 *  are never NaN, which is what would make specta's `f64` nullable.)
+	 */
+	trashedAt: number,
+	/**  When it will be deleted for good, in Unix milliseconds. */
+	deletedAt: number,
+	/**  How many pages went with it. */
+	subpages: number,
+};

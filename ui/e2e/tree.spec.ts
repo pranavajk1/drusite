@@ -81,28 +81,42 @@ test("pages are created, renamed, nested and deleted from the sidebar", async ({
   await caret.click();
   await expect(row(page, "Drusite")).toBeVisible();
 
-  // Delete asks once, then deletes the page and everything inside it.
+  // Delete moves the page, and everything inside it, to the trash; Undo brings it back.
   await row(page, "Drusite").hover();
-  const del = row(page, "Drusite").getByRole("button", { name: "Delete page" });
-  await del.click();
-  await expect(del).toHaveText("Delete?");
+  await row(page, "Drusite").getByRole("button", { name: "Delete page" }).click();
+  await expectTree(page, [leaf("Inbox"), leaf("Projects")]);
+  await expectOpen(page, "Inbox");
+  await page.getByRole("status").getByRole("button", { name: "Undo" }).click();
+  await expectOpen(page, "Drusite");
+  await row(page, "Drusite").locator(".tree-caret").click();
   await expectTree(page, [
     leaf("Inbox"),
     { title: "Projects", children: [{ title: "Drusite", children: [leaf("Ideas")] }] },
   ]);
-  await del.click();
-  await expectTree(page, [leaf("Inbox"), leaf("Projects")]);
-  await expectOpen(page, "Inbox");
 
   // Deleting the open page opens another.
   await row(page, "Projects").click();
   await expectOpen(page, "Projects");
-  const delProjects = row(page, "Projects").getByRole("button", { name: "Delete page" });
-  await delProjects.click();
-  await expect(delProjects).toHaveText("Delete?");
-  await delProjects.click();
+  await row(page, "Projects").getByRole("button", { name: "Delete page" }).click();
   await expectTree(page, [leaf("Inbox")]);
   await expectOpen(page, "Inbox");
+
+  // The trash restores it where it was, or deletes it for good.
+  await page.getByRole("button", { name: "🗑️ Trash" }).click();
+  const trash = page.getByRole("dialog", { name: "Trash" });
+  await expect(trash.getByText("with 2 subpages")).toBeVisible();
+  await trash.getByRole("button", { name: "Restore" }).click();
+  await expect(row(page, "Projects")).toBeVisible();
+  await expect(trash.getByText("The trash is empty.")).toBeVisible();
+  await trash.getByRole("button", { name: "Close" }).click();
+  await row(page, "Projects").hover();
+  await row(page, "Projects").getByRole("button", { name: "Delete page" }).click();
+  await page.getByRole("button", { name: "🗑️ Trash" }).click();
+  await trash.getByRole("button", { name: "Empty trash" }).click();
+  await trash.getByRole("button", { name: "Yes, empty the trash" }).click();
+  await expect(trash.getByText("The trash is empty.")).toBeVisible();
+  await trash.getByRole("button", { name: "Close" }).click();
+  await expectTree(page, [leaf("Inbox")]);
 });
 
 test("dragging a page onto another nests it there", async ({ page }) => {

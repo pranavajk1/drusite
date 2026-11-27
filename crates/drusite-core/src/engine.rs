@@ -69,7 +69,7 @@ impl Core {
                 (ws, at)
             }
         };
-        Ok(Self {
+        let mut core = Self {
             store,
             workspace,
             workspace_at,
@@ -78,7 +78,10 @@ impl Core {
             sync: None,
             on_change: None,
             search: crate::search::Search::default(),
-        })
+        };
+        core.purge_trash(crate::trash::now_ms())
+            .map_err(|e| Error::Corrupt(format!("emptying old trash: {}", e.message)))?;
+        Ok(core)
     }
 
     /// Tells the sync driver, if any, that `doc` changed locally.
@@ -131,9 +134,31 @@ impl Core {
                 Ok(Response::Done)
             }
             Command::DeletePage { page } => {
-                self.workspace.delete_page(page)?;
-                self.open.remove(&page);
+                self.workspace.trash_page(page, crate::trash::now_ms())?;
                 self.save_workspace()?;
+                Ok(Response::Done)
+            }
+            Command::Trash => Ok(Response::Trash {
+                pages: self.trash()?,
+            }),
+            Command::RestorePage { page } => {
+                self.workspace.restore_page(page)?;
+                self.save_workspace()?;
+                Ok(Response::Done)
+            }
+            Command::DeleteForever { page } => {
+                if !self.workspace.trash()?.iter().any(|t| t.id == page) {
+                    return Err(ApiError::new(
+                        ErrorCode::Invalid,
+                        "only a page in the trash can be deleted for good",
+                    ));
+                }
+                self.delete_forever(&[page])?;
+                Ok(Response::Done)
+            }
+            Command::EmptyTrash => {
+                let all: Vec<PageId> = self.workspace.trash()?.iter().map(|t| t.id).collect();
+                self.delete_forever(&all)?;
                 Ok(Response::Done)
             }
             Command::OpenPage { page } => {
@@ -220,6 +245,9 @@ impl Core {
         });
         (self.events)(Event::SettingsChanged {
             settings: self.settings()?,
+        });
+        (self.events)(Event::TrashChanged {
+            pages: self.trash()?,
         });
         Ok(())
     }

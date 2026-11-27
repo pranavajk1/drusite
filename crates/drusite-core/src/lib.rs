@@ -18,6 +18,8 @@ pub mod search;
 pub mod store;
 #[cfg(feature = "sqlite")]
 pub mod sync;
+#[cfg(feature = "sqlite")]
+mod trash;
 
 #[cfg(feature = "sqlite")]
 pub use engine::{Core, EventSink};

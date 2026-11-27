@@ -210,7 +210,23 @@ async fn index_doc(state: &AppState, doc: Uuid) -> anyhow::Result<()> {
         }
     }
     if titles {
-        // Pages no longer in the tree: everything indexed for them goes.
+        // Pages back in the tree (restored from the trash) need their blocks indexed again.
+        let back: Vec<Uuid> = wanted
+            .keys()
+            .filter(|k| !existing.contains_key(k))
+            .map(|(p, _)| *p)
+            .collect();
+        sqlx::query(
+            "INSERT INTO search_queue (doc_id, workspace_id)
+             SELECT id, workspace_id FROM documents WHERE id = ANY($1) AND workspace_id = $2
+             ON CONFLICT (doc_id) DO UPDATE SET queued_at = now(), attempts = 0",
+        )
+        .bind(&back)
+        .bind(ws)
+        .execute(&mut *tx)
+        .await?;
+        // Pages no longer in the tree (deleted, or in the trash): everything indexed for them
+        // goes.
         let live: Vec<Uuid> = wanted.keys().map(|(p, _)| *p).collect();
         for table in ["search_blocks", "search_embeddings"] {
             sqlx::query(sqlx::AssertSqlSafe(format!(
