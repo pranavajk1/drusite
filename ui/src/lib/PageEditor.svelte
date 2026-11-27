@@ -58,9 +58,15 @@
   let draft = $state("");
   let renaming: ReturnType<typeof setTimeout> | undefined;
 
-  // Follow renames from elsewhere unless one is being typed here.
+  /** The title field has the focus: what's typed there is the title, whatever comes back. */
+  let typing = $state(false);
+
+  // Follow renames from elsewhere, but not into the field while it's being typed in: a save of
+  // an earlier draft can come back after a later one went out (typing pauses between words), and
+  // would cut off what was typed since. After the field loses the focus, the last save's own
+  // title comes back last.
   $effect(() => {
-    if (renaming === undefined) draft = title;
+    if (renaming === undefined && !typing) draft = title;
   });
 
   function rename() {
@@ -208,6 +214,8 @@
     bind:value={draft}
     oninput={rename}
     onkeydown={titleKey}
+    onfocus={() => (typing = true)}
+    onblur={() => (typing = false)}
   />
   {#if isRow}
     <RowProperties {client} page={id} {pages} onopen={onselect} {onerror} />
