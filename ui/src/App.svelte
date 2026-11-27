@@ -36,8 +36,13 @@
   let settings = $state<Settings>({ journalParent: null, journalTemplate: null, weekStart: 1 });
   /** On phones, the page list is a drawer over the page. */
   let drawer = $state(false);
-  /** On desktops, the sidebar can be put away. */
+  /** On desktops, the sidebar can be put away, and made wider or narrower. */
   let collapsed = $state(localStorage.getItem("drusite.sidebar") === "collapsed");
+  const WIDTH = { min: 200, normal: 248, max: 480 };
+  const clampWidth = (w: number) => Math.round(Math.max(WIDTH.min, Math.min(WIDTH.max, w)));
+  let sidebarWidth = $state(clampWidth(Number(localStorage.getItem("drusite.sidebarWidth")) || WIDTH.normal));
+  let resizing = $state(false);
+  let accountMenu = $state<HTMLElement | null>(null);
   /**
    * The tab bar steps aside on a touch screen while the keyboard is up (the editor's formatting
    * bar takes the bottom edge then). Focus alone doesn't mean a keyboard: iOS doesn't open one for
@@ -152,8 +157,82 @@
   }
 
   function toggleSidebar() {
-    collapsed = !collapsed;
+    setCollapsed(!collapsed);
+  }
+
+  function setCollapsed(to: boolean) {
+    collapsed = to;
     localStorage.setItem("drusite.sidebar", collapsed ? "collapsed" : "open");
+  }
+
+  function setWidth(w: number) {
+    sidebarWidth = clampWidth(w);
+    localStorage.setItem("drusite.sidebarWidth", String(sidebarWidth));
+  }
+
+  /**
+   * Dragging the sidebar's edge resizes it; dragging it well past the narrowest closes it, and
+   * a click without a drag closes it too, as in Notion.
+   */
+  function startResize(e: PointerEvent) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = sidebarWidth;
+    let moved = false;
+    resizing = true;
+    const move = (ev: PointerEvent) => {
+      const dx = ev.clientX - startX;
+      if (Math.abs(dx) > 3) moved = true;
+      if (!moved) return;
+      const w = startW + dx;
+      if (w < WIDTH.min - 80) {
+        if (!collapsed) setCollapsed(true);
+        // Opened again, it comes back as wide as it was.
+        sidebarWidth = startW;
+      } else {
+        if (collapsed) setCollapsed(false);
+        sidebarWidth = clampWidth(w);
+      }
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      resizing = false;
+      if (moved) setWidth(sidebarWidth);
+      else setCollapsed(true);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  }
+
+  function resizeKey(e: KeyboardEvent) {
+    if (e.key === "ArrowLeft") setWidth(sidebarWidth - 16);
+    else if (e.key === "ArrowRight") setWidth(sidebarWidth + 16);
+    else if (e.key === "Enter") setCollapsed(true);
+    else return;
+    e.preventDefault();
+  }
+
+  async function signOut() {
+    try {
+      await client.signOut();
+    } catch (e) {
+      show(e);
+    }
+  }
+
+  /** The account menu, at the foot of the sidebar: who and where, then the app-wide places. */
+  function accountItems(): MenuItem[] {
+    const items: MenuItem[] = [
+      { label: "Settings", icon: "settings", hint: "⌘,", run: () => (settingsAt = "home") },
+      { label: "Trash", icon: "trash-2", run: () => (showTrash = true) },
+    ];
+    if (account.server) items.push({ label: "Sign out", icon: "log-out", group: true, run: signOut });
+    else items.push({ label: "Sign in to sync", icon: "log-in", group: true, run: () => (settingsAt = "account") });
+    return items;
   }
 
   /** Opens the journal entry for `date`, making it from the template if it's new. */
@@ -232,6 +311,14 @@
     return out;
   });
   const syncLabel = $derived(phaseLabel(account.phase));
+  const host = $derived.by(() => {
+    try {
+      return account.server ? new URL(account.server).host : null;
+    } catch {
+      return account.server;
+    }
+  });
+  const who = $derived(account.email ?? (account.server ? host : null));
 </script>
 
 <svelte:window onkeydown={globalKey} onfocusin={focusChanged} onfocusout={focusChanged} />
@@ -240,7 +327,32 @@
   <span class="dot sync-dot {account.phase}" aria-hidden="true"></span>
 {/snippet}
 
-<div class="app" class:drawer-open={drawer} class:collapsed class:writing>
+{#snippet avatar(size: number)}
+  {#if account.email}
+    <span class="avatar" class:avatar-lg={size > 24} aria-hidden="true">{account.email[0]!.toUpperCase()}</span>
+  {:else}
+    <span class="avatar avatar-none" class:avatar-lg={size > 24} aria-hidden="true"><Icon name="user-round" size={size > 24 ? 18 : 13} /></span>
+  {/if}
+{/snippet}
+
+{#snippet accountHead()}
+  <div class="account-head">
+    {@render avatar(32)}
+    <div class="account-head-text">
+      <span class="account-head-name">{who ?? "Not signed in"}</span>
+      <span class="account-head-sync">{@render syncDot()}<span>{syncLabel}{#if host && account.email} · {host}{/if}</span></span>
+    </div>
+  </div>
+{/snippet}
+
+<div
+  class="app"
+  class:drawer-open={drawer}
+  class:collapsed
+  class:writing
+  class:resizing
+  style:--sidebar-width="{sidebarWidth}px"
+>
   <aside class="sidebar" aria-label="Sidebar">
     <div class="sidebar-head">
       <div class="workspace">
@@ -248,7 +360,7 @@
         <span class="workspace-name">Drusite</span>
       </div>
       <button class="icon-btn sidebar-collapse" aria-label="Close sidebar" title="Close sidebar (⌘\)" onclick={() => (drawer ? (drawer = false) : toggleSidebar())}>
-        <Icon name="panel-left" />
+        <Icon name="panel-left-close" />
       </button>
     </div>
     <div class="sidebar-scroll">
@@ -280,20 +392,35 @@
         ondelete={deletePage}
         onmove={movePage}
       />
-      <div class="nav-group nav-bottom">
-        <button class="nav-row" onclick={() => ((drawer = false), (settingsAt = "home"))}>
-          <Icon name="settings" /><span class="nav-label">Settings</span>
-        </button>
-        <button class="nav-row" onclick={() => ((drawer = false), (showTrash = true))}>
-          <Icon name="trash-2" /><span class="nav-label">Trash</span>
-        </button>
-      </div>
     </div>
-    <button class="sync-status" onclick={() => ((drawer = false), (settingsAt = "account"))}>
-      {@render syncDot()}
-      <span class="sync-label">{syncLabel}</span>
-      {#if account.phase === "online" && account.email}<span class="sync-email">{account.email}</span>{/if}
-    </button>
+    <div class="sidebar-foot">
+      <button
+        class="account-button"
+        aria-label="Account: {who ?? 'not signed in'}, {syncLabel}"
+        aria-haspopup="menu"
+        aria-expanded={accountMenu !== null}
+        onclick={(e) => (accountMenu = accountMenu ? null : e.currentTarget)}
+      >
+        {@render avatar(20)}
+        <span class="account-name">{who ?? "Not signed in"}</span>
+        {@render syncDot()}
+        <Icon name="chevrons-up-down" size={14} />
+      </button>
+    </div>
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+    <div
+      class="sidebar-resize"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize sidebar"
+      aria-valuemin={WIDTH.min}
+      aria-valuemax={WIDTH.max}
+      aria-valuenow={sidebarWidth}
+      tabindex="0"
+      title="Drag to resize, click to close"
+      onpointerdown={startResize}
+      onkeydown={resizeKey}
+    ></div>
   </aside>
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div class="drawer-backdrop" onclick={() => (drawer = false)}></div>
@@ -305,7 +432,7 @@
       </button>
       {#if collapsed}
         <button class="icon-btn topbar-expand" aria-label="Open sidebar" title="Open sidebar (⌘\)" onclick={toggleSidebar}>
-          <Icon name="panel-left" />
+          <Icon name="panel-left-open" />
         </button>
       {/if}
       <nav class="breadcrumb" aria-label="Breadcrumb">
@@ -365,6 +492,16 @@
   </nav>
 </div>
 
+{#if accountMenu}
+  <Menu
+    anchor={accountMenu}
+    label="Account"
+    wide
+    header={accountHead}
+    onclose={() => (accountMenu = null)}
+    items={accountItems().map((item) => ({ ...item, run: () => ((drawer = false), item.run()) }))}
+  />
+{/if}
 {#if pageMenu && current}
   <Menu anchor={pageMenu} label="Page actions" onclose={() => (pageMenu = null)} items={pageActions(current)} />
 {/if}

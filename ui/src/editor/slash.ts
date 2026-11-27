@@ -115,6 +115,9 @@ function apply(view: EditorView, from: number, item: Item) {
   view.focus();
 }
 
+/** Notion's is about ten rows: enough to choose from, without hiding the page. */
+const MAX_HEIGHT = 340;
+
 class MenuView {
   private dom: HTMLDivElement;
   private items: Item[] = [];
@@ -133,7 +136,16 @@ class MenuView {
     this.onBlur = () => (this.dom.hidden = true);
     view.dom.addEventListener("focus", this.onFocus);
     view.dom.addEventListener("blur", this.onBlur);
+    // The page scrolls the window, and the keyboard resizes the visual viewport: follow the line.
+    this.onMove = () => {
+      if (!this.dom.hidden) this.place();
+    };
+    window.addEventListener("scroll", this.onMove, true);
+    window.addEventListener("resize", this.onMove);
+    window.visualViewport?.addEventListener("resize", this.onMove);
   }
+
+  private onMove: () => void;
 
   private onFocus: () => void;
   private onBlur: () => void;
@@ -151,25 +163,36 @@ class MenuView {
     }
     this.render(s);
     this.dom.hidden = false;
-    const at = view.coordsAtPos(s.from);
-    this.dom.style.maxHeight = "";
-    const r = this.dom.getBoundingClientRect();
-    // Below the caret, or above it when the keyboard or the window's edge leaves no room. When
-    // neither fits, the menu shrinks to the room above (it scrolls).
-    const bottom = visibleBottom();
-    const below = at.bottom + 6;
-    const roomBelow = bottom - 8 - below;
-    const roomAbove = at.top - 6 - 8 - visibleTop();
-    if (r.height <= roomBelow || roomBelow >= roomAbove) {
-      this.dom.style.maxHeight = `${Math.max(120, roomBelow)}px`;
+    this.place();
+  }
+
+  /**
+   * Below the line being typed on, or above it when there's no room below (the keyboard, the
+   * window's edge). It never covers that line: when neither side fits it, the list gets shorter
+   * and scrolls.
+   */
+  private place() {
+    const caret = this.view.coordsAtPos(this.view.state.selection.from);
+    const top = visibleTop() + 8;
+    const bottom = visibleBottom() - 8;
+    const below = caret.bottom + 4;
+    const above = caret.top - 4;
+    this.dom.style.maxHeight = `${MAX_HEIGHT}px`;
+    // offsetHeight, not the bounding box: the opening animation scales the menu.
+    const h = this.dom.offsetHeight;
+    const roomBelow = bottom - below;
+    const roomAbove = above - top;
+    if (h <= roomBelow || (h > roomAbove && roomBelow >= roomAbove)) {
+      this.dom.style.maxHeight = `${Math.min(MAX_HEIGHT, Math.max(96, roomBelow))}px`;
       this.dom.style.top = `${below}px`;
     } else {
-      const h = Math.min(r.height, roomAbove);
-      this.dom.style.maxHeight = `${roomAbove}px`;
-      this.dom.style.top = `${at.top - 6 - h}px`;
+      const fit = Math.min(h, roomAbove);
+      this.dom.style.maxHeight = `${fit}px`;
+      this.dom.style.top = `${above - fit}px`;
     }
-    this.dom.style.left = `${Math.max(8, Math.min(at.left - 8, window.innerWidth - 8 - r.width))}px`;
-    this.dom.querySelector(".active")?.scrollIntoView({ block: "nearest" });
+    const w = this.dom.offsetWidth;
+    this.dom.style.left = `${Math.max(8, Math.min(caret.left - 12, window.innerWidth - 8 - w))}px`;
+    this.dom.querySelector(".slash-list .active")?.scrollIntoView({ block: "nearest" });
   }
 
   private render(s: SlashState) {
@@ -198,7 +221,17 @@ class MenuView {
       row.addEventListener("click", () => pick(this.view, i));
       return row;
     });
-    this.dom.replaceChildren(head, ...rows);
+    const list = document.createElement("div");
+    list.className = "slash-list";
+    list.append(head, ...rows);
+    const close = document.createElement("div");
+    close.className = "menu-item slash-close";
+    close.innerHTML = `<span class="menu-item-label">Close menu</span><kbd>esc</kbd>`;
+    close.addEventListener("click", () => {
+      const st = key.getState(this.view.state)!;
+      this.view.dispatch(this.view.state.tr.setMeta(key, { ...CLOSED, dismissed: st.from }));
+    });
+    this.dom.replaceChildren(list, close);
   }
 
   destroy() {
@@ -206,6 +239,15 @@ class MenuView {
     this.view.dom.removeEventListener("blur", this.onBlur);
     this.dom.remove();
   }
+}
+
+function filterHint(): HTMLElement {
+  const hint = document.createElement("span");
+  hint.className = "slash-hint";
+  hint.textContent = "Type to filter";
+  hint.setAttribute("aria-hidden", "true");
+  hint.contentEditable = "false";
+  return hint;
 }
 
 function pick(view: EditorView, index: number) {
@@ -246,6 +288,12 @@ export function slashMenu(): Plugin<SlashState> {
         return true;
       },
       decorations(state) {
+        // "Type to filter" after a `/` with nothing typed after it yet, as in Notion.
+        const s = key.getState(state)!;
+        if (s.from !== null && s.query === "" && state.selection.from === s.from + 1)
+          return DecorationSet.create(state.doc, [
+            Decoration.widget(s.from + 1, filterHint, { side: 1, key: "slash-hint", ignoreSelection: true }),
+          ]);
         // "Press / for blocks" on the empty block the cursor is in, unless it's the page's only one
         // (that one has the longer hint).
         const { $from, empty } = state.selection;

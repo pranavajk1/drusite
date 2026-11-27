@@ -172,9 +172,15 @@ export async function choose(page: Page, select: Locator, option: string) {
   await page.getByRole("listbox").getByRole("option", { name: option, exact: true }).click();
 }
 
+/** Picks `item` in the account menu, at the foot of the sidebar. */
+export async function fromAccountMenu(page: Page, item: string) {
+  await page.getByRole("button", { name: /^Account:/ }).click();
+  await page.getByRole("menu", { name: "Account" }).getByRole("menuitem", { name: item }).click();
+}
+
 /** Opens Settings at `section` (its name in the left-hand list). */
 export async function openSettings(page: Page, section: string) {
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await fromAccountMenu(page, "Settings");
   const sheet = page.getByRole("dialog", { name: "Settings" });
   await sheet.getByRole("navigation", { name: "Settings sections" }).getByRole("button", { name: section }).click();
   return sheet;

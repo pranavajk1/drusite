@@ -4,7 +4,7 @@
 
 import { type Page, expect, test } from "@playwright/test";
 
-import { expectBlocks, expectTree, leaf, openApp, openTitle, trashFromTree } from "./helpers";
+import { expectBlocks, expectTree, fromAccountMenu, leaf, openApp, openTitle, trashFromTree } from "./helpers";
 
 /** The sidebar row of the page titled `title`. */
 const row = (page: Page, title: string) =>
@@ -102,7 +102,7 @@ test("pages are created, renamed, nested and deleted from the sidebar", async ({
   await expectOpen(page, "Inbox");
 
   // The trash restores it where it was, or deletes it for good.
-  await page.getByRole("button", { name: "Trash", exact: true }).click();
+  await fromAccountMenu(page, "Trash");
   const trash = page.getByRole("dialog", { name: "Trash" });
   await expect(trash.getByText("with 2 subpages")).toBeVisible();
   await trash.getByRole("button", { name: "Restore" }).click();
@@ -111,7 +111,7 @@ test("pages are created, renamed, nested and deleted from the sidebar", async ({
   await trash.getByRole("button", { name: "Close" }).click();
   await row(page, "Projects").hover();
   await trashFromTree(row(page, "Projects"));
-  await page.getByRole("button", { name: "Trash", exact: true }).click();
+  await fromAccountMenu(page, "Trash");
   await trash.getByRole("button", { name: "Empty trash" }).click();
   await trash.getByRole("button", { name: "Yes, empty the trash" }).click();
   await expect(trash.getByText("The trash is empty.")).toBeVisible();

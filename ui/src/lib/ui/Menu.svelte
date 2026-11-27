@@ -8,18 +8,35 @@
     icon?: IconName;
     danger?: boolean;
     hint?: string;
+    /** A line above it, starting a new group. */
+    group?: boolean;
     run: () => void;
   }
 </script>
 
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { onMount, tick, type Snippet } from "svelte";
 
   import Icon from "./Icon.svelte";
   import { dismissable, placeBelow, portal, type Place } from "./floating";
 
-  let { anchor, items, label, onclose }: { anchor: HTMLElement; items: MenuItem[]; label: string; onclose: () => void } =
-    $props();
+  let {
+    anchor,
+    items,
+    label,
+    onclose,
+    header,
+    wide = false,
+  }: {
+    anchor: HTMLElement;
+    items: MenuItem[];
+    label: string;
+    onclose: () => void;
+    /** Shown above the items, as the account menu's who-and-where. */
+    header?: Snippet;
+    /** At least as wide as the anchor. */
+    wide?: boolean;
+  } = $props();
 
   let menu: HTMLElement;
   let active = $state(0);
@@ -33,7 +50,7 @@
     let open = true;
     void tick().then(() => {
       if (!open || !menu) return;
-      place = placeBelow(from.getBoundingClientRect(), menu.getBoundingClientRect());
+      place = placeBelow(from.getBoundingClientRect(), menu.getBoundingClientRect(), wide);
       menu.focus();
     });
     const undo = dismissable(() => [menu, from], close);
@@ -74,9 +91,12 @@
   tabindex="-1"
   style:top="{place.top}px"
   style:left="{place.left}px"
+  style:min-width={place.minWidth ? `${place.minWidth}px` : null}
   onkeydown={key}
 >
+  {#if header}{@render header()}<div class="menu-sep" role="separator"></div>{/if}
   {#each items as item, i (item.label)}
+    {#if item.group && i > 0}<div class="menu-sep" role="separator"></div>{/if}
     <button
       class="menu-item"
       class:active={i === active}

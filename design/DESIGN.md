@@ -53,7 +53,7 @@ tint where Notion's are warm.
 | Warm grey neutrals | Neutrals with a faint violet tint (`#f8f7fa` sidebar) | They sit next to the amethyst without clashing. |
 | Inter-like custom font on some surfaces | **System font stack only** | Zero bundle cost, native rendering on every OS, and no font licence to track. |
 | Page icons and covers | No covers. User emoji stay only where they're content: the callout's icon. | Covers are a feature Drusite doesn't have. Don't add UI for them. |
-| Workspace switcher | One workspace, shown as the Drusite mark and name | Drusite has one workspace per account. |
+| Workspace switcher | One workspace, shown as the Drusite mark and name. The foot of the sidebar is the **account menu** instead: who and where, Settings, Trash, sign in or out. | Drusite has one workspace per account. Notion splits Trash and the like into a second menu beside the switcher, which is easy to miss; Drusite keeps them in one. |
 | Grey mood-less journal | **Mood colours** (`--mood-1`…`--mood-5`) and Lucide faces | The journal is a Drusite feature. Mood is the only other colour scale. |
 | Sync is invisible | **Sync status** is always on screen: a dot in the top bar and at the foot of the sidebar | Drusite is local-first and self-hosted, so whether a device is synced matters. |
 | Settings mixes workspace and account | Settings groups: Account, Notes, Connections | Drusite's settings are mostly this device's and the account's. |
@@ -134,7 +134,7 @@ A **4 px scale**: `--space-1` 4, `-2` 8, `-3` 12, `-4` 16, `-5` 20, `-6` 24, `-8
 |---|---|---|
 | `--row` | 28 px (40 on touch) | Sidebar rows, menu items, small buttons, inline selects |
 | `--control` | 32 px (44 on touch) | Inputs and buttons |
-| `--sidebar-width` | 248 px | Desktop sidebar |
+| `--sidebar-width` | 248 px | Desktop sidebar, by default; it can be dragged from 200 to 480 px |
 | `--page-width` | 720 px | The text column |
 | `--page-pad` | 96 px (16 on phones) | Side padding around the column |
 | `--topbar` | 44 px | Top bar |
@@ -221,12 +221,21 @@ Moods use Lucide faces (angry, frown, meh, smile, laugh) in the mood colours.
 ### 7.2 Frame (`App.svelte`, `shell.css`)
 
 - **Sidebar**, 248 px, `--bg-sidebar`, hairline on the right. From top to bottom:
-  - the Drusite mark and name, with a "close sidebar" button that appears on hover (⌘\\ toggles it);
+  - the Drusite mark and name, with a "close sidebar" button (⌘\\ toggles it);
   - Search (⌘K), Today, and Journal once there is one;
   - a "Pages" label, with + on hover;
   - the page tree and "New page";
-  - Settings and Trash;
-  - the sync status, pinned to the foot.
+  - the **account button**, pinned to the foot above a hairline: avatar (the email's initial on
+    `--accent-soft-2`, or a person icon when signed out), the email (or "Not signed in"), the sync
+    dot and a chevrons-up-down. It opens the **account menu** above it, at least as wide: a header
+    with a 32 px avatar, the email and "dot · status · server", a line, then Settings (⌘,) and
+    Trash, a line, and Sign out (or "Sign in to sync", which opens Settings at Account). The same
+    button and menu are at the foot of the phone drawer.
+- **Resizing**: the sidebar's right edge (6 px, `col-resize`) shows a 2 px `--border-strong` line on
+  hover. Dragging it sets the width (200–480 px, kept per device); dragging well past the narrowest,
+  or a click without a drag, closes the sidebar, as in Notion. With the focus on the edge, ← and →
+  step 16 px. Closing and opening animate the column unless reduced motion is on. When closed, the
+  top bar shows an "open sidebar" button.
 - **Tree rows** are 28 px. Indent is 16 px per level. The page icon becomes a chevron on hover when the
   page has subpages. "…" (Page options: Add a page inside, Move to Trash) and + appear on hover. The
   current page is `--bg-active` with `--text`. While dragging, a drop shows an accent line before or
@@ -255,9 +264,13 @@ Moods use Lucide faces (angry, frown, meh, smile, laugh) in the mood colours.
 - Inline code has a hairline box and `--code-text`. Links to other pages are `--accent-text` with a
   tinted underline.
 - **Slash menu** (`editor/slash.ts`): `/` at the start of a block or after a space opens it. It's a
-  300 px popover of 36 px rows: an icon tile, the label, and the Markdown shortcut on the right.
-  Typing filters it; ↑ ↓ Enter Tab Esc work. On a block with text, the choice goes in a new block
-  below.
+  280 px popover of 30 px rows (a plain 18 px icon, the label, and the Markdown shortcut on the
+  right), at most 340 px tall so most of the page stays in view, with a pinned "Close menu · esc"
+  row. It opens below the line being typed, or above it when there's no room, and never covers that
+  line: if neither side fits, the list gets shorter and scrolls. It follows the line as the page
+  scrolls or the keyboard moves. Until something is typed, "Type to filter" shows in `--text-3`
+  after the `/`. Typing filters it; ↑ ↓ Enter Tab Esc work. On a block with text, the choice goes in
+  a new block below.
 - **Placeholders**: "Write something, or press / for blocks" on an empty page. The empty block the
   cursor is in shows "Press / for blocks", or "Heading", "List", "To-do", "Toggle" or "Quote" for
   its kind.
@@ -296,7 +309,8 @@ Moods use Lucide faces (angry, frown, meh, smile, laugh) in the mood colours.
   - Forms that open inside a section (a provider, an agent) are a `.form-card`.
 - **Phones**: full screen, as a list of sections in iOS-style inset groups (uppercase 12 px labels,
   48 px rows, chevrons). Each section opens as a page with a back chevron and a centred title.
-- Settings opens at Account & sync from ⌘, or the sync status, and at the list on phones.
+- Settings opens from ⌘, or the account menu (at the list on phones), and at Account & sync from the
+  top bar's sync status or "Sign in to sync".
 - Markdown folder and Import appear only where the core supports them (desktops).
 
 ### 7.8 Server pages

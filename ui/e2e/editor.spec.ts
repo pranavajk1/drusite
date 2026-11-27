@@ -241,3 +241,22 @@ test("Escape closes the slash menu and leaves the slash as text", async ({ page 
   await page.keyboard.type("x");
   await expectBlocks(page, [{ kind: paragraph, text: "/x" }]);
 });
+
+test("the slash menu never covers the line being typed on", async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 640 });
+  for (let i = 0; i < 9; i++) await page.keyboard.type(`Line ${i}\n`);
+  await page.keyboard.type("/");
+  const menu = page.getByRole("listbox", { name: "Blocks" });
+  await expect(menu).toBeVisible();
+  // The hint after the slash, as in Notion.
+  await expect(page.locator(".slash-hint")).toHaveText("Type to filter");
+  // The line's text: where the cursor is.
+  const line = await page.evaluate(() => {
+    const r = window.getSelection()!.getRangeAt(0).getBoundingClientRect();
+    return { y: r.top, height: r.height };
+  });
+  const box = (await menu.boundingBox())!;
+  expect(box.y + box.height <= line.y + 1 || box.y >= line.y + line.height - 1, JSON.stringify({ box, line })).toBe(true);
+  await page.keyboard.type("h");
+  await expect(page.locator(".slash-hint")).toHaveCount(0);
+});
