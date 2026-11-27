@@ -20,7 +20,7 @@ use drusite_ai::{AiError, EmbeddingModel, Embeddings, Provider};
 use crate::app::AppState;
 use crate::config::Config;
 
-pub use index::{backfill, spawn_indexer};
+pub use index::{backfill, forget_other_models, spawn_indexer};
 
 /// The block ID a page's title is indexed under.
 pub const TITLE_BLOCK: uuid::Uuid = uuid::Uuid::nil();
@@ -50,7 +50,11 @@ impl Embedder {
                 .as_ref()
                 .map(|k| zeroize::Zeroizing::new(k.expose().to_owned())),
         )?;
-        let client = EmbeddingModel::new(provider, e.model.clone(), e.id.clone(), e.dimensions)?;
+        // Vectors of another size are another space, even from the same model.
+        let id =
+            e.id.clone()
+                .or_else(|| e.dimensions.map(|d| format!("{}@{d}", e.model)));
+        let client = EmbeddingModel::new(provider, e.model.clone(), id, e.dimensions)?;
         Ok(Some(Self {
             client,
             ann_index: AtomicBool::new(false),
@@ -61,13 +65,17 @@ impl Embedder {
         self.client.model_id()
     }
 
+    pub fn provider(&self) -> &Provider {
+        self.client.provider()
+    }
+
     pub async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, AiError> {
         self.client.embed(texts).await
     }
 }
 
 /// A vector as pgvector's text input, `[1,2,3]`. `None` if it holds a NaN or an infinity.
-fn vector_literal(v: &[f32]) -> Option<String> {
+pub(crate) fn vector_literal(v: &[f32]) -> Option<String> {
     if v.iter().any(|x| !x.is_finite()) {
         return None;
     }

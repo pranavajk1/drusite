@@ -179,6 +179,13 @@ impl EmbeddingModel {
     }
 }
 
+impl EmbeddingModel {
+    /// The provider it's on, for recording what was sent where.
+    pub fn provider(&self) -> &Provider {
+        &self.provider
+    }
+}
+
 impl Embeddings for EmbeddingModel {
     fn model_id(&self) -> &str {
         &self.id

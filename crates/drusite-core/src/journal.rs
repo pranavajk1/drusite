@@ -3,6 +3,7 @@
 //! The journal, page queries and the settings that sync with the account.
 
 use drusite_crdt::SettingValue;
+use drusite_model::journal::ASK_JOURNAL_SETTING;
 use drusite_model::{Day, PageId, PageKind, PageQuery, Property, PropertyValue, journal};
 
 use crate::api::{ApiError, ErrorCode, PageInfo, Setting, Settings};
@@ -31,6 +32,7 @@ impl Core {
                 (WEEK_START, SettingValue::Int(day)) => {
                     settings.week_start = u8::try_from(day.clamp(0, 6)).unwrap_or(1);
                 }
+                (ASK_JOURNAL_SETTING, SettingValue::Bool(on)) => settings.ask_journal = on,
                 _ => {}
             }
         }
@@ -52,6 +54,10 @@ impl Core {
             Setting::JournalTemplate(id) => (JOURNAL_TEMPLATE, page(id)?),
             Setting::WeekStart(day) if day <= 6 => {
                 (WEEK_START, Some(SettingValue::Int(i64::from(day))))
+            }
+            // Off is stored as absent: the default, and what an older device knows.
+            Setting::AskJournal(on) => {
+                (ASK_JOURNAL_SETTING, on.then_some(SettingValue::Bool(true)))
             }
             Setting::WeekStart(day) => {
                 return Err(ApiError::new(

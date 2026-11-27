@@ -431,6 +431,8 @@ pub struct Settings {
     pub journal_template: Option<PageId>,
     /// The first day of the week in calendars: 0 is Sunday, 1 Monday.
     pub week_start: u8,
+    /// Whether Ask your notes may read journal entries. Off unless switched on.
+    pub ask_journal: bool,
 }
 
 impl Default for Settings {
@@ -439,6 +441,7 @@ impl Default for Settings {
             journal_parent: None,
             journal_template: None,
             week_start: 1,
+            ask_journal: false,
         }
     }
 }
@@ -450,6 +453,7 @@ pub enum Setting {
     JournalParent(Option<PageId>),
     JournalTemplate(Option<PageId>),
     WeekStart(u8),
+    AskJournal(bool),
 }
 
 /// One change to a page, as the editor makes it.

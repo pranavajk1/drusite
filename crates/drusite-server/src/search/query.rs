@@ -103,13 +103,34 @@ pub(crate) async fn run(
     // The query's vector first, outside any transaction.
     let mut query_vector = None;
     if let Some(embedder) = state.embedder() {
+        use crate::ask::audit;
+        let call = audit::Call {
+            workspace,
+            user: Some(*user.as_uuid()),
+            feature: "search-embed",
+            provider: embedder.provider(),
+            model: embedder.model_id(),
+            blocks: serde_json::json!([]),
+            items: 1,
+            chars: q.chars().count(),
+        };
+        let mut tx = state.db().as_user(user).await?;
+        let id = audit::begin(&mut tx, &call).await?;
+        tx.commit().await?;
         match embedder.embed(&[q.to_owned()]).await {
             Ok(mut v) => {
+                audit::finish(state, id, "ok", None, None).await;
                 query_vector = v
                     .pop()
-                    .and_then(|v| vector_literal(&v).map(|l| (l, v.len())))
+                    .and_then(|v| vector_literal(&v).map(|l| (l, v.len())));
             }
-            Err(error) => tracing::warn!(%error, "embedding a search; searching words only"),
+            Err(error) => {
+                audit::finish(state, id, audit::outcome_of(&error), None, None).await;
+                tracing::warn!(
+                    error = audit::outcome_of(&error),
+                    "embedding a search; searching words only"
+                );
+            }
         }
     }
 

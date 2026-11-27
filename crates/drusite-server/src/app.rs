@@ -35,6 +35,7 @@ struct Inner {
     auth: AuthState,
     hub: Hub,
     embedder: Option<Embedder>,
+    chat: Option<crate::ask::Chat>,
 }
 
 /// Everything a request handler needs. Cheap to clone.
@@ -57,8 +58,16 @@ impl AppState {
                 None
             }
         };
+        let chat = match crate::ask::Chat::from_config(&config) {
+            Ok(c) => c,
+            Err(error) => {
+                tracing::error!(%error, "the chat model can't be used; Ask is unavailable");
+                None
+            }
+        };
         Self(Arc::new(Inner {
             embedder,
+            chat,
             config,
             db,
             blobs,
@@ -105,6 +114,11 @@ impl AppState {
     pub fn embedder(&self) -> Option<&Embedder> {
         self.0.embedder.as_ref()
     }
+
+    /// The chat model Ask answers with, when one is configured.
+    pub fn chat(&self) -> Option<&crate::ask::Chat> {
+        self.0.chat.as_ref()
+    }
 }
 
 const REQUEST_ID: HeaderName = HeaderName::from_static("x-request-id");
@@ -117,6 +131,7 @@ pub fn router(state: AppState) -> Router {
         .merge(health::routes())
         .merge(auth::routes(&state))
         .merge(search::routes())
+        .merge(crate::ask::routes())
         .merge(crate::mcp::routes(&state))
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
@@ -125,6 +140,8 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .merge(requests)
         .merge(sync::routes())
+        // An answer streams for as long as the model takes, within [ask] timeout_secs.
+        .merge(crate::ask::streaming_routes())
         // A big file on a slow network takes longer than an ordinary request may; its size is
         // bounded instead ([attachments] max_bytes).
         .merge(crate::attachments::routes(&state))

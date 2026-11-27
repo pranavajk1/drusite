@@ -16,6 +16,9 @@ use specta::Type;
 pub const DATE: &str = "Date";
 /// The property holding a journal entry's mood, 1 ([`Mood::Awful`]) to 5 ([`Mood::Great`]).
 pub const MOOD: &str = "Mood";
+/// The workspace setting that lets Ask your notes read journal entries. Off unless set: a
+/// journal is more private than the rest of the notes.
+pub const ASK_JOURNAL_SETTING: &str = "ask.journal";
 
 /// What a page is for.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]

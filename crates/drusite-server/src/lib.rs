@@ -5,6 +5,7 @@
 
 pub mod account;
 pub mod app;
+pub mod ask;
 pub mod attachments;
 pub mod auth;
 pub mod config;
