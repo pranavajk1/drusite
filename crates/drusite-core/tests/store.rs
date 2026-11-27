@@ -11,7 +11,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-use drusite_core::store::{COMPACT_AFTER_UPDATES, DocKind, Store};
+use drusite_core::store::{COMPACT_AFTER_UPDATES, DocKind, Store, SyncState};
 use drusite_core::{Error, StoreKey};
 use drusite_crdt::Workspace;
 use drusite_model::{BlockKind, PageId};
@@ -273,4 +273,32 @@ fn killing_the_app_mid_write_loses_nothing_it_saved() {
         total_saved > COMPACT_AFTER_UPDATES as usize,
         "the run never got as far as a compaction ({total_saved} keystrokes)"
     );
+}
+
+/// A server that doesn't have this device's workspace after all (reset, restored, or another
+/// account): forgetting it offers every document and file to it again, as to a new server.
+#[test]
+fn forgetting_the_server_offers_everything_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open(
+        &dir.path().join("w.drusite"),
+        &StoreKey::generate().unwrap(),
+    )
+    .unwrap();
+    let synced = SyncState {
+        server_seq: 7,
+        on_server: true,
+        ..SyncState::default()
+    };
+    let ws = Workspace::create().unwrap();
+    store.create_workspace(&ws).unwrap();
+    let doc = ws.id().to_string();
+    store.set_sync_state(&doc, &synced).unwrap();
+    store.put_blob("pic", b"png", false).unwrap();
+    store.blob_uploaded("pic").unwrap();
+    assert!(store.blobs_to_upload().unwrap().is_empty());
+
+    store.forget_server().unwrap();
+    assert_eq!(store.sync_state(&doc).unwrap(), SyncState::default());
+    assert_eq!(store.blobs_to_upload().unwrap(), ["pic"]);
 }

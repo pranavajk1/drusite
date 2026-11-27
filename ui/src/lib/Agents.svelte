@@ -6,6 +6,8 @@
 
   import type { CoreClient } from "../core/client";
   import type { AgentAccess, AgentCall, AgentToken, LocalAgents } from "../core/types";
+  import Icon from "./ui/Icon.svelte";
+  import Switch from "./ui/Switch.svelte";
 
   let {
     client,
@@ -126,81 +128,114 @@
   }
 </script>
 
-<h3 class="settings-section">Agents</h3>
-<p class="hint">
-  Agents such as Claude Code can read your notes and, if you allow it, add to and edit them. They can never delete
-  pages, and journal entries stay read-only to them unless you allow more. Everything they change is listed below,
-  where you can undo it.
-</p>
+<div class="set-group">
+  <p class="set-desc">
+    Agents such as Claude Code can read your notes and, if you allow it, add to and edit them. They can never delete
+    pages, and journal entries stay read-only to them unless you allow more. Everything they change is listed below,
+    where you can undo it.
+  </p>
+</div>
 
 {#if serverMcp}
-  <p class="hint">To connect an agent to your server, from any computer (it signs in through the browser and asks you what it may do):</p>
-  <pre class="agent-command"><code>claude mcp add --transport http drusite {serverMcp}</code></pre>
+  <div class="set-group">
+    <h3 class="set-title">Through your server</h3>
+    <p class="set-desc">
+      To connect an agent to your server, from any computer (it signs in through the browser and asks you what it may
+      do):
+    </p>
+    <div class="code-copy">
+      <pre class="agent-command"><code>claude mcp add --transport http drusite {serverMcp}</code></pre>
+      <button class="icon-btn" aria-label="Copy command" title="Copy" onclick={() => copy(`claude mcp add --transport http drusite ${serverMcp}`)}>
+        <Icon name="copy" size={15} />
+      </button>
+    </div>
+  </div>
 {/if}
 
 {#if local?.available}
-  <label class="agent-toggle">
-    <input type="checkbox" checked={local.enabled} disabled={busy} onchange={(e) => setEnabled(e.currentTarget.checked)} />
-    Let agents on this computer connect
-  </label>
-  {#if local.problem}<p class="sheet-message">{local.problem}</p>{/if}
-  {#if local.enabled}
-    <p class="hint">At <code>{local.url}</code>, while Drusite is open, with a token from here.</p>
-    {#if made}
-      <div class="agent-made" data-testid="agent-made">
-        <p>Run this to connect {made.name}. The token is shown only now.</p>
-        <pre class="agent-command"><code>{command(made)}</code></pre>
-        <button class="primary" onclick={() => made && copy(command(made))}>{copied ? "Copied" : "Copy"}</button>
-        <button onclick={() => (made = null)}>Done</button>
-      </div>
-    {:else}
-      <form class="agent-form" onsubmit={connect}>
-        <label for="agent-name">Connect an agent</label>
-        <div class="field-row">
-          <input id="agent-name" bind:value={name} maxlength="100" required />
-          <button type="submit" disabled={busy}>Connect</button>
-        </div>
-        <label class="agent-choice"><input type="radio" name="agent-access" checked={!write} onchange={() => (write = false)} /> Read only</label>
-        <label class="agent-choice"><input type="radio" name="agent-access" checked={write} onchange={() => (write = true)} /> Read, add and edit pages</label>
-        {#if write}
-          <label class="agent-choice"><input type="checkbox" bind:checked={journal} /> Edit journal entries too</label>
+  <div class="set-group">
+    <h3 class="set-title">On this computer</h3>
+    <div class="set-row">
+      <div class="set-row-text">
+        <label class="set-label" for="agents-local">Let agents on this computer connect</label>
+        {#if local.enabled}
+          <span class="set-desc">At <code>{local.url}</code>, while Drusite is open, with a token from here.</span>
+        {:else}
+          <span class="set-desc">Off. Agents can still connect through your server.</span>
         {/if}
-      </form>
-    {/if}
-  {/if}
-  {#if tokens.length}
-    <ul class="trash-list agent-list" aria-label="Agents on this computer">
-      {#each tokens as t (t.id)}
-        <li class="trash-item">
-          <div class="trash-title">
-            <span>{t.name}</span>
-            <small>{accessText(t.access)} · {t.lastUsedAt ? `last used ${when(t.lastUsedAt)}` : "not used yet"}</small>
+      </div>
+      <Switch id="agents-local" checked={local.enabled} disabled={busy} onchange={setEnabled} />
+    </div>
+    {#if local.problem}<p class="field-error">{local.problem}</p>{/if}
+    {#if local.enabled}
+      {#if made}
+        <div class="form-card agent-made" data-testid="agent-made">
+          <p class="set-label">Run this to connect {made.name}. The token is shown only now.</p>
+          <pre class="agent-command"><code>{command(made)}</code></pre>
+          <div class="button-row form-actions">
+            <button class="btn ghost" onclick={() => (made = null)}>Done</button>
+            <button class="btn primary" onclick={() => made && copy(command(made))}>
+              <Icon name={copied ? "check" : "copy"} size={15} />{copied ? "Copied" : "Copy"}
+            </button>
           </div>
-          <button class="danger" onclick={() => disconnect(t)}>Disconnect</button>
+        </div>
+      {:else}
+        <form class="form-card agent-form" onsubmit={connect}>
+          <div class="field">
+            <label for="agent-name">Connect an agent</label>
+            <div class="field-inline">
+              <input id="agent-name" class="input" bind:value={name} maxlength="100" required />
+              <button class="btn primary" type="submit" disabled={busy}>Connect</button>
+            </div>
+          </div>
+          <div class="choices" role="radiogroup" aria-label="What it may do">
+            <label class="choice"><input type="radio" name="agent-access" checked={!write} onchange={() => (write = false)} /> Read only</label>
+            <label class="choice"><input type="radio" name="agent-access" checked={write} onchange={() => (write = true)} /> Read, add and edit pages</label>
+            {#if write}
+              <label class="choice choice-nested"><input class="checkbox" type="checkbox" bind:checked={journal} /> Edit journal entries too</label>
+            {/if}
+          </div>
+        </form>
+      {/if}
+    {/if}
+    {#if tokens.length}
+      <ul class="list agent-list" aria-label="Agents on this computer">
+        {#each tokens as t (t.id)}
+          <li class="list-row">
+            <Icon name="bot" class="list-row-icon" />
+            <div class="list-row-text">
+              <span>{t.name}</span>
+              <small>{accessText(t.access)} · {t.lastUsedAt ? `last used ${when(t.lastUsedAt)}` : "not used yet"}</small>
+            </div>
+            <button class="btn small danger" onclick={() => disconnect(t)}>Disconnect</button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </div>
+{/if}
+
+<div class="set-group">
+  <h3 class="set-title">What agents changed</h3>
+  {#if serverProblem}<p class="hint">The server's list couldn't be read: {serverProblem}</p>{/if}
+  {#if activity.length}
+    <ul class="list agent-activity" aria-label="What agents changed">
+      {#each activity as call (call.source + call.id)}
+        <li class="list-row">
+          <Icon name="history" class="list-row-icon" />
+          <div class="list-row-text">
+            <span>{call.summary}</span>
+            <small>{call.agent} · {when(call.at)}{call.source === "server" ? " · through the server" : ""}</small>
+          </div>
+          {#if call.undoneAt}
+            <span class="badge muted">Undone</span>
+          {:else}
+            <button class="btn small" onclick={() => undo(call)}><Icon name="undo-2" size={14} />Undo</button>
+          {/if}
         </li>
       {/each}
     </ul>
+  {:else}
+    <p class="hint">Nothing yet.</p>
   {/if}
-{/if}
-
-<h4 class="agent-subhead">What agents changed</h4>
-{#if serverProblem}<p class="hint">The server's list couldn't be read: {serverProblem}</p>{/if}
-{#if activity.length}
-  <ul class="trash-list agent-activity" aria-label="What agents changed">
-    {#each activity as call (call.source + call.id)}
-      <li class="trash-item">
-        <div class="trash-title">
-          <span>{call.summary}</span>
-          <small>{call.agent} · {when(call.at)}{call.source === "server" ? " · through the server" : ""}</small>
-        </div>
-        {#if call.undoneAt}
-          <small class="agent-undone">Undone</small>
-        {:else}
-          <button onclick={() => undo(call)}>Undo</button>
-        {/if}
-      </li>
-    {/each}
-  </ul>
-{:else}
-  <p class="hint">Nothing yet.</p>
-{/if}
+</div>

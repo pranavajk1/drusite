@@ -1,0 +1,218 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+
+/* The journal page's views: calendar, on this day, mood over time. DESIGN.md §7.5. */
+
+.journal-views {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: var(--space-6) var(--space-8);
+  margin: var(--space-2) 0 var(--space-6);
+  padding-bottom: var(--space-6);
+  border-bottom: 1px solid var(--divider);
+  font-size: var(--text-md);
+}
+
+.journal-views h3 {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+}
+
+.jv-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: var(--row);
+  margin-bottom: var(--space-2);
+}
+
+.jv-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-0);
+}
+
+.jv-nav .icon-btn {
+  color: var(--text-2);
+}
+
+.jv-calendar table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.jv-calendar th {
+  font-weight: var(--weight-medium);
+  color: var(--text-3);
+  font-size: var(--text-xs);
+  padding-bottom: var(--space-1);
+}
+
+.jv-calendar td {
+  padding: 2px;
+  text-align: center;
+}
+
+.jv-day {
+  width: 100%;
+  max-width: 40px;
+  aspect-ratio: 1;
+  border-radius: var(--radius-full);
+  color: var(--text-2);
+  font-size: var(--text-md);
+  font-variant-numeric: tabular-nums;
+  transition: background var(--dur-fast);
+}
+
+.jv-day:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.jv-day:disabled {
+  color: var(--text-3);
+  opacity: 0.5;
+}
+
+.jv-day.has-entry {
+  color: var(--text);
+  font-weight: var(--weight-semibold);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
+.jv-day.today {
+  color: var(--text-on-accent);
+  background: var(--accent);
+  box-shadow: none;
+  font-weight: var(--weight-semibold);
+}
+
+.jv-day.today:hover {
+  background: var(--accent-hover);
+}
+
+.jv-day.mood-1 { background: color-mix(in srgb, var(--mood-1) 28%, transparent); box-shadow: none; }
+.jv-day.mood-2 { background: color-mix(in srgb, var(--mood-2) 28%, transparent); box-shadow: none; }
+.jv-day.mood-3 { background: color-mix(in srgb, var(--mood-3) 28%, transparent); box-shadow: none; }
+.jv-day.mood-4 { background: color-mix(in srgb, var(--mood-4) 28%, transparent); box-shadow: none; }
+.jv-day.mood-5 { background: color-mix(in srgb, var(--mood-5) 28%, transparent); box-shadow: none; }
+
+.jv-day.today[class*="mood-"] {
+  color: var(--text);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.jv-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.jv-list button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 40px;
+  text-align: left;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  transition: background var(--dur-fast);
+}
+
+.jv-list button:hover {
+  background: var(--bg-hover);
+}
+
+.jv-list .icon {
+  color: var(--text-3);
+}
+
+.jv-entry {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.jv-entry-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jv-ago {
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+
+.jv-entry-mood.mood-1 { color: var(--mood-1); }
+.jv-entry-mood.mood-2 { color: var(--mood-2); }
+.jv-entry-mood.mood-3 { color: var(--mood-3); }
+.jv-entry-mood.mood-4 { color: var(--mood-4); }
+.jv-entry-mood.mood-5 { color: var(--mood-5); }
+
+.jv-entry-mood .icon {
+  color: inherit;
+}
+
+.jv-mood {
+  grid-column: 1 / -1;
+}
+
+.jv-chart {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.jv-grid {
+  stroke: var(--divider);
+  stroke-width: 1;
+}
+
+.jv-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  opacity: 0.6;
+}
+
+.jv-dot {
+  stroke: var(--bg);
+  stroke-width: 2;
+}
+
+.jv-dot.mood-1 { fill: var(--mood-1); }
+.jv-axis.mood-1 { color: var(--mood-1); }
+.jv-dot.mood-2 { fill: var(--mood-2); }
+.jv-axis.mood-2 { color: var(--mood-2); }
+.jv-dot.mood-3 { fill: var(--mood-3); }
+.jv-axis.mood-3 { color: var(--mood-3); }
+.jv-dot.mood-4 { fill: var(--mood-4); }
+.jv-axis.mood-4 { color: var(--mood-4); }
+.jv-dot.mood-5 { fill: var(--mood-5); }
+.jv-axis.mood-5 { color: var(--mood-5); }
+
+.jv-axis {
+  fill: none;
+}
+
+.journal-views .hint {
+  margin-top: var(--space-1);
+}
+
+.jv-empty {
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+
+@media (max-width: 720px) {
+  .journal-views {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

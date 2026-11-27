@@ -3,6 +3,7 @@
 // The journal's moods: the `Mood` property, a number from 1 to 5.
 
 import type { PageInfo, PropertyValue } from "../core/types";
+import type { IconName } from "../lib/icons/icons";
 
 export const DATE = "Date";
 export const MOOD = "Mood";
@@ -10,15 +11,15 @@ export const MOOD = "Mood";
 export interface MoodLevel {
   score: number;
   label: string;
-  emoji: string;
+  icon: IconName;
 }
 
 export const MOODS: MoodLevel[] = [
-  { score: 1, label: "Awful", emoji: "😣" },
-  { score: 2, label: "Bad", emoji: "🙁" },
-  { score: 3, label: "Okay", emoji: "😐" },
-  { score: 4, label: "Good", emoji: "🙂" },
-  { score: 5, label: "Great", emoji: "😄" },
+  { score: 1, label: "Awful", icon: "angry" },
+  { score: 2, label: "Bad", icon: "frown" },
+  { score: 3, label: "Okay", icon: "meh" },
+  { score: 4, label: "Good", icon: "smile" },
+  { score: 5, label: "Great", icon: "laugh" },
 ];
 
 export function property(page: PageInfo, name: string): PropertyValue | undefined {

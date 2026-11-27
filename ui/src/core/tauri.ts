@@ -17,8 +17,8 @@ export const tauriTransport: Transport = {
     return invoke<Response>("core", { command });
   },
 
-  async pickFolder(): Promise<string | null> {
-    const folder = await open({ directory: true, title: "Choose the folder for your pages" });
+  async pickFolder(title: string): Promise<string | null> {
+    const folder = await open({ directory: true, title });
     return typeof folder === "string" ? folder : null;
   },
 

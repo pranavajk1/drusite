@@ -542,7 +542,7 @@ impl Store {
             .query_row("SELECT server FROM account WHERE id = 1", [], |r| r.get(0))
             .optional()?;
         if previous.as_deref().is_some_and(|p| p != server) {
-            tx.execute("DELETE FROM sync_state", [])?;
+            forget_server_in(&tx)?;
         }
         tx.execute(
             "INSERT INTO account (id, server, refresh_token) VALUES (1, ?1, ?2)
@@ -567,6 +567,16 @@ impl Store {
     pub fn set_account_email(&mut self, email: &str) -> Result<()> {
         self.conn
             .execute("UPDATE account SET email = ?1 WHERE id = 1", params![email])?;
+        Ok(())
+    }
+
+    /// Forgets everything this device believed its server had: every document and file is
+    /// offered again on the next sync. For a server that turns out not to have this device's
+    /// workspace (its data was reset or restored, or it's another account), as for a new server.
+    pub fn forget_server(&mut self) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        forget_server_in(&tx)?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -1061,6 +1071,13 @@ impl std::fmt::Debug for StoredAccount {
             .field("email", &self.email)
             .finish()
     }
+}
+
+/// See [`Store::forget_server`].
+fn forget_server_in(tx: &rusqlite::Transaction<'_>) -> Result<()> {
+    tx.execute("DELETE FROM sync_state", [])?;
+    tx.execute("UPDATE blobs SET uploaded = 0", [])?;
+    Ok(())
 }
 
 /// What a document's server is known to have.

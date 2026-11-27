@@ -4,6 +4,8 @@
 
   import type { CoreClient } from "../core/client";
   import type { PageId, TrashItem } from "../core/types";
+  import Icon from "./ui/Icon.svelte";
+  import Modal from "./ui/Modal.svelte";
 
   let {
     client,
@@ -45,21 +47,20 @@
   }
 </script>
 
-<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-<div class="sheet-backdrop" onclick={onclose}>
-  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="trash-title" tabindex="-1" onclick={(e) => e.stopPropagation()}>
-    <div class="sheet-head">
-      <h2 id="trash-title">Trash</h2>
-      <button class="sheet-close" aria-label="Close" onclick={onclose}>×</button>
-    </div>
+<Modal title="Trash" {onclose}>
+  <div class="modal-body">
     <p class="hint">Deleted pages stay here for 30 days, then they're deleted for good.</p>
     {#if items.length === 0}
-      <p class="hint">The trash is empty.</p>
+      <div class="empty">
+        <Icon name="trash-2" size={28} />
+        <span>The trash is empty.</span>
+      </div>
     {:else}
-      <ul class="trash-list">
+      <ul class="list trash-list">
         {#each items as item (item.id)}
-          <li class="trash-item">
-            <div class="trash-title">
+          <li class="list-row trash-item">
+            <Icon name="file-text" class="list-row-icon" />
+            <div class="list-row-text trash-title">
               <span>{item.title || "Untitled"}</span>
               <small>
                 Deleted {when(item.trashedAt)}{item.subpages > 0
@@ -67,18 +68,39 @@
                   : ""} · {days(item.deletedAt)} days left
               </small>
             </div>
-            <button onclick={() => restore(item.id)}>Restore</button>
-            <button class="danger" aria-label="Delete {item.title || 'Untitled'} forever" onclick={() => run(() => client.deleteForever(item.id))}>Delete forever</button>
+            <button class="icon-btn" aria-label="Restore" title="Restore" onclick={() => restore(item.id)}>
+              <Icon name="rotate-ccw" />
+            </button>
+            <button
+              class="icon-btn danger-hover"
+              aria-label="Delete {item.title || 'Untitled'} forever"
+              title="Delete forever"
+              onclick={() => run(() => client.deleteForever(item.id))}><Icon name="trash-2" /></button
+            >
           </li>
         {/each}
       </ul>
-      {#if emptying}
-        <p>Delete {items.length === 1 ? "this page" : `all ${items.length} pages`} for good? This can't be undone.</p>
-        <button class="trash-empty" onclick={() => run(async () => { await client.emptyTrash(); emptying = false; })}>Yes, empty the trash</button>
-        <button onclick={() => (emptying = false)}>Cancel</button>
-      {:else}
-        <button class="trash-empty" onclick={() => (emptying = true)}>Empty trash</button>
-      {/if}
     {/if}
   </div>
-</div>
+  {#if items.length > 0}
+    <div class="modal-foot">
+      {#if emptying}
+        <p class="modal-foot-text">
+          Delete {items.length === 1 ? "this page" : `all ${items.length} pages`} for good? This can't be undone.
+        </p>
+        <button class="btn ghost" onclick={() => (emptying = false)}>Cancel</button>
+        <button
+          class="btn danger solid"
+          onclick={() =>
+            run(async () => {
+              await client.emptyTrash();
+              emptying = false;
+            })}>Yes, empty the trash</button
+        >
+      {:else}
+        <span class="modal-foot-text hint">{items.length} {items.length === 1 ? "page" : "pages"}</span>
+        <button class="btn danger" onclick={() => (emptying = true)}>Empty trash</button>
+      {/if}
+    </div>
+  {/if}
+</Modal>

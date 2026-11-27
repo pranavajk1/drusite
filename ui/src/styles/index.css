@@ -1,0 +1,13 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+
+/* The app's styles, in cascade order. design/DESIGN.md §10 says what goes where. */
+
+@import "./tokens.css";
+@import "./base.css";
+@import "./controls.css";
+@import "./shell.css";
+@import "./page.css";
+@import "./editor.css";
+@import "./journal.css";
+@import "./overlays.css";
+@import "./settings.css";

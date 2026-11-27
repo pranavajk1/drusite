@@ -4,7 +4,10 @@
   import type { PageInfo, PropertyValue } from "../core/types";
   import { dateOf, dayTitle } from "../journal/dates";
   import { DATE, MOOD, moodOf } from "../journal/mood";
+  import type { IconName } from "./icons/icons";
   import MoodPicker from "./MoodPicker.svelte";
+  import Icon from "./ui/Icon.svelte";
+  import Select from "./ui/Select.svelte";
 
   let { client, page, onerror }: { client: CoreClient; page: PageInfo; onerror: (e: unknown) => void } = $props();
 
@@ -63,6 +66,31 @@
     raw = "";
   }
 
+  const TYPES: { value: PropertyValue["type"]; label: string }[] = [
+    { value: "text", label: "Text" },
+    { value: "number", label: "Number" },
+    { value: "checkbox", label: "Checkbox" },
+    { value: "date", label: "Date" },
+  ];
+  const ICON: Record<PropertyValue["type"], IconName> = {
+    text: "text-quote",
+    number: "list-ordered",
+    checkbox: "square-check",
+    date: "calendar-days",
+  };
+
+  let nameInput = $state<HTMLInputElement | null>(null);
+  $effect(() => {
+    if (adding) nameInput?.focus();
+  });
+
+  function formKey(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      adding = false;
+    }
+  }
+
   const entryDate = $derived.by(() => {
     const v = page.properties.find((p) => p.name === DATE)?.value;
     return v?.type === "date" ? v.value : null;
@@ -71,10 +99,10 @@
 
 {#if journal}
   <div class="journal-head">
-    <span class="journal-mood-label">Mood</span>
     {#if entryDate && page.title !== dayTitle(entryDate)}
       <span class="journal-date">{dateOf(entryDate).toLocaleDateString(undefined, { dateStyle: "full" })}</span>
     {/if}
+    <span class="journal-mood-label">Mood</span>
     <MoodPicker
       score={moodOf(page)?.score ?? null}
       onpick={(s) => set(MOOD, s === null ? null : { type: "number", value: s })}
@@ -86,19 +114,22 @@
   <dl class="properties">
     {#each listed as p (p.name)}
       <div class="property">
-        <dt>{p.name}</dt>
+        <dt><Icon name={ICON[p.value.type]} size={15} /><span class="property-name">{p.name}</span></dt>
         <dd>
           {#if p.value.type === "checkbox"}
             <input
+              class="checkbox"
               type="checkbox"
               checked={p.value.value}
               aria-label={p.name}
               onchange={(e) => set(p.name, { type: "checkbox", value: e.currentTarget.checked })}
             />
           {:else}
-            {show(p.value)}
+            <span class="property-value">{show(p.value)}</span>
           {/if}
-          <button class="property-remove" aria-label="Remove {p.name}" onclick={() => set(p.name, null)}>×</button>
+          <button class="icon-btn property-remove" aria-label="Remove {p.name}" title="Remove" onclick={() => set(p.name, null)}>
+            <Icon name="x" size={14} />
+          </button>
         </dd>
       </div>
     {/each}
@@ -106,29 +137,44 @@
 {/if}
 
 {#if adding}
-  <form class="property-form" onsubmit={add}>
-    <input placeholder="Name" aria-label="Property name" bind:value={name} />
-    <select aria-label="Property type" bind:value={type} onchange={() => (raw = type === "checkbox" ? "true" : "")}>
-      <option value="text">Text</option>
-      <option value="number">Number</option>
-      <option value="checkbox">Checkbox</option>
-      <option value="date">Date</option>
-    </select>
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <form class="property-form" aria-label="Add a property" onsubmit={add} onkeydown={formKey}>
+    <input bind:this={nameInput} class="input" placeholder="Property name" aria-label="Property name" bind:value={name} />
+    <Select
+      label="Property type"
+      boxed
+      value={type}
+      options={TYPES}
+      onchange={(t) => {
+        type = t;
+        raw = t === "checkbox" ? "true" : "";
+      }}
+    />
     {#if type === "checkbox"}
-      <select aria-label="Property value" bind:value={raw}>
-        <option value="true">Yes</option>
-        <option value="false">No</option>
-      </select>
+      <Select
+        label="Property value"
+        boxed
+        value={raw}
+        options={[
+          { value: "true", label: "Yes" },
+          { value: "false", label: "No" },
+        ]}
+        onchange={(v) => (raw = v)}
+      />
     {:else}
       <input
+        class="input"
         type={type === "date" ? "date" : type === "number" ? "number" : "text"}
+        placeholder="Value"
         aria-label="Property value"
         bind:value={raw}
       />
     {/if}
-    <button class="primary" type="submit">Add</button>
-    <button type="button" onclick={() => (adding = false)}>Cancel</button>
+    <div class="button-row">
+      <button class="btn primary small" type="submit">Add</button>
+      <button class="btn ghost small" type="button" onclick={() => (adding = false)}>Cancel</button>
+    </div>
   </form>
 {:else}
-  <button class="property-add" onclick={() => (adding = true)}>+ Add a property</button>
+  <button class="property-add" onclick={() => (adding = true)}><Icon name="plus" size={15} />Add a property</button>
 {/if}

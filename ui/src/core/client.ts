@@ -42,7 +42,8 @@ export interface Transport {
   /** Calls `handler` for every core event until the returned function is called. */
   subscribe(handler: (event: Event) => void): () => void;
   /** Asks the person for a folder, where the platform can (desktops). */
-  pickFolder?: () => Promise<string | null>;
+  /** The system's folder picker, titled `title`; desktops only. */
+  pickFolder?: (title: string) => Promise<string | null>;
 }
 
 /** A failed command, with the core's error code. */
@@ -210,8 +211,8 @@ export class CoreClient {
   }
 
   /** Asks for a folder; null if the person cancels or the platform can't. */
-  async pickFolder(): Promise<string | null> {
-    return (await this.transport.pickFolder?.()) ?? null;
+  async pickFolder(title: string): Promise<string | null> {
+    return (await this.transport.pickFolder?.(title)) ?? null;
   }
 
   async openPage(page: PageId): Promise<PageView> {

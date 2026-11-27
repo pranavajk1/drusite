@@ -1,0 +1,244 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+
+/*
+  Design tokens: the only place raw values live. Everything else refers to these.
+  The standard behind them is design/DESIGN.md; change both together.
+
+  Theme: light by default, dark when the system is dark, and the user's choice in Settings →
+  Appearance overrides either way through <html data-theme="light|dark">.
+*/
+
+:root {
+  /* ---- Type ---- */
+  --font: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", system-ui, Roboto,
+    "Helvetica Neue", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+
+  --text-xs: 12px; /* section labels, shortcuts, captions */
+  --text-sm: 13px; /* descriptions, secondary lines */
+  --text-md: 14px; /* UI: sidebar, menus, buttons, settings */
+  --text-base: 16px; /* page body */
+  --text-lg: 18px; /* sheet titles on phones, search input */
+  --text-xl: 22px; /* modal and settings page titles */
+  --text-h3: 1.25em;
+  --text-h2: 1.5em;
+  --text-h1: 1.875em;
+  --text-title: 40px; /* page title, desktop */
+  --text-title-phone: 30px;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  --leading-tight: 1.25;
+  --leading-ui: 1.45;
+  --leading-body: 1.6;
+
+  /* ---- Spacing: a 4px scale ---- */
+  --space-0: 2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-24: 96px;
+
+  /* ---- Sizes ---- */
+  --row: 28px; /* sidebar rows, menu items, small buttons */
+  --row-touch: 44px; /* the same on touch screens */
+  --control: 32px; /* inputs and buttons */
+  --icon-sm: 14px;
+  --icon: 16px;
+  --icon-lg: 20px;
+  --sidebar-width: 248px;
+  --page-width: 720px;
+  --page-pad: var(--space-24);
+  --topbar: 44px;
+  --tabbar: 56px;
+
+  /* ---- Radius ---- */
+  --radius-xs: 3px; /* inline code, marks */
+  --radius-sm: 6px; /* rows, buttons, inputs */
+  --radius-md: 8px; /* cards, callouts, code */
+  --radius-lg: 12px; /* popovers, modals */
+  --radius-xl: 16px; /* phone sheets */
+  --radius-full: 999px;
+
+  /* ---- Motion ---- */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast: 90ms; /* hover, press */
+  --dur: 150ms; /* menus, popovers */
+  --dur-slow: 240ms; /* sheets, drawers */
+
+  /* ---- Layers ---- */
+  --z-sticky: 10;
+  --z-tabbar: 20;
+  --z-drawer: 30;
+  --z-toolbar: 35;
+  --z-modal: 40;
+  --z-popover: 50;
+  --z-toast: 60;
+
+  /* ---- Colour: light ---- */
+  color-scheme: light;
+  --bg: #ffffff;
+  --bg-sidebar: #f8f7fa;
+  --bg-elevated: #ffffff;
+  --bg-subtle: #f4f3f6; /* code, callouts, input fills */
+  --bg-hover: rgb(43 34 64 / 0.055);
+  --bg-active: rgb(43 34 64 / 0.09);
+  --bg-backdrop: rgb(18 14 28 / 0.4);
+
+  --text: #2b2930;
+  --text-2: #6f6c78; /* secondary: descriptions, meta */
+  --text-3: #a29fab; /* tertiary: placeholders, section labels, icons at rest */
+  --text-on-accent: #ffffff;
+
+  --border: #ebe9ef;
+  --border-strong: #dad7e1;
+  --divider: #efedf2;
+
+  /* Amethyst, from the app icon's crystal bed. */
+  --accent: #6d45e0;
+  --accent-hover: #5c35cc;
+  --accent-text: #6339d6;
+  --accent-soft: #f0ebfd;
+  --accent-soft-2: #e3d9fb;
+  --focus: rgb(109 69 224 / 0.45);
+
+  --danger: #d0433e;
+  --danger-soft: #fdeceb;
+  --success: #24895a;
+  --warning: #c98a12;
+
+  --code-text: #c0392b;
+  --selection: rgb(109 69 224 / 0.18);
+
+  --mood-1: #d9534f;
+  --mood-2: #e8914a;
+  --mood-3: #cdb446;
+  --mood-4: #7fbc5e;
+  --mood-5: #2f9e64;
+
+  --shadow-sm: 0 1px 2px rgb(24 18 38 / 0.06), 0 0 0 1px rgb(24 18 38 / 0.06);
+  --shadow-md: 0 4px 10px rgb(24 18 38 / 0.04), 0 14px 24px -6px rgb(24 18 38 / 0.1), 0 0 0 1px rgb(24 18 38 / 0.07);
+  --shadow-lg: 0 6px 14px rgb(24 18 38 / 0.1), 0 24px 48px rgb(24 18 38 / 0.18), 0 0 0 1px rgb(24 18 38 / 0.07);
+}
+
+/* ---- Colour: dark ---- */
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #1b1a1f;
+  --bg-sidebar: #212026;
+  --bg-elevated: #26252c;
+  --bg-subtle: #27262d;
+  --bg-hover: rgb(255 255 255 / 0.06);
+  --bg-active: rgb(255 255 255 / 0.1);
+  --bg-backdrop: rgb(0 0 0 / 0.55);
+
+  --text: #e8e6ed;
+  --text-2: #a19eaa;
+  --text-3: #6f6c78;
+
+  --border: #302e36;
+  --border-strong: #403e47;
+  --divider: #2c2a32;
+
+  --accent: #7a56ea;
+  --accent-hover: #6c48dc;
+  --accent-text: #b39cfa;
+  --accent-soft: #2d2545;
+  --accent-soft-2: #3b3060;
+  --focus: rgb(160 131 247 / 0.55);
+
+  --danger: #e5625d;
+  --danger-soft: #3a2324;
+  --success: #49b27c;
+  --warning: #d9a23a;
+
+  --code-text: #ec7b72;
+  --selection: rgb(143 108 245 / 0.32);
+
+  --mood-1: #c8645f;
+  --mood-2: #cf8a52;
+  --mood-3: #bfa95a;
+  --mood-4: #7fae66;
+  --mood-5: #4c9a6c;
+
+  --shadow-sm: 0 0 0 1px rgb(255 255 255 / 0.08);
+  --shadow-md: 0 14px 28px rgb(0 0 0 / 0.4), 0 0 0 1px rgb(255 255 255 / 0.08);
+  --shadow-lg: 0 24px 48px rgb(0 0 0 / 0.55), 0 0 0 1px rgb(255 255 255 / 0.09);
+}
+
+/* The same dark values when the system is dark and the user hasn't picked light. Kept in step
+   with the block above by hand: CSS can't share a rule between a selector and a media query. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #1b1a1f;
+    --bg-sidebar: #212026;
+    --bg-elevated: #26252c;
+    --bg-subtle: #27262d;
+    --bg-hover: rgb(255 255 255 / 0.06);
+    --bg-active: rgb(255 255 255 / 0.1);
+    --bg-backdrop: rgb(0 0 0 / 0.55);
+    --text: #e8e6ed;
+    --text-2: #a19eaa;
+    --text-3: #6f6c78;
+    --border: #302e36;
+    --border-strong: #403e47;
+    --divider: #2c2a32;
+    --accent: #7a56ea;
+    --accent-hover: #6c48dc;
+    --accent-text: #b39cfa;
+    --accent-soft: #2d2545;
+    --accent-soft-2: #3b3060;
+    --focus: rgb(160 131 247 / 0.55);
+    --danger: #e5625d;
+    --danger-soft: #3a2324;
+    --success: #49b27c;
+    --warning: #d9a23a;
+    --code-text: #ec7b72;
+    --selection: rgb(143 108 245 / 0.32);
+    --mood-1: #c8645f;
+    --mood-2: #cf8a52;
+    --mood-3: #bfa95a;
+    --mood-4: #7fae66;
+    --mood-5: #4c9a6c;
+    --shadow-sm: 0 0 0 1px rgb(255 255 255 / 0.08);
+    --shadow-md: 0 14px 28px rgb(0 0 0 / 0.4), 0 0 0 1px rgb(255 255 255 / 0.08);
+    --shadow-lg: 0 24px 48px rgb(0 0 0 / 0.55), 0 0 0 1px rgb(255 255 255 / 0.09);
+  }
+}
+
+/* Touch screens: bigger rows, and no 14px UI text (16px keeps iOS from zooming into inputs). */
+@media (pointer: coarse) {
+  :root {
+    --row: 40px;
+    --control: 44px;
+    --text-md: 16px;
+    --text-sm: 14px;
+  }
+}
+
+@media (max-width: 700px) {
+  :root {
+    --page-pad: var(--space-4);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur: 0ms;
+    --dur-slow: 0ms;
+  }
+}

@@ -11,17 +11,32 @@
   import type { EditorView } from "prosemirror-view";
 
   import { toolbar } from "../editor/commands";
+  import Icon from "./ui/Icon.svelte";
 
   let { view }: { view: EditorView } = $props();
 
   let keyboard = $state(0);
+  /** The keyboard is up: it covers the window (iOS, Android 15+), or it shrank it (older Android). */
+  let up = $state(false);
+  let tallest = window.innerHeight;
 
   onMount(() => {
     const vv = window.visualViewport;
     if (!vv) return;
     const place = () => {
       keyboard = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+      tallest = Math.max(tallest, window.innerHeight);
+      up = keyboard > 120 || window.innerHeight < tallest - 120;
       document.documentElement.style.setProperty("--keyboard", `${keyboard}px`);
+      // Where the keyboard covers the window rather than shrinking it (Android 15 and later draw
+      // edge to edge), the editor has to keep the cursor above the keyboard and this bar itself.
+      const bar = 64;
+      view.setProps({ scrollMargin: { top: 64, left: 5, right: 5, bottom: keyboard + bar } });
+      if (keyboard > 0 && view.hasFocus()) {
+        const caret = view.coordsAtPos(view.state.selection.head);
+        const limit = vv.offsetTop + vv.height - bar;
+        if (caret.bottom > limit) window.scrollBy({ top: caret.bottom - limit + 8 });
+      }
     };
     place();
     vv.addEventListener("resize", place);
@@ -42,21 +57,34 @@
     };
   }
 
+  /** Types a `/`, after a space if needed, which opens the block menu. */
+  function blocks(e: PointerEvent) {
+    e.preventDefault();
+    const { state } = view;
+    const at = state.selection.$from;
+    const before = at.parent.textBetween(Math.max(0, at.parentOffset - 1), at.parentOffset);
+    view.dispatch(state.tr.insertText(before === "" || /\s/.test(before) ? "/" : " /"));
+    view.focus();
+  }
+
   function hide(e: PointerEvent) {
     e.preventDefault();
     view.dom.blur();
   }
 </script>
 
-<div class="phone-toolbar" class:keyboard-up={keyboard > 0} role="toolbar" aria-label="Formatting">
-  <button aria-label="Heading" onpointerdown={run(toolbar.heading)}>H</button>
-  <button aria-label="Bulleted list" onpointerdown={run(toolbar.toggleKind("bulleted"))}>•</button>
-  <button aria-label="To-do" onpointerdown={run(toolbar.toggleKind("todo"))}>☐</button>
-  <button aria-label="Outdent" onpointerdown={run(toolbar.outdent)}>⇤</button>
-  <button aria-label="Indent" onpointerdown={run(toolbar.indent)}>⇥</button>
-  <button aria-label="Bold" class="bold" onpointerdown={run(toolbar.bold)}>B</button>
-  <button aria-label="Italic" class="italic" onpointerdown={run(toolbar.italic)}>I</button>
-  <button aria-label="Undo" onpointerdown={run(toolbar.undo)}>↶</button>
-  <button aria-label="Redo" onpointerdown={run(toolbar.redo)}>↷</button>
-  <button aria-label="Hide keyboard" class="hide" onpointerdown={hide}>⌄</button>
+<div class="phone-toolbar" class:keyboard-up={keyboard > 0} class:away={!up} role="toolbar" aria-label="Formatting">
+  <button aria-label="Add a block" onpointerdown={blocks}><Icon name="plus" size={20} /></button>
+  <span class="tb-sep"></span>
+  <button aria-label="Heading" onpointerdown={run(toolbar.heading)}><Icon name="heading" size={20} /></button>
+  <button aria-label="Bulleted list" onpointerdown={run(toolbar.toggleKind("bulleted"))}><Icon name="list" size={20} /></button>
+  <button aria-label="To-do" onpointerdown={run(toolbar.toggleKind("todo"))}><Icon name="square-check" size={20} /></button>
+  <button aria-label="Bold" onpointerdown={run(toolbar.bold)}><Icon name="bold" size={20} /></button>
+  <button aria-label="Italic" onpointerdown={run(toolbar.italic)}><Icon name="italic" size={20} /></button>
+  <button aria-label="Outdent" onpointerdown={run(toolbar.outdent)}><Icon name="list-indent-decrease" size={20} /></button>
+  <button aria-label="Indent" onpointerdown={run(toolbar.indent)}><Icon name="list-indent-increase" size={20} /></button>
+  <span class="tb-sep"></span>
+  <button aria-label="Undo" onpointerdown={run(toolbar.undo)}><Icon name="undo-2" size={20} /></button>
+  <button aria-label="Redo" onpointerdown={run(toolbar.redo)}><Icon name="redo-2" size={20} /></button>
+  <button aria-label="Hide keyboard" class="hide" onpointerdown={hide}><Icon name="keyboard-off" size={20} /></button>
 </div>

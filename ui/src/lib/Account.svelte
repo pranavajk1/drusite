@@ -1,13 +1,11 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- Settings → Account & sync: signing in to a server, and what this device syncs with. -->
 <script lang="ts">
   import type { CoreClient } from "../core/client";
   import type { AccountStatus, SyncPhase } from "../core/types";
+  import Icon from "./ui/Icon.svelte";
 
-  let {
-    client,
-    status,
-    onclose,
-  }: { client: CoreClient; status: AccountStatus; onclose: () => void } = $props();
+  let { client, status }: { client: CoreClient; status: AccountStatus } = $props();
 
   const LAST_SERVER = "drusite.lastServer";
 
@@ -35,77 +33,89 @@
     void act(() => client.signIn(typed));
   }
 
-  function key(e: KeyboardEvent) {
-    if (e.key === "Escape") onclose();
-  }
-
   const message = $derived(problem ?? status.message);
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
-<div class="sheet-backdrop" onclick={onclose} onkeydown={key}>
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div
-    class="sheet"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="account-title"
-    tabindex="-1"
-    onclick={(e) => e.stopPropagation()}
-  >
-    <div class="sheet-head">
-      <h2 id="account-title">Sync</h2>
-      <button class="sheet-close" aria-label="Close" onclick={onclose}>×</button>
+<div class="set-group">
+  {#if status.phase === "signedOut"}
+    <div class="account-card">
+      <span class="account-avatar"><Icon name="cloud-off" size={20} /></span>
+      <div class="account-card-text">
+        <strong>Not syncing</strong>
+        <span class="hint">Your notes are on this device only.</span>
+      </div>
     </div>
-
-    {#if status.phase === "signedOut"}
-      <p>
-        Sign in to a Drusite server to keep your notes in sync between your devices. Until then,
-        they stay on this device only.
-      </p>
-      <form onsubmit={signIn}>
-        <label for="server">Server address</label>
-        <div class="field-row">
-          <input
-            id="server"
-            type="text"
-            inputmode="url"
-            autocapitalize="off"
-            autocomplete="url"
-            spellcheck="false"
-            placeholder="notes.example.com"
-            bind:value={server}
-            disabled={busy}
-          />
-          <button class="primary" type="submit" disabled={busy || server.trim() === ""}>
-            {busy ? "Opening…" : "Sign in"}
-          </button>
-        </div>
-      </form>
-    {:else if status.phase === "signingIn"}
-      <p>Finish signing in to <strong>{status.server}</strong> in the browser, then come back here.</p>
-      <button disabled={busy} onclick={() => act(() => client.cancelSignIn())}>Cancel</button>
-    {:else}
-      <dl class="account-facts">
-        <dt>Server</dt>
-        <dd>{status.server}</dd>
-        {#if status.email}
-          <dt>Account</dt>
-          <dd>{status.email}</dd>
-        {/if}
-        <dt>Status</dt>
-        <dd><span class="sync-dot {status.phase}"></span> {phaseLabel(status.phase)}</dd>
-      </dl>
-      <button class="danger" disabled={busy} onclick={() => act(() => client.signOut())}>
-        Sign out
+    <p class="set-desc">
+      Sign in to a Drusite server to keep your notes in sync between your devices. Signing in opens the server's
+      sign-in page in your browser.
+    </p>
+    <form class="field" onsubmit={signIn}>
+      <label for="server">Server address</label>
+      <div class="field-inline">
+        <input
+          id="server"
+          class="input"
+          type="text"
+          inputmode="url"
+          autocapitalize="off"
+          autocomplete="url"
+          spellcheck="false"
+          placeholder="notes.example.com"
+          bind:value={server}
+          disabled={busy}
+        />
+        <button class="btn primary" type="submit" disabled={busy || server.trim() === ""}>
+          {busy ? "Opening…" : "Sign in"}
+        </button>
+      </div>
+    </form>
+  {:else if status.phase === "signingIn"}
+    <div class="account-card">
+      <span class="account-avatar"><Icon name="loader-circle" size={20} class="spin" /></span>
+      <div class="account-card-text">
+        <strong>Signing in…</strong>
+        <span class="hint">Finish signing in to <strong>{status.server}</strong> in the browser, then come back here.</span>
+      </div>
+    </div>
+    <button class="btn" disabled={busy} onclick={() => act(() => client.cancelSignIn())}>Cancel</button>
+  {:else}
+    <div class="account-card">
+      <span class="account-avatar filled">{(status.email ?? status.server ?? "?").slice(0, 1).toUpperCase()}</span>
+      <div class="account-card-text">
+        <strong>{status.email ?? "Signed in"}</strong>
+        <span class="hint">{status.server}</span>
+      </div>
+    </div>
+    <div class="set-row">
+      <div class="set-row-text">
+        <span class="set-label">Server</span>
+      </div>
+      <span class="set-value">{status.server}</span>
+    </div>
+    {#if status.email}
+      <div class="set-row">
+        <div class="set-row-text"><span class="set-label">Account</span></div>
+        <span class="set-value">{status.email}</span>
+      </div>
+    {/if}
+    <div class="set-row">
+      <div class="set-row-text"><span class="set-label">Status</span></div>
+      <span class="set-value"><span class="dot sync-dot {status.phase}"></span> {phaseLabel(status.phase)}</span>
+    </div>
+    <div class="set-row">
+      <div class="set-row-text">
+        <span class="set-label">Sign out</span>
+        <span class="set-desc">Signing out keeps your notes on this device.</span>
+      </div>
+      <button class="btn danger" disabled={busy} onclick={() => act(() => client.signOut())}>
+        <Icon name="log-out" size={15} />Sign out
       </button>
-      <p class="hint">Signing out keeps your notes on this device.</p>
-    {/if}
+    </div>
+  {/if}
 
-    {#if message}
-      <p class="sheet-message" role="status">{message}</p>
-    {/if}
-  </div>
+  {#if message}
+    <p class="field-error" role="status">{message}</p>
+  {/if}
 </div>
 
 <script lang="ts" module>

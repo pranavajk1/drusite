@@ -5,12 +5,11 @@
 
 import { expect, test } from "@playwright/test";
 
-import { openApp } from "./helpers";
+import { openApp, openSettings } from "./helpers";
 
 test("an agent on this computer is connected, listed and disconnected", async ({ page }) => {
   await openApp(page);
-  await page.getByRole("button", { name: "⚙️ Settings" }).click();
-  const sheet = page.getByRole("dialog", { name: "Settings" });
+  const sheet = await openSettings(page, "Agents");
   await expect(sheet.getByRole("heading", { name: "Agents", exact: true })).toBeVisible();
   await expect(sheet.getByText("Nothing yet.")).toBeVisible();
 

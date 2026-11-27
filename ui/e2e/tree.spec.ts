@@ -4,7 +4,7 @@
 
 import { type Page, expect, test } from "@playwright/test";
 
-import { expectBlocks, expectTree, leaf, openApp, openTitle } from "./helpers";
+import { expectBlocks, expectTree, fromAccountMenu, leaf, openApp, openTitle, trashFromTree } from "./helpers";
 
 /** The sidebar row of the page titled `title`. */
 const row = (page: Page, title: string) =>
@@ -37,7 +37,7 @@ test("pages are created, renamed, nested and deleted from the sidebar", async ({
   await expectOpen(page, "Home");
 
   // A new top-level page opens with its title ready for typing.
-  await page.getByRole("button", { name: "+ New page" }).click();
+  await page.getByRole("button", { name: "New page", exact: true }).click();
   await expect(page.getByLabel("Page title")).toBeFocused();
   await expectTree(page, [leaf("Home"), leaf("Untitled")]);
   await page.keyboard.type("Projects");
@@ -83,7 +83,7 @@ test("pages are created, renamed, nested and deleted from the sidebar", async ({
 
   // Delete moves the page, and everything inside it, to the trash; Undo brings it back.
   await row(page, "Drusite").hover();
-  await row(page, "Drusite").getByRole("button", { name: "Delete page" }).click();
+  await trashFromTree(row(page, "Drusite"));
   await expectTree(page, [leaf("Inbox"), leaf("Projects")]);
   await expectOpen(page, "Inbox");
   await page.getByRole("status").getByRole("button", { name: "Undo" }).click();
@@ -97,12 +97,12 @@ test("pages are created, renamed, nested and deleted from the sidebar", async ({
   // Deleting the open page opens another.
   await row(page, "Projects").click();
   await expectOpen(page, "Projects");
-  await row(page, "Projects").getByRole("button", { name: "Delete page" }).click();
+  await trashFromTree(row(page, "Projects"));
   await expectTree(page, [leaf("Inbox")]);
   await expectOpen(page, "Inbox");
 
   // The trash restores it where it was, or deletes it for good.
-  await page.getByRole("button", { name: "🗑️ Trash" }).click();
+  await fromAccountMenu(page, "Trash");
   const trash = page.getByRole("dialog", { name: "Trash" });
   await expect(trash.getByText("with 2 subpages")).toBeVisible();
   await trash.getByRole("button", { name: "Restore" }).click();
@@ -110,8 +110,8 @@ test("pages are created, renamed, nested and deleted from the sidebar", async ({
   await expect(trash.getByText("The trash is empty.")).toBeVisible();
   await trash.getByRole("button", { name: "Close" }).click();
   await row(page, "Projects").hover();
-  await row(page, "Projects").getByRole("button", { name: "Delete page" }).click();
-  await page.getByRole("button", { name: "🗑️ Trash" }).click();
+  await trashFromTree(row(page, "Projects"));
+  await fromAccountMenu(page, "Trash");
   await trash.getByRole("button", { name: "Empty trash" }).click();
   await trash.getByRole("button", { name: "Yes, empty the trash" }).click();
   await expect(trash.getByText("The trash is empty.")).toBeVisible();
@@ -121,7 +121,7 @@ test("pages are created, renamed, nested and deleted from the sidebar", async ({
 
 test("dragging a page onto another nests it there", async ({ page }) => {
   await typeTitle(page, "A");
-  await page.getByRole("button", { name: "+ New page" }).click();
+  await page.getByRole("button", { name: "New page", exact: true }).click();
   await page.keyboard.type("B");
   await expectTree(page, [leaf("A"), leaf("B")]);
 
@@ -138,7 +138,7 @@ test("what's typed on a page is still there after opening another and coming bac
   await page.locator(".todo-box").click();
   await expectBlocks(page, [{ kind: { type: "todo", checked: true }, text: "Remember me", box: true, struck: true }]);
 
-  await page.getByRole("button", { name: "+ New page" }).click();
+  await page.getByRole("button", { name: "New page", exact: true }).click();
   await page.keyboard.type("Other");
   await expectOpen(page, "Other");
   await expectBlocks(page, [{ kind: { type: "paragraph" }, text: "" }]);

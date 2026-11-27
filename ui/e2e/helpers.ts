@@ -3,7 +3,7 @@
 // What the page shows and what the in-memory core holds, read the same way so a test can compare
 // them. The dev build puts the core on `window.drusiteMemoryCore` (see `src/main.ts`).
 
-import { type Page, expect } from "@playwright/test";
+import { type Locator, type Page, expect } from "@playwright/test";
 
 import type { MemoryCore } from "../src/core/memory";
 import type { BlockKind } from "../src/core/types";
@@ -164,4 +164,30 @@ export async function lineKey(page: Page, to: "start" | "end"): Promise<void> {
   const mac = await page.evaluate(() => /Mac/.test(navigator.platform));
   const key = to === "start" ? (mac ? "Meta+ArrowLeft" : "Home") : mac ? "Meta+ArrowRight" : "End";
   await page.keyboard.press(key);
+}
+
+/** Picks `option` in one of the app's selects (`Select.svelte`): opens it, clicks the option. */
+export async function choose(page: Page, select: Locator, option: string) {
+  await select.click();
+  await page.getByRole("listbox").getByRole("option", { name: option, exact: true }).click();
+}
+
+/** Picks `item` in the account menu, at the foot of the sidebar. */
+export async function fromAccountMenu(page: Page, item: string) {
+  await page.getByRole("button", { name: /^Account:/ }).click();
+  await page.getByRole("menu", { name: "Account" }).getByRole("menuitem", { name: item }).click();
+}
+
+/** Opens Settings at `section` (its name in the left-hand list). */
+export async function openSettings(page: Page, section: string) {
+  await fromAccountMenu(page, "Settings");
+  const sheet = page.getByRole("dialog", { name: "Settings" });
+  await sheet.getByRole("navigation", { name: "Settings sections" }).getByRole("button", { name: section }).click();
+  return sheet;
+}
+
+/** Moves a page to the trash from its row's menu in the sidebar. */
+export async function trashFromTree(row: Locator) {
+  await row.getByRole("button", { name: "Page options" }).click();
+  await row.page().getByRole("menuitem", { name: "Move to Trash" }).click();
 }

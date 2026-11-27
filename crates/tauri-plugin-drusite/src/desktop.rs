@@ -72,9 +72,16 @@ fn open_browser(url: &Url) -> Result<()> {
     }
 }
 
-const DONE_PAGE: &str = "<!doctype html><meta charset=utf-8><title>Drusite</title>\
-<style>body{font:16px system-ui;margin:4em auto;max-width:28em;padding:0 1em}</style>\
-<h1>Back to Drusite</h1><p>You can close this tab.</p>";
+const DONE_PAGE: &str = "<!doctype html><meta charset=utf-8><meta name=color-scheme content=\"light dark\">\
+<title>Drusite</title><style>\
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f8f7fa;color:#2b2930;\
+font:15px/1.55 ui-sans-serif,-apple-system,BlinkMacSystemFont,\"Segoe UI\",system-ui,sans-serif}\
+main{max-width:22rem;padding:32px;border-radius:12px;background:#fff;text-align:center;\
+box-shadow:0 24px 48px rgb(24 18 38/.08),0 0 0 1px rgb(24 18 38/.06)}\
+h1{font-size:20px;font-weight:600;margin:0 0 4px}p{margin:0;color:#6f6c78}\
+@media(prefers-color-scheme:dark){body{background:#1b1a1f;color:#e8e6ed}\
+main{background:#26252c;box-shadow:0 0 0 1px rgb(255 255 255/.07)}p{color:#a19eaa}}\
+</style><main><h1>Back to Drusite</h1><p>You're signed in. You can close this tab.</p></main>";
 
 /// Opens the browser at `url` and waits for its redirect to the loopback port.
 pub(crate) async fn open(listener: TcpListener, url: &Url) -> Result<Url> {

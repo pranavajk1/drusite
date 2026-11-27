@@ -10,11 +10,13 @@ name: Android
 # available (this repository's pushes and pull requests, not forks) the APK is signed; releases
 # must be, since phones refuse an update signed with another key.
 
+# Pull requests into main check that the app builds; a version tag builds the release. Not on the
+# push that merges a pull request: that was built already.
 on:
   push:
-    branches: [main]
     tags: ["v*"]
   pull_request:
+    branches: [main]
     paths:
       - "crates/**"
       - "ui/**"

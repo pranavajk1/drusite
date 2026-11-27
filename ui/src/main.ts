@@ -5,8 +5,13 @@ import { mount } from "svelte";
 import "prosemirror-view/style/prosemirror.css";
 
 import App from "./App.svelte";
-import "./app.css";
+import "./styles/index.css";
 import { CoreClient, type Transport } from "./core/client";
+import { applyTheme, watchSystemTheme } from "./core/theme";
+
+// Before the first paint, so a dark-mode user never sees a white flash.
+applyTheme();
+watchSystemTheme();
 
 /** The transport for wherever the UI is running: Tauri's IPC in the app, memory in a browser. */
 async function transport(): Promise<Transport> {

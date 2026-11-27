@@ -5,6 +5,8 @@
   import { onMount } from "svelte";
 
   import type { CoreClient } from "../core/client";
+  import Icon from "./ui/Icon.svelte";
+  import Select from "./ui/Select.svelte";
   import type { AiCheckStep, AiFeature, AiFeatureChoice, AiKind, AiKindInfo, AiModel, AiProvider } from "../core/types";
 
   let {
@@ -163,117 +165,152 @@
   const forFeature = (f: AiFeature) => providers.filter((p) => f !== "embeddings" || info(p.kind)?.embeds);
 </script>
 
-{#if available}
-  <h3 class="settings-section">AI</h3>
-  <p class="hint">
-    Use any AI: a vendor's, or your own models through an OpenAI-compatible endpoint (LiteLLM, Ollama, vLLM, LM
-    Studio, llama.cpp). Keys stay on this device, in its encrypted store, and don't sync; set them up on each device.
-  </p>
+{#if !available}
+  <div class="set-group">
+    <p class="set-desc">AI isn't available in this build.</p>
+  </div>
+{:else}
+  <div class="set-group">
+    <p class="set-desc">
+      Use any AI: a vendor's, or your own models through an OpenAI-compatible endpoint (LiteLLM, Ollama, vLLM, LM
+      Studio, llama.cpp). Keys stay on this device, in its encrypted store, and don't sync; set them up on each device.
+    </p>
+  </div>
 
-  {#if providers.length}
-    <ul class="trash-list ai-providers" aria-label="AI providers">
-      {#each providers as p (p.id)}
-        {@const r = results[p.id]}
-        <li class="ai-provider">
-          <div class="trash-item">
-            <div class="trash-title">
-              <span>{p.name}</span>
-              <small>{label(p.kind)}{p.baseUrl ? ` · ${p.baseUrl}` : ""}{p.keyHint ? ` · key ${p.keyHint}` : ""}</small>
+  <div class="set-group">
+    <h3 class="set-title">Providers</h3>
+    {#if providers.length}
+      <ul class="list ai-providers" aria-label="AI providers">
+        {#each providers as p (p.id)}
+          {@const r = results[p.id]}
+          <li class="ai-provider">
+            <div class="list-row">
+              <Icon name="plug" class="list-row-icon" />
+              <div class="list-row-text">
+                <span>{p.name}</span>
+                <small>{label(p.kind)}{p.baseUrl ? ` · ${p.baseUrl}` : ""}{p.keyHint ? ` · key ${p.keyHint}` : ""}</small>
+              </div>
+              <div class="button-row">
+                <button class="btn small" disabled={r?.running} onclick={() => test(p)}>
+                  {#if r?.running}<Icon name="loader-circle" size={14} class="spin" />Testing…{:else}Test connection{/if}
+                </button>
+                <button class="btn small ghost" onclick={() => edit(p)}>Edit</button>
+                <button class="btn small ghost danger" onclick={() => remove(p)}>Remove</button>
+              </div>
             </div>
-            <button disabled={r?.running} onclick={() => test(p)}>{r?.running ? "Testing…" : "Test connection"}</button>
-            <button onclick={() => edit(p)}>Edit</button>
-            <button class="danger" onclick={() => remove(p)}>Remove</button>
-          </div>
-          {#if r && r.steps.length}
-            <ul class="ai-check" aria-label="Test connection: {p.name}">
-              {#each r.steps as s (s.what)}
-                <li class:ai-ok={s.ok} class:ai-fail={!s.ok}>
-                  <span aria-hidden="true">{s.ok ? "✓" : "✕"}</span>
-                  <span><strong>{s.what}</strong>: {s.detail} <small>({seconds(s.millis)})</small></span>
-                </li>
-              {/each}
-            </ul>
-          {/if}
-        </li>
-      {/each}
-    </ul>
-  {/if}
+            {#if r && r.steps.length}
+              <ul class="ai-check" aria-label="Test connection: {p.name}">
+                {#each r.steps as s (s.what)}
+                  <li class:ai-ok={s.ok} class:ai-fail={!s.ok}>
+                    <Icon name={s.ok ? "circle-check" : "circle-x"} size={15} />
+                    <span><strong>{s.what}</strong>: {s.detail} <small>({seconds(s.millis)})</small></span>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    {/if}
 
-  {#if editing}
-    <form class="agent-form ai-form" onsubmit={save} aria-label={editing.id ? "Change provider" : "Add a provider"}>
-      <label for="ai-kind">Provider</label>
-      <select id="ai-kind" bind:value={editing.kind} disabled={!!editing.id}>
-        {#each kinds as k (k.kind)}<option value={k.kind}>{k.label}</option>{/each}
-      </select>
-
-      <label for="ai-name">Name</label>
-      <input id="ai-name" bind:value={editing.name} maxlength="80" placeholder={editingInfo?.label} />
-
-      <label for="ai-url">{editingInfo?.defaultBaseUrl ? "Address (optional)" : "Address"}</label>
-      <input
-        id="ai-url"
-        bind:value={editing.baseUrl}
-        inputmode="url"
-        autocomplete="off"
-        spellcheck="false"
-        required={!editingInfo?.defaultBaseUrl}
-        placeholder={editingInfo?.defaultBaseUrl ?? "http://localhost:11434/v1"}
-      />
-
-      <label for="ai-key">{editingInfo?.needsKey ? "API key" : "API key (if it needs one)"}</label>
-      <input
-        id="ai-key"
-        type="password"
-        bind:value={editing.apiKey}
-        autocomplete="off"
-        spellcheck="false"
-        required={!!editingInfo?.needsKey && !editing.keyHint}
-        placeholder={editing.keyHint ? `Saved (${editing.keyHint}); type to replace` : ""}
-      />
-      {#if formError}<p class="sheet-message" role="alert">{formError}</p>{/if}
-      <div class="field-row">
-        <button class="primary" type="submit" disabled={busy}>Save</button>
-        <button type="button" onclick={() => (editing = null)}>Cancel</button>
-      </div>
-    </form>
-  {:else}
-    <button onclick={add}>Add a provider…</button>
-  {/if}
-
-  {#if providers.length}
-    {#each FEATURES as { feature, title, hint } (feature)}
-      {@const d = drafts[feature]}
-      <h4 class="agent-subhead">{title}</h4>
-      <p class="hint">{hint}</p>
-      {#if d}<div class="ai-feature">
-        <select
-          aria-label="{title}: provider"
-          bind:value={d.provider}
-          onchange={() => {
-            d.model = "";
-            void loadModels(d.provider);
-            if (!d.provider) void pick(feature);
-          }}
-        >
-          <option value="">Off</option>
-          {#each forFeature(feature) as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
-        </select>
-        {#if d.provider}
+    {#if editing}
+      <form class="form-card ai-form" onsubmit={save} aria-label={editing.id ? "Change provider" : "Add a provider"}>
+        <div class="field">
+          <label for="ai-kind">Provider</label>
+          <Select
+            id="ai-kind"
+            boxed
+            value={editing.kind}
+            disabled={!!editing.id}
+            options={kinds.map((k) => ({ value: k.kind, label: k.label }))}
+            onchange={(k) => editing && (editing.kind = k)}
+          />
+        </div>
+        <div class="field">
+          <label for="ai-name">Name</label>
+          <input id="ai-name" class="input" bind:value={editing.name} maxlength="80" placeholder={editingInfo?.label} />
+        </div>
+        <div class="field">
+          <label for="ai-url">{editingInfo?.defaultBaseUrl ? "Address (optional)" : "Address"}</label>
           <input
-            aria-label="{title}: model"
-            list="ai-models-{feature}"
-            bind:value={d.model}
-            placeholder="Model"
+            id="ai-url"
+            class="input"
+            bind:value={editing.baseUrl}
+            inputmode="url"
             autocomplete="off"
             spellcheck="false"
-            onfocus={() => loadModels(d.provider)}
-            onchange={() => pick(feature)}
+            required={!editingInfo?.defaultBaseUrl}
+            placeholder={editingInfo?.defaultBaseUrl ?? "http://localhost:11434/v1"}
           />
-          <datalist id="ai-models-{feature}">
-            {#each suggestions(feature, d.provider) as m (m.id)}<option value={m.id}>{m.name ?? m.id}</option>{/each}
-          </datalist>
+        </div>
+        <div class="field">
+          <label for="ai-key">{editingInfo?.needsKey ? "API key" : "API key (if it needs one)"}</label>
+          <input
+            id="ai-key"
+            class="input"
+            type="password"
+            bind:value={editing.apiKey}
+            autocomplete="off"
+            spellcheck="false"
+            required={!!editingInfo?.needsKey && !editing.keyHint}
+            placeholder={editing.keyHint ? `Saved (${editing.keyHint}); type to replace` : ""}
+          />
+        </div>
+        {#if formError}<p class="field-error" role="alert">{formError}</p>{/if}
+        <div class="button-row form-actions">
+          <button class="btn ghost" type="button" onclick={() => (editing = null)}>Cancel</button>
+          <button class="btn primary" type="submit" disabled={busy}>Save</button>
+        </div>
+      </form>
+    {:else}
+      <button class="btn" onclick={add}><Icon name="plus" size={15} />Add a provider…</button>
+    {/if}
+  </div>
+
+  {#if providers.length}
+    <div class="set-group">
+      <h3 class="set-title">Models</h3>
+      {#each FEATURES as { feature, title, hint } (feature)}
+        {@const d = drafts[feature]}
+        {#if d}
+          <div class="set-row ai-feature-row">
+            <div class="set-row-text">
+              <span class="set-label">{title}</span>
+              <span class="set-desc">{hint}</span>
+            </div>
+            <div class="ai-feature">
+              <Select
+                label="{title}: provider"
+                boxed
+                value={d.provider}
+                options={[{ value: "", label: "Off" }, ...forFeature(feature).map((p) => ({ value: p.id, label: p.name }))]}
+                onchange={(v) => {
+                  d.provider = v;
+                  d.model = "";
+                  void loadModels(d.provider);
+                  if (!d.provider) void pick(feature);
+                }}
+              />
+              {#if d.provider}
+                <input
+                  class="input"
+                  aria-label="{title}: model"
+                  list="ai-models-{feature}"
+                  bind:value={d.model}
+                  placeholder="Model"
+                  autocomplete="off"
+                  spellcheck="false"
+                  onfocus={() => loadModels(d.provider)}
+                  onchange={() => pick(feature)}
+                />
+                <datalist id="ai-models-{feature}">
+                  {#each suggestions(feature, d.provider) as m (m.id)}<option value={m.id}>{m.name ?? m.id}</option>{/each}
+                </datalist>
+              {/if}
+            </div>
+          </div>
         {/if}
-      </div>{/if}
-    {/each}
+      {/each}
+    </div>
   {/if}
 {/if}

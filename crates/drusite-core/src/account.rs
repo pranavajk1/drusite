@@ -27,6 +27,7 @@ use url::Url;
 use crate::api::{AccountStatus, SyncPhase};
 use crate::auth::{self, Authorization, DeviceKey};
 use crate::engine::Core;
+use crate::sync::SyncError;
 use crate::sync::net::{self, NetError};
 
 /// Refresh the access token when it has less than this left.
@@ -751,6 +752,13 @@ async fn attempt(inner: &Arc<Inner>, access: &mut Option<Access>, backoff: &mut 
             set_status(inner, status(SyncPhase::Offline, Some(m)));
             Next::Wait(grow(backoff))
         }
+        Err(NetError::Sync(SyncError::Forbidden(_))) => failed(
+            inner,
+            Some(&account.server),
+            account.email.clone(),
+            "This device's notes belong to another account on this server. Sign in with that \
+             account to keep syncing them.",
+        ),
         Err(e) => failed(
             inner,
             Some(&account.server),
@@ -812,47 +820,62 @@ enum JoinProblem {
 
 /// Which workspace to sync: `None` for this device's own (already on the server, or becoming the
 /// account's first), or the account's, for a blank device to take.
+///
+/// The server is asked every time rather than trusting that this device synced before: the
+/// server may have lost the workspace (its data reset or restored), or this may be another
+/// account. Then what this device believed the server had is forgotten, and it goes on as a
+/// device that never synced.
 async fn workspace_to_join(
     inner: &Inner,
     server: &Url,
     access_token: &str,
 ) -> Result<Option<WorkspaceId>, JoinProblem> {
-    let (mine, on_server, blank) = {
-        let core = inner
-            .core
-            .lock()
-            .map_err(|_| JoinProblem::Network("the core crashed".to_owned()))?;
-        let mine = core.workspace_id();
-        let on_server = core
-            .store
-            .sync_state(&mine.to_string())
-            .map_err(|e| JoinProblem::Network(e.to_string()))?
-            .on_server;
-        let blank = core
-            .is_blank()
-            .map_err(|e| JoinProblem::Network(e.to_string()))?;
-        (mine, on_server, blank)
-    };
-    if on_server {
-        return Ok(None);
-    }
     let list: Vec<WorkspaceInfo> = get_json(server, "api/v1/workspaces", access_token, &inner.key)
         .await
         .map_err(|e| match e {
             HttpError::Network(m) => JoinProblem::Network(m),
             HttpError::Refused { .. } => JoinProblem::Unauthorized,
         })?;
-    if list.is_empty() || list.iter().any(|w| w.id == mine) {
+    let ids: Vec<(WorkspaceId, bool)> = list.iter().map(|w| (w.id, w.role == "owner")).collect();
+    let mut core = inner
+        .core
+        .lock()
+        .map_err(|_| JoinProblem::Network("the core crashed".to_owned()))?;
+    let mine = core.workspace_id();
+    if ids.iter().any(|(id, _)| *id == mine) {
+        return Ok(None);
+    }
+    let core_error = |e: crate::Error| JoinProblem::Network(e.to_string());
+    if core
+        .store
+        .sync_state(&mine.to_string())
+        .map_err(core_error)?
+        .on_server
+    {
+        core.store.forget_server().map_err(core_error)?;
+    }
+    let blank = core.is_blank().map_err(core_error)?;
+    choose(mine, blank, &ids)
+}
+
+/// What to sync, from the account's workspaces (`(id, owned)`): this device's own, the account's
+/// (for a blank device), or neither.
+fn choose(
+    mine: WorkspaceId,
+    blank: bool,
+    account: &[(WorkspaceId, bool)],
+) -> Result<Option<WorkspaceId>, JoinProblem> {
+    if account.is_empty() || account.iter().any(|(id, _)| *id == mine) {
         return Ok(None);
     }
     if !blank {
         return Err(JoinProblem::Conflict);
     }
-    let pick = list
+    let pick = account
         .iter()
-        .find(|w| w.role == "owner")
-        .or_else(|| list.first())
-        .map(|w| w.id);
+        .find(|(_, owned)| *owned)
+        .or_else(|| account.first())
+        .map(|(id, _)| *id);
     Ok(pick)
 }
 
@@ -860,6 +883,25 @@ async fn workspace_to_join(
 mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
+
+    #[test]
+    fn a_device_syncs_its_own_workspace_or_takes_the_accounts() {
+        let mine = WorkspaceId::new();
+        let other = WorkspaceId::new();
+        let shared = WorkspaceId::new();
+        // The account has nothing yet: this device's becomes its first.
+        assert!(matches!(choose(mine, false, &[]), Ok(None)));
+        // The account has this device's.
+        assert!(matches!(choose(mine, false, &[(mine, true)]), Ok(None)));
+        // A blank device takes the account's, the one it owns first.
+        let account = [(shared, false), (other, true)];
+        assert!(matches!(choose(mine, true, &account), Ok(Some(w)) if w == other));
+        // A device with notes of its own can't, yet.
+        assert!(matches!(
+            choose(mine, false, &account),
+            Err(JoinProblem::Conflict)
+        ));
+    }
 
     #[test]
     fn typed_addresses_become_base_urls() {

@@ -1,9 +1,10 @@
 name: CI
 
+# Runs on pull requests into main, the only way changes reach it (main is protected), so not
+# again on the push that merges one.
 on:
-  push:
-    branches: [main]
   pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:

@@ -8,6 +8,7 @@ import { type EditorState, Plugin, PluginKey, TextSelection, type Transaction } 
 import { ReplaceStep } from "prosemirror-transform";
 import { Decoration, DecorationSet, type EditorView, type NodeView } from "prosemirror-view";
 
+import { iconSvg } from "../lib/icons/icons";
 import { attachmentView } from "./attachments";
 import { queryView } from "./query";
 
@@ -180,7 +181,7 @@ export function blockView(node: Node, view: EditorView, getPos: () => number | u
   const id = () => attrsOf(node).id;
 
   if (kind.type === "todo") {
-    const box = control("input", "todo-box") as HTMLInputElement;
+    const box = control("input", "todo-box checkbox") as HTMLInputElement;
     box.type = "checkbox";
     box.checked = kind.checked;
     box.addEventListener("mousedown", (e) => e.preventDefault());
@@ -216,9 +217,9 @@ export function blockView(node: Node, view: EditorView, getPos: () => number | u
   if (kind.type === "toggle") {
     const arrow = control("button", "toggle-arrow");
     arrow.setAttribute("aria-label", "Fold");
+    arrow.innerHTML = iconSvg("chevron-right");
     const sync = () => {
       const folded = id() !== null && isFolded(view.state, id()!);
-      arrow.textContent = "▶";
       arrow.setAttribute("aria-expanded", String(!folded));
     };
     sync();

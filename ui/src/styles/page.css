@@ -1,0 +1,268 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+
+/* The page: its column, title, properties, and a journal entry's date and mood. DESIGN.md §7.3. */
+
+.page {
+  width: 100%;
+  max-width: calc(var(--page-width) + 2 * var(--page-pad));
+  min-height: 100%;
+  margin: 0 auto;
+  padding: var(--space-16) var(--page-pad) 0;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+/* All the space below the last block; clicking it continues the page. */
+.page-tail {
+  flex: 1;
+  min-height: 30vh;
+  cursor: text;
+}
+
+.page-title {
+  width: 100%;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--text);
+  font: var(--weight-bold) var(--text-title) / 1.2 var(--font);
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--space-2);
+  padding: var(--space-1) 0;
+  border-radius: 0;
+}
+
+.page-title:focus-visible {
+  outline: none;
+}
+
+.page-title::placeholder {
+  color: var(--text-3);
+  opacity: 0.6;
+}
+
+.page-arriving {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-2);
+  font-size: var(--text-md);
+}
+
+/* ---- Properties ---- */
+
+.properties {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-md);
+}
+
+.property {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  border-radius: var(--radius-sm);
+}
+
+.property dt {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  width: 160px;
+  padding: 0 var(--space-2) 0 var(--space-1);
+  color: var(--text-2);
+}
+
+.property dt .icon {
+  color: var(--text-3);
+}
+
+.property-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.property dd {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 34px;
+  margin: 0;
+  padding: 0 var(--space-1) 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+}
+
+.property dd:hover {
+  background: var(--bg-hover);
+}
+
+.property-value {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.property-remove {
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
+  visibility: hidden;
+}
+
+.property:hover .property-remove,
+.property-remove:focus-visible {
+  visibility: visible;
+}
+
+@media (hover: none) {
+  .property-remove {
+    visibility: visible;
+  }
+}
+
+.property-add {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--row);
+  padding: 0 var(--space-2) 0 var(--space-1);
+  margin-bottom: var(--space-4);
+  border-radius: var(--radius-sm);
+  color: var(--text-3);
+  font-size: var(--text-md);
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+
+.property-add:hover {
+  background: var(--bg-hover);
+  color: var(--text-2);
+}
+
+.property-form {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 132px minmax(120px, 1.2fr) auto;
+  gap: var(--space-2);
+  align-items: center;
+  margin: var(--space-1) 0 var(--space-4);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+  font-size: var(--text-md);
+}
+
+@media (max-width: 700px) {
+  .property dt {
+    width: 120px;
+  }
+
+  .property-form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .property-form > .input:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .property-form .button-row {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+}
+
+/* ---- A journal entry's date and mood ---- */
+
+.journal-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-3);
+  color: var(--text-2);
+  font-size: var(--text-md);
+}
+
+.journal-date {
+  flex-basis: 100%;
+  color: var(--text-2);
+}
+
+.journal-mood-label {
+  color: var(--text-2);
+  min-width: 40px;
+}
+
+.mood-picker {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.mood {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  color: var(--text-3);
+  transition: background var(--dur-fast), color var(--dur-fast), transform var(--dur-fast);
+}
+
+.mood:hover {
+  background: var(--bg-hover);
+  color: var(--text-2);
+}
+
+.mood:active {
+  transform: scale(0.92);
+}
+
+.mood.picked {
+  color: #fff;
+}
+
+.mood-1.picked {
+  background: var(--mood-1);
+}
+.mood-2.picked {
+  background: var(--mood-2);
+}
+.mood-3.picked {
+  background: var(--mood-3);
+}
+.mood-4.picked {
+  background: var(--mood-4);
+}
+.mood-5.picked {
+  background: var(--mood-5);
+}
+
+@media (pointer: coarse) {
+  .mood {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+@media (max-width: 700px) {
+  .page {
+    padding-top: var(--space-6);
+    padding-left: max(var(--page-pad), env(safe-area-inset-left));
+    padding-right: max(var(--page-pad), env(safe-area-inset-right));
+  }
+
+  .page-title {
+    font-size: var(--text-title-phone);
+  }
+
+  /* Leave room at the end of the page for the toolbar and the keyboard, so the last line can
+     scroll above them. */
+  .page-tail {
+    min-height: max(40vh, calc(var(--keyboard, 0px) + 120px));
+  }
+}
