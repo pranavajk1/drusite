@@ -341,6 +341,7 @@ impl Core {
                     reason: Some("not_signed_in".to_owned()),
                     model: None,
                     semantic: false,
+                    embedding_model: None,
                     indexing: 0,
                 },
             }),

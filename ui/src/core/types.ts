@@ -150,6 +150,8 @@ export type AskStatus = {
 	model: string | null,
 	/**  Whether meaning is searched too (the server has an embedding model). */
 	semantic: boolean,
+	/**  The server's embedding model, when it has one. */
+	embeddingModel: string | null,
 	/**  Documents waiting to be indexed. */
 	indexing: number,
 };

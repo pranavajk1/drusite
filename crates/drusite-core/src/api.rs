@@ -427,6 +427,8 @@ pub struct AskStatus {
     pub model: Option<String>,
     /// Whether meaning is searched too (the server has an embedding model).
     pub semantic: bool,
+    /// The server's embedding model, when it has one.
+    pub embedding_model: Option<String>,
     /// Documents waiting to be indexed.
     pub indexing: u32,
 }

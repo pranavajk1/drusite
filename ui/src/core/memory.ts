@@ -659,7 +659,7 @@ export class MemoryCore {
       case "askStatus":
         return {
           type: "askStatus",
-          status: { signedIn: true, available: true, message: null, reason: null, model: "Memory", semantic: false, indexing: 0 },
+          status: { signedIn: true, available: true, message: null, reason: null, model: "Memory", semantic: false, embeddingModel: null, indexing: 0 },
         };
       case "conversations":
         return {

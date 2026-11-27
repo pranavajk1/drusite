@@ -1,13 +1,14 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
-<!-- AI in Settings: the providers on this device, each with Test connection, and which provider
-     and model each feature uses. -->
+<!-- AI in Settings. First what the server runs (Ask your notes and search by meaning, with the
+     models its owner configured), then the providers kept on this device, each with Test
+     connection, and which provider and model each device feature uses. -->
 <script lang="ts">
   import { onMount } from "svelte";
 
   import type { CoreClient } from "../core/client";
   import Icon from "./ui/Icon.svelte";
   import Select from "./ui/Select.svelte";
-  import type { AiCheckStep, AiFeature, AiFeatureChoice, AiKind, AiKindInfo, AiModel, AiProvider } from "../core/types";
+  import type { AskStatus, AiCheckStep, AiFeature, AiFeatureChoice, AiKind, AiKindInfo, AiModel, AiProvider } from "../core/types";
 
   let {
     client,
@@ -21,6 +22,15 @@
   let kinds = $state<AiKindInfo[]>([]);
   let providers = $state<AiProvider[]>([]);
   let features = $state<AiFeatureChoice[]>([]);
+  let server = $state<AskStatus | null>(null);
+
+  async function loadServer() {
+    try {
+      server = await client.askStatus();
+    } catch {
+      server = null;
+    }
+  }
 
   async function load() {
     try {
@@ -42,6 +52,7 @@
       if (event.type === "aiChanged") void load();
     });
     void load();
+    void loadServer();
     return stop;
   });
 
@@ -125,8 +136,8 @@
 
   // Per feature: a provider, then a model (typed, or picked from the provider's list).
   const FEATURES: { feature: AiFeature; title: string; hint: string }[] = [
-    { feature: "chat", title: "Chat", hint: "Answers questions about your notes." },
-    { feature: "embeddings", title: "Embeddings", hint: "Finds notes by meaning. Changing the model indexes everything again." },
+    { feature: "chat", title: "Chat", hint: "For AI that runs in this app." },
+    { feature: "embeddings", title: "Embeddings", hint: "For finding notes by meaning on this device." },
   ];
   let models = $state<Record<string, AiModel[]>>({});
   let drafts = $state<Record<string, { provider: string; model: string }>>({});
@@ -165,15 +176,39 @@
   const forFeature = (f: AiFeature) => providers.filter((p) => f !== "embeddings" || info(p.kind)?.embeds);
 </script>
 
-{#if !available}
-  <div class="set-group">
-    <p class="set-desc">AI isn't available in this build.</p>
+<div class="set-group" role="group" aria-label="On your server">
+  <h3 class="set-title">On your server</h3>
+  <p class="set-desc">
+    Ask your notes and search by meaning run on your Drusite server, for every device, with the models whoever runs
+    the server chose: any vendor's API, or a self-hosted model behind an OpenAI-compatible endpoint. They're set in the
+    server's config, under <code>[ask.chat]</code> and <code>[search.embeddings]</code>.
+  </p>
+  <div class="set-row">
+    <div class="set-row-text">
+      <span class="set-label">Ask your notes</span>
+      <span class="set-desc" data-testid="ai-server-chat">
+        {#if !server}Checking…{:else if server.model}{server.model}{:else}{server.message ?? "Not set up on this server."}{/if}
+      </span>
+    </div>
   </div>
-{:else}
+  <div class="set-row">
+    <div class="set-row-text">
+      <span class="set-label">Search by meaning</span>
+      <span class="set-desc" data-testid="ai-server-embeddings">
+        {#if !server}Checking…{:else if !server.signedIn}{server.message}{:else if server.semantic}{server.embeddingModel ??
+            "On"}{:else}Off: this server has no embedding model, so search matches words only.{/if}
+      </span>
+    </div>
+  </div>
+</div>
+
+{#if available}
   <div class="set-group">
+    <h3 class="set-title">On this device</h3>
     <p class="set-desc">
-      Use any AI: a vendor's, or your own models through an OpenAI-compatible endpoint (LiteLLM, Ollama, vLLM, LM
-      Studio, llama.cpp). Keys stay on this device, in its encrypted store, and don't sync; set them up on each device.
+      Providers for AI that runs in this app rather than on the server: a vendor's, or your own models through an
+      OpenAI-compatible endpoint. Keys stay on this device, in its encrypted store, and don't sync. Ask your notes
+      doesn't use these; it uses the server's models above.
     </p>
   </div>
 

@@ -73,7 +73,7 @@
     try {
       status = await client.askStatus();
     } catch (e) {
-      status = { signedIn: false, available: false, message: String(e), reason: "unreachable", model: null, semantic: false, indexing: 0 };
+      status = { signedIn: false, available: false, message: String(e), reason: "unreachable", model: null, semantic: false, embeddingModel: null, indexing: 0 };
     }
   }
 
