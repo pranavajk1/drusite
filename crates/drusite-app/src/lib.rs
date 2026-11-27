@@ -298,6 +298,71 @@ async fn core(state: tauri::State<'_, AppState>, command: Command) -> Result<Res
             Ok(Response::Done)
         }
         Command::Agents => ready.agents().await,
+        Command::AskStatus => Ok(Response::AskStatus {
+            status: ready.supervisor.ask_status().await,
+        }),
+        Command::Conversations => Ok(Response::Conversations {
+            conversations: ready
+                .supervisor
+                .conversations()
+                .await
+                .map_err(account_error)?,
+        }),
+        Command::Conversation { id } => Ok(Response::Conversation {
+            conversation: ready
+                .supervisor
+                .conversation(&id)
+                .await
+                .map_err(account_error)?,
+        }),
+        Command::RenameConversation { id, title } => {
+            ready
+                .supervisor
+                .rename_conversation(&id, &title)
+                .await
+                .map_err(account_error)?;
+            Ok(Response::Done)
+        }
+        Command::DeleteConversation { id } => {
+            ready
+                .supervisor
+                .delete_conversation(&id)
+                .await
+                .map_err(account_error)?;
+            Ok(Response::Done)
+        }
+        Command::Ask {
+            request,
+            conversation,
+            question,
+            today,
+        } => {
+            let events = state.handle.clone();
+            ready
+                .supervisor
+                .ask(
+                    request,
+                    conversation,
+                    question,
+                    today,
+                    move |request, update| {
+                        emit(
+                            &events,
+                            Event::Ask {
+                                request: request.to_owned(),
+                                update,
+                            },
+                        );
+                    },
+                )
+                .await
+                .map_err(account_error)?;
+            Ok(Response::Done)
+        }
+        Command::CancelAsk { request } => {
+            Supervisor::cancel_ask(&request);
+            Ok(Response::Done)
+        }
         command if drusite_core::ai::is_network(&command) => {
             drusite_core::ai::run(&ready.core, command).await
         }

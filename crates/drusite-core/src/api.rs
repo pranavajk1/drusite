@@ -199,6 +199,136 @@ pub enum Command {
         chat_model: Option<String>,
         embedding_model: Option<String>,
     },
+    /// Whether Ask your notes works with this device's server, and with what. Answered with
+    /// [`Response::AskStatus`].
+    AskStatus,
+    /// The saved conversations, most recent first. Answered with [`Response::Conversations`].
+    Conversations,
+    /// One conversation, with its messages. Answered with [`Response::Conversation`].
+    Conversation {
+        id: String,
+    },
+    RenameConversation {
+        id: String,
+        title: String,
+    },
+    DeleteConversation {
+        id: String,
+    },
+    /// Asks the notes a question (continuing `conversation`, or starting one). Answered with
+    /// [`Response::Done`] at once; the answer arrives as [`Event::Ask`]s naming `request`, which
+    /// the UI picks.
+    Ask {
+        request: String,
+        conversation: Option<String>,
+        question: String,
+        /// The local date, `YYYY-MM-DD`, so "yesterday" means the asker's.
+        today: Option<String>,
+    },
+    /// Stops following an answer. The server still finishes and saves it.
+    CancelAsk {
+        request: String,
+    },
+}
+
+/// Whether Ask your notes works, as the server says.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AskStatus {
+    pub signed_in: bool,
+    pub available: bool,
+    /// Why not, in words: no server, no chat model on it, search off.
+    pub message: Option<String>,
+    /// `not_signed_in`, `unreachable`, `disabled`, `search_off`, `no_chat_model`, `old_server`.
+    pub reason: Option<String>,
+    /// The chat model's name.
+    pub model: Option<String>,
+    /// Whether meaning is searched too (the server has an embedding model).
+    pub semantic: bool,
+    /// Documents waiting to be indexed.
+    pub indexing: u32,
+}
+
+/// A saved conversation, as listed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationSummary {
+    pub id: String,
+    pub title: String,
+    /// Unix milliseconds.
+    #[specta(type = u32)]
+    pub updated_at: i64,
+}
+
+/// A block an answer cites as `[n]`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AskSource {
+    pub n: u32,
+    pub page: PageId,
+    pub block: Option<BlockId>,
+    pub title: String,
+    /// The page is gone, or Ask may no longer read it.
+    pub missing: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum AskRole {
+    User,
+    Assistant,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AskMessage {
+    pub id: String,
+    pub role: AskRole,
+    pub text: String,
+    /// The sources it cites (answers only).
+    pub sources: Vec<AskSource>,
+    pub model: Option<String>,
+    /// Why the answer stopped short, if it did.
+    pub error: Option<String>,
+    /// Unix milliseconds.
+    #[specta(type = u32)]
+    pub at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Conversation {
+    pub id: String,
+    pub title: String,
+    pub messages: Vec<AskMessage>,
+}
+
+/// A step in an answer as it streams in.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum AskUpdate {
+    /// The question is saved, in this conversation.
+    Started {
+        conversation: String,
+        title: String,
+        message: String,
+    },
+    /// The blocks the answer may cite, by number.
+    Sources { sources: Vec<AskSource> },
+    /// More of the answer.
+    Text { text: String },
+    /// The answer is complete and saved; `cited` are the numbers it cited.
+    Done {
+        message: Option<String>,
+        cited: Vec<u32>,
+        model: Option<String>,
+    },
+    /// It stopped; what came before is saved.
+    Failed { message: String },
 }
 
 /// Which API an AI provider speaks.
@@ -589,6 +719,15 @@ pub enum Response {
     AiModels {
         models: Vec<AiModel>,
     },
+    AskStatus {
+        status: AskStatus,
+    },
+    Conversations {
+        conversations: Vec<ConversationSummary>,
+    },
+    Conversation {
+        conversation: Conversation,
+    },
     AiCheck {
         steps: Vec<AiCheckStep>,
     },
@@ -626,6 +765,8 @@ pub enum Event {
     AccountChanged { status: AccountStatus },
     /// The settings changed, here or on another device.
     SettingsChanged { settings: Settings },
+    /// More of an answer to [`Command::Ask`].
+    Ask { request: String, update: AskUpdate },
 }
 
 /// A page's place in the tree.

@@ -30,6 +30,8 @@ use crate::engine::Core;
 use crate::sync::SyncError;
 use crate::sync::net::{self, NetError};
 
+mod ask;
+
 /// Refresh the access token when it has less than this left.
 const REFRESH_BEFORE: Duration = Duration::from_secs(60);
 /// How long one HTTP request may take.
@@ -101,7 +103,8 @@ struct Tokens {
 #[derive(Debug, Deserialize)]
 struct OAuthError {
     error: String,
-    #[serde(default)]
+    /// Drusite's own API calls it `message`.
+    #[serde(default, alias = "message")]
     error_description: String,
 }
 
@@ -435,7 +438,7 @@ impl Supervisor {
             .ok_or_else(|| "not connected to the server".to_owned())
     }
 
-    fn workspace(&self) -> Result<String, String> {
+    pub(crate) fn workspace(&self) -> Result<String, String> {
         self.inner
             .core
             .lock()

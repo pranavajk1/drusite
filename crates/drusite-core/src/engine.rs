@@ -331,6 +331,29 @@ impl Core {
                 ErrorCode::Unsupported,
                 "AI providers need the app",
             )),
+            // Ask your notes goes to the server, through the app's connection.
+            Command::AskStatus => Ok(Response::AskStatus {
+                status: crate::api::AskStatus {
+                    signed_in: false,
+                    available: false,
+                    message: Some("Sign in to a Drusite server to ask your notes.".to_owned()),
+                    reason: Some("not_signed_in".to_owned()),
+                    model: None,
+                    semantic: false,
+                    indexing: 0,
+                },
+            }),
+            Command::Conversations => Ok(Response::Conversations {
+                conversations: Vec::new(),
+            }),
+            Command::Conversation { .. }
+            | Command::RenameConversation { .. }
+            | Command::DeleteConversation { .. }
+            | Command::Ask { .. }
+            | Command::CancelAsk { .. } => Err(ApiError::new(
+                ErrorCode::Unsupported,
+                "Ask your notes needs a Drusite server, through the app",
+            )),
             Command::SetSetting { setting } => {
                 self.set_setting(setting)?;
                 Ok(Response::Settings {

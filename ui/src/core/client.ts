@@ -15,9 +15,12 @@ import type {
   AiModel,
   AiProvider,
   ApiError,
+  AskStatus,
   BlockKind,
   BridgeStatus,
   Command,
+  Conversation,
+  ConversationSummary,
   Edit,
   EditOutcome,
   ImportReport,
@@ -269,6 +272,41 @@ export class CoreClient {
   /** Full-text search of this device's pages, best first, one hit per page. */
   async search(query: string, limit = 20): Promise<SearchHit[]> {
     return (await this.call({ type: "search", query, limit }, "searchResults")).hits;
+  }
+
+  /** Whether Ask your notes works with this device's server, and with what. */
+  async askStatus(): Promise<AskStatus> {
+    return (await this.call({ type: "askStatus" }, "askStatus")).status;
+  }
+
+  /** The saved conversations, most recent first. */
+  async conversations(): Promise<ConversationSummary[]> {
+    return (await this.call({ type: "conversations" }, "conversations")).conversations;
+  }
+
+  async conversation(id: string): Promise<Conversation> {
+    return (await this.call({ type: "conversation", id }, "conversation")).conversation;
+  }
+
+  async renameConversation(id: string, title: string): Promise<void> {
+    await this.call({ type: "renameConversation", id, title }, "done");
+  }
+
+  async deleteConversation(id: string): Promise<void> {
+    await this.call({ type: "deleteConversation", id }, "done");
+  }
+
+  /**
+   * Asks the notes. The answer comes as `ask` events naming `request`; this resolves once it's
+   * on its way.
+   */
+  async ask(request: string, conversation: string | null, question: string, today: string | null): Promise<void> {
+    await this.call({ type: "ask", request, conversation, question, today }, "done");
+  }
+
+  /** Stops following an answer; the server still finishes and saves it. */
+  async cancelAsk(request: string): Promise<void> {
+    await this.call({ type: "cancelAsk", request }, "done");
   }
 
   /** Tells the core the UI is showing what it opened (benchmarks wait for this). */

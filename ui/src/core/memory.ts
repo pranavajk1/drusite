@@ -14,10 +14,14 @@ import type {
   AiKindInfo,
   AiProvider,
   ApiError,
+  AskMessage,
+  AskSource,
+  AskUpdate,
   Block,
   BlockId,
   BlockKind,
   Command,
+  Conversation,
   Edit,
   Event,
   Marks,
@@ -192,7 +196,91 @@ export class MemoryCore {
     this.workspaceChanged();
   }
 
-  private settings: Settings = { journalParent: null, journalTemplate: null, weekStart: 1 };
+  private settings: Settings = { journalParent: null, journalTemplate: null, weekStart: 1, askJournal: false };
+
+  /**
+   * Ask your notes, faked: the blocks sharing the most words with the question, quoted and
+   * cited, streamed in pieces. No model is reached. Conversations live as long as the page.
+   */
+  private conversations: Conversation[] = [];
+  private conversationTimes = new Map<string, number>();
+  private asking = new Set<string>();
+
+  private askAnswer(question: string): { sources: AskSource[]; text: string } {
+    const words = (t: string) =>
+      t
+        .normalize("NFD")
+        .replace(/\p{M}/gu, "")
+        .toLowerCase()
+        .split(/[^\p{L}\p{N}]+/u)
+        .filter((w) => w.length > 3);
+    const want = new Set(words(question));
+    const scored: { page: MemPage; block: MemBlock; score: number }[] = [];
+    for (const p of this.pages) {
+      if (this.trashed(p.id) || (p.kind === "journal" && !this.settings.askJournal)) continue;
+      for (const b of p.blocks) {
+        const score = words(b.text).filter((w) => want.has(w)).length;
+        if (score > 0) scored.push({ page: p, block: b, score });
+      }
+    }
+    scored.sort((a, b) => b.score - a.score);
+    const sources = scored.slice(0, 6).map((s, i) => ({
+      n: i + 1,
+      page: s.page.id,
+      block: s.block.id,
+      title: s.page.title,
+      missing: false,
+    }));
+    const best = scored[0];
+    const text = best ? `From your notes: ${best.block.text} [1]` : "I couldn't find that in your notes.";
+    return { sources, text };
+  }
+
+  private ask(request: string, conversationId: string | null, question: string): void {
+    let conversation = conversationId ? this.conversations.find((c) => c.id === conversationId) : undefined;
+    if (conversationId && !conversation) fail("account", "not found");
+    if (!conversation) {
+      conversation = { id: newId(), title: question.trim().slice(0, 60), messages: [] };
+      this.conversations.push(conversation);
+    }
+    const c = conversation;
+    const asked: AskMessage = { id: newId(), role: "user", text: question.trim(), sources: [], model: null, error: null, at: Date.now() };
+    c.messages.push(asked);
+    this.conversationTimes.set(c.id, Date.now());
+    const { sources, text } = this.askAnswer(question);
+    const send = (update: AskUpdate) => this.emit({ type: "ask", request, update });
+    this.asking.add(request);
+    const pieces = text.match(/.{1,12}/gsu) ?? [];
+    let i = 0;
+    const step = () => {
+      if (!this.asking.has(request)) return;
+      if (i === 0) {
+        send({ type: "started", conversation: c.id, title: c.title, message: asked.id });
+        send({ type: "sources", sources });
+      }
+      if (i < pieces.length) {
+        send({ type: "text", text: pieces[i]! });
+        i += 1;
+        setTimeout(step, 30);
+        return;
+      }
+      const cited = text.includes("[1]") && sources.length > 0 ? [1] : [];
+      const answer: AskMessage = {
+        id: newId(),
+        role: "assistant",
+        text,
+        sources: sources.filter((s) => cited.includes(s.n)),
+        model: "Memory",
+        error: null,
+        at: Date.now(),
+      };
+      c.messages.push(answer);
+      this.conversationTimes.set(c.id, Date.now());
+      this.asking.delete(request);
+      send({ type: "done", message: answer.id, cited, model: "Memory" });
+    };
+    setTimeout(step, 30);
+  }
 
   private currentSettings(): Settings {
     const exists = (id: PageId | null) =>
@@ -518,7 +606,9 @@ export class MemoryCore {
         return { type: "settings", settings: this.currentSettings() };
       case "setSetting": {
         const s = command.setting;
-        if (s.type === "weekStart") {
+        if (s.type === "askJournal") {
+          this.settings.askJournal = s.value;
+        } else if (s.type === "weekStart") {
           if (s.value < 0 || s.value > 6) fail("invalid", `week start ${s.value} isn't a weekday (0-6)`);
           this.settings.weekStart = s.value;
         } else {
@@ -532,6 +622,50 @@ export class MemoryCore {
       }
       case "search":
         return { type: "searchResults", hits: this.search(command.query, command.limit) };
+      case "askStatus":
+        return {
+          type: "askStatus",
+          status: { signedIn: true, available: true, message: null, reason: null, model: "Memory", semantic: false, indexing: 0 },
+        };
+      case "conversations":
+        return {
+          type: "conversations",
+          conversations: this.conversations
+            .map((c) => ({ id: c.id, title: c.title, updatedAt: this.conversationTimes.get(c.id) ?? 0 }))
+            .sort((a, b) => b.updatedAt - a.updatedAt),
+        };
+      case "conversation": {
+        const c = this.conversations.find((x) => x.id === command.id);
+        if (!c) fail("account", "not found");
+        const titles = new Map(this.pages.map((p) => [p.id, p.title]));
+        return {
+          type: "conversation",
+          conversation: {
+            ...c,
+            messages: c.messages.map((m) => ({
+              ...m,
+              sources: m.sources.map((s) => ({ ...s, title: titles.get(s.page) ?? "", missing: !titles.has(s.page) || this.trashed(s.page) })),
+            })),
+          },
+        };
+      }
+      case "renameConversation": {
+        const c = this.conversations.find((x) => x.id === command.id);
+        if (!c) fail("account", "not found");
+        const title = command.title.trim();
+        if (title === "") fail("account", "a title has 1 to 120 characters");
+        c.title = title;
+        return { type: "done" };
+      }
+      case "deleteConversation":
+        this.conversations = this.conversations.filter((c) => c.id !== command.id);
+        return { type: "done" };
+      case "ask":
+        this.ask(command.request, command.conversation, command.question);
+        return { type: "done" };
+      case "cancelAsk":
+        this.asking.delete(command.request);
+        return { type: "done" };
       case "ready":
         return { type: "done" };
       case "edit":

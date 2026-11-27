@@ -1,0 +1,485 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+
+/* Ask your notes (`lib/Ask.svelte`): a panel at the right of the page on desktops, the whole
+   screen on phones. design/DESIGN.md §7.9. */
+
+.app.ask-open {
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr) var(--ask-width);
+}
+
+.app.ask-open.collapsed {
+  grid-template-columns: 0 minmax(0, 1fr) var(--ask-width);
+}
+
+.ask {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--bg);
+  box-shadow: inset 1px 0 0 var(--divider);
+  font-size: var(--text-md);
+  color: var(--text);
+}
+
+.ask-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--topbar);
+  padding: 0 var(--space-2) 0 var(--space-4);
+  flex: none;
+}
+
+.ask-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: var(--weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ask-head .icon-btn[aria-pressed="true"] {
+  background: var(--bg-active);
+  color: var(--text);
+}
+
+.ask-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-2) var(--space-4) var(--space-4);
+}
+
+/* ---- Empty and unavailable ---- */
+
+.ask-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: 18vh;
+  padding: 0 var(--space-4);
+  text-align: center;
+  color: var(--text-3);
+}
+
+.ask-empty-title {
+  margin: var(--space-2) 0 0;
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+}
+
+.ask-empty-text {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  max-width: 320px;
+}
+
+.ask-empty-note {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+.ask-empty .btn {
+  margin-top: var(--space-2);
+}
+
+/* ---- Messages ---- */
+
+.ask-messages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.ask-msg.user {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ask-question {
+  margin: 0;
+  max-width: 85%;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ask-answer {
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.ask-answer p,
+.ask-answer ul,
+.ask-answer ol {
+  margin: 0 0 var(--space-2);
+}
+
+.ask-answer ul,
+.ask-answer ol {
+  padding-left: var(--space-6);
+}
+
+.ask-answer p {
+  white-space: pre-wrap;
+}
+
+.ask-answer .ask-h {
+  font-weight: var(--weight-semibold);
+}
+
+.ask-answer code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-xs);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--code-text);
+}
+
+.ask-phase {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-2);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ask-phase .icon {
+    animation: ask-spin 1s linear infinite;
+  }
+}
+
+@keyframes ask-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* A citation: the source's number in a small accent pill, right after the claim. */
+.ask-cite {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  margin: 0 1px;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-full);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  vertical-align: 0.15em;
+  cursor: pointer;
+  transition: background var(--dur-fast);
+}
+
+.ask-cite:hover {
+  background: var(--accent-soft-2);
+}
+
+.ask-cite.missing {
+  background: var(--bg-subtle);
+  color: var(--text-3);
+  cursor: default;
+}
+
+.ask-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+}
+
+.ask-source {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  height: var(--row);
+  padding: 0 var(--space-2) 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  transition: background var(--dur-fast);
+}
+
+.ask-source:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.ask-source:disabled {
+  color: var(--text-3);
+}
+
+.ask-source-n {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+}
+
+.ask-source-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ask-error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+  color: var(--danger);
+}
+
+.ask-error .icon {
+  flex: none;
+  margin-top: 3px;
+}
+
+/* ---- The question box ---- */
+
+.ask-compose {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  margin: 0 var(--space-3) var(--space-3);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm), inset 0 0 0 1px var(--border);
+  flex: none;
+}
+
+.ask-compose:focus-within {
+  box-shadow: var(--shadow-sm), inset 0 0 0 1px var(--accent), 0 0 0 3px var(--focus);
+}
+
+.ask-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 24px;
+  max-height: 160px;
+  field-sizing: content;
+  resize: none;
+  padding: var(--space-0) 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  line-height: 1.5;
+}
+
+.ask-input::placeholder {
+  color: var(--text-3);
+}
+
+.ask-send {
+  flex: none;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.ask-send:hover:not(:disabled) {
+  background: var(--accent-hover);
+  color: var(--text-on-accent);
+}
+
+.ask-send:disabled {
+  background: var(--bg-active);
+  color: var(--text-3);
+  opacity: 1;
+}
+
+/* ---- Saved chats ---- */
+
+.ask-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ask-list-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--row);
+  border-radius: var(--radius-sm);
+}
+
+.ask-list-row:hover,
+.ask-list-row.current {
+  background: var(--bg-hover);
+}
+
+.ask-list-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--row);
+  padding: 0 var(--space-2);
+  color: var(--text-2);
+  text-align: left;
+}
+
+.ask-list-row.current .ask-list-open {
+  color: var(--text);
+}
+
+.ask-list-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ask-list-when {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+
+.ask-list-more {
+  visibility: hidden;
+}
+
+.ask-list-row:hover .ask-list-more,
+.ask-list-more:focus-visible,
+.ask-list-more[aria-expanded="true"] {
+  visibility: visible;
+}
+
+@media (hover: none) {
+  .ask-list-more {
+    visibility: visible;
+  }
+}
+
+.ask-rename {
+  flex: 1;
+  margin: var(--space-0);
+}
+
+.ask-confirm {
+  flex: 1;
+  min-width: 0;
+  padding-left: var(--space-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+
+/* ---- Narrow windows: the panel goes over the page instead of squeezing it ---- */
+
+@media (min-width: 701px) and (max-width: 1100px) {
+  .app.ask-open {
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  }
+
+  .app.ask-open.collapsed {
+    grid-template-columns: 0 minmax(0, 1fr);
+  }
+
+  .ask {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: var(--z-drawer);
+    width: min(var(--ask-width), 90vw);
+    height: auto;
+    background: var(--bg-elevated);
+    box-shadow: var(--shadow-lg);
+  }
+}
+
+/* ---- Phones: the whole screen, over everything but the toast ---- */
+
+@media (max-width: 700px) {
+  .ask {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-modal);
+    width: auto;
+    height: auto;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+      env(safe-area-inset-left);
+    box-shadow: none;
+  }
+
+  .ask-head {
+    box-shadow: 0 1px 0 var(--divider);
+  }
+
+  .ask-head .icon-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .ask-input {
+    font-size: 16px; /* iOS zooms into anything smaller */
+  }
+
+  /* Phones reach Ask from the tab bar. */
+  .topbar-ask {
+    display: none;
+  }
+}
+
+@media (pointer: coarse) {
+  .ask-cite {
+    min-width: 22px;
+    height: 22px;
+  }
+
+  .ask-source,
+  .ask-list-open,
+  .ask-list-row {
+    min-height: var(--row-touch);
+  }
+
+  .ask-send {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+.ask-host {
+  min-width: 0;
+}
+
+.topbar-ask.active {
+  background: var(--bg-active);
+  color: var(--text);
+}

@@ -9,6 +9,7 @@
   import { setQueryHost } from "./editor/query";
   import { today } from "./journal/dates";
   import { phaseLabel } from "./lib/Account.svelte";
+  import AskPanel from "./lib/Ask.svelte";
   import PageEditor from "./lib/PageEditor.svelte";
   import PageTree from "./lib/PageTree.svelte";
   import SearchPalette from "./lib/Search.svelte";
@@ -28,12 +29,26 @@
   let settingsAt = $state<Opening | null>(null);
   let showSearch = $state(false);
   let showTrash = $state(false);
+  /** Ask your notes, beside the page (the whole screen on phones); kept open per device. */
+  const phone = () => window.matchMedia?.("(max-width: 700px)").matches ?? false;
+  let showAsk = $state(!phone() && localStorage.getItem("drusite.ask") === "open");
+  function setAsk(open: boolean) {
+    showAsk = open;
+    drawer = false;
+    if (!phone()) localStorage.setItem("drusite.ask", open ? "open" : "closed");
+  }
+  /** A citation: its page, at its block. On a phone the panel gives way to the page. */
+  function openCited(page: PageId, block: BlockId | null) {
+    select(page);
+    reveal = block ? { block, seq: (reveal?.seq ?? 0) + 1 } : null;
+    if (phone()) showAsk = false;
+  }
   /** The page just moved to the trash, for the Undo toast. */
   let trashed = $state<{ id: PageId; title: string } | null>(null);
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
   /** The block a search hit points at, for the editor to show; bumped so the same one can repeat. */
   let reveal = $state<{ block: BlockId; seq: number } | null>(null);
-  let settings = $state<Settings>({ journalParent: null, journalTemplate: null, weekStart: 1 });
+  let settings = $state<Settings>({ journalParent: null, journalTemplate: null, weekStart: 1, askJournal: false });
   /** On phones, the page list is a drawer over the page. */
   let drawer = $state(false);
   /** On desktops, the sidebar can be put away, and made wider or narrower. */
@@ -153,6 +168,13 @@
     } else if (mod && e.key === "\\") {
       e.preventDefault();
       toggleSidebar();
+    } else if (mod && !e.shiftKey && e.key.toLowerCase() === "j") {
+      e.preventDefault();
+      setAsk(!showAsk);
+    } else if (e.key === "Escape" && showAsk && !e.defaultPrevented && !settingsAt && !showSearch && !showTrash) {
+      // Esc closes the panel when it has the focus, or when nothing does.
+      const at = document.activeElement;
+      if (!at || at === document.body || at.closest(".ask")) setAsk(false);
     }
   }
 
@@ -344,6 +366,7 @@
   class:collapsed
   class:writing
   class:resizing
+  class:ask-open={showAsk}
   style:--sidebar-width="{sidebarWidth}px"
 >
   <aside class="sidebar" aria-label="Sidebar">
@@ -360,6 +383,9 @@
       <div class="nav-group">
         <button class="nav-row" aria-keyshortcuts="Meta+K Control+K" onclick={() => ((drawer = false), (showSearch = true))}>
           <Icon name="search" /><span class="nav-label">Search</span><kbd>⌘K</kbd>
+        </button>
+        <button class="nav-row" aria-keyshortcuts="Meta+J Control+J" aria-pressed={showAsk} onclick={() => setAsk(!showAsk)}>
+          <Icon name="sparkles" /><span class="nav-label">Ask</span><kbd>⌘J</kbd>
         </button>
         <button class="nav-row" onclick={() => openDay(today())}>
           <Icon name="calendar-days" /><span class="nav-label">Today</span>
@@ -439,6 +465,16 @@
         {@render syncDot()}<span class="topbar-sync-label">{syncLabel}</span>
       </button>
       <button
+        class="icon-btn topbar-ask"
+        class:active={showAsk}
+        aria-label="Ask your notes"
+        title="Ask your notes (⌘J)"
+        aria-pressed={showAsk}
+        onclick={() => setAsk(!showAsk)}
+      >
+        <Icon name="sparkles" size={18} />
+      </button>
+      <button
         class="icon-btn topbar-more"
         aria-label="Page actions"
         aria-haspopup="menu"
@@ -477,10 +513,24 @@
     </main>
   </div>
 
+  {#if showAsk}
+    <div class="ask-host">
+      <AskPanel
+        {client}
+        {settings}
+        signedIn={account.server ?? ""}
+        onclose={() => setAsk(false)}
+        oncite={openCited}
+        onsettings={(s) => (settingsAt = s)}
+      />
+    </div>
+  {/if}
+
   <nav class="tabbar" aria-label="Main">
     <button class="tab" aria-label="Pages" onclick={() => (drawer = true)}><Icon name="house" size={22} /><span>Pages</span></button>
     <button class="tab" onclick={() => openDay(today())}><Icon name="calendar-days" size={22} /><span>Today</span></button>
     <button class="tab" onclick={() => (showSearch = true)}><Icon name="search" size={22} /><span>Search</span></button>
+    <button class="tab" onclick={() => setAsk(true)}><Icon name="sparkles" size={22} /><span>Ask</span></button>
     <button class="tab" onclick={() => createPage(null)}><Icon name="square-pen" size={22} /><span>New page</span></button>
   </nav>
 </div>

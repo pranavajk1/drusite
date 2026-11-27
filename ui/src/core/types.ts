@@ -113,6 +113,60 @@ export type ApiError = {
 	message: string,
 };
 
+export type AskMessage = {
+	id: string,
+	role: AskRole,
+	text: string,
+	/**  The sources it cites (answers only). */
+	sources: AskSource[],
+	model: string | null,
+	/**  Why the answer stopped short, if it did. */
+	error: string | null,
+	/**  Unix milliseconds. */
+	at: number,
+};
+
+export type AskRole = "user" | "assistant";
+
+/**  A block an answer cites as `[n]`. */
+export type AskSource = {
+	n: number,
+	page: PageId,
+	block: BlockId | null,
+	title: string,
+	/**  The page is gone, or Ask may no longer read it. */
+	missing: boolean,
+};
+
+/**  Whether Ask your notes works, as the server says. */
+export type AskStatus = {
+	signedIn: boolean,
+	available: boolean,
+	/**  Why not, in words: no server, no chat model on it, search off. */
+	message: string | null,
+	/**  `not_signed_in`, `unreachable`, `disabled`, `search_off`, `no_chat_model`, `old_server`. */
+	reason: string | null,
+	/**  The chat model's name. */
+	model: string | null,
+	/**  Whether meaning is searched too (the server has an embedding model). */
+	semantic: boolean,
+	/**  Documents waiting to be indexed. */
+	indexing: number,
+};
+
+/**  A step in an answer as it streams in. */
+export type AskUpdate = 
+/**  The question is saved, in this conversation. */
+{ type: "started"; conversation: string; title: string; message: string } | 
+/**  The blocks the answer may cite, by number. */
+{ type: "sources"; sources: AskSource[] } | 
+/**  More of the answer. */
+{ type: "text"; text: string } | 
+/**  The answer is complete and saved; `cited` are the numbers it cited. */
+{ type: "done"; message: string | null; cited: number[]; model: string | null } | 
+/**  It stopped; what came before is saved. */
+{ type: "failed"; message: string };
+
 /**  A block as the editor sees it. */
 export type Block = {
 	id: BlockId,
@@ -314,7 +368,26 @@ export type Command =
  *  *Test connection*: lists the models, then tries each model given with a tiny request.
  *  Answered with [`Response::AiCheck`].
  */
-{ type: "testAiProvider"; provider: string; chatModel: string | null; embeddingModel: string | null };
+{ type: "testAiProvider"; provider: string; chatModel: string | null; embeddingModel: string | null } | 
+/**
+ *  Whether Ask your notes works with this device's server, and with what. Answered with
+ *  [`Response::AskStatus`].
+ */
+{ type: "askStatus" } | 
+/**  The saved conversations, most recent first. Answered with [`Response::Conversations`]. */
+{ type: "conversations" } | 
+/**  One conversation, with its messages. Answered with [`Response::Conversation`]. */
+{ type: "conversation"; id: string } | { type: "renameConversation"; id: string; title: string } | { type: "deleteConversation"; id: string } | 
+/**
+ *  Asks the notes a question (continuing `conversation`, or starting one). Answered with
+ *  [`Response::Done`] at once; the answer arrives as [`Event::Ask`]s naming `request`, which
+ *  the UI picks.
+ */
+{ type: "ask"; request: string; conversation: string | null; question: string; 
+/**  The local date, `YYYY-MM-DD`, so "yesterday" means the asker's. */
+today: string | null } | 
+/**  Stops following an answer. The server still finishes and saves it. */
+{ type: "cancelAsk"; request: string };
 
 /**  How a condition compares a property. */
 export type Comparison = 
@@ -329,6 +402,20 @@ export type Condition = {
 	comparison: Comparison,
 	/**  Unused for [`Comparison::Exists`] and [`Comparison::Missing`]. */
 	value: PropertyValue | null,
+};
+
+export type Conversation = {
+	id: string,
+	title: string,
+	messages: AskMessage[],
+};
+
+/**  A saved conversation, as listed. */
+export type ConversationSummary = {
+	id: string,
+	title: string,
+	/**  Unix milliseconds. */
+	updatedAt: number,
 };
 
 /**  One change to a page, as the editor makes it. */
@@ -399,7 +486,9 @@ export type Event =
 /**  The account or sync status changed. */
 { type: "accountChanged"; status: AccountStatus } | 
 /**  The settings changed, here or on another device. */
-{ type: "settingsChanged"; settings: Settings };
+{ type: "settingsChanged"; settings: Settings } | 
+/**  More of an answer to [`Command::Ask`]. */
+{ type: "ask"; request: string; update: AskUpdate };
 
 /**  Heading levels 1 to 3, as in Notion. Serialized as `"h1"`, `"h2"`, `"h3"`. */
 export type HeadingLevel = "h1" | "h2" | "h3";
@@ -519,7 +608,7 @@ activity: AgentCall[];
 /**  Why the server's activity couldn't be listed, if it couldn't. */
 serverProblem: string | null } | { type: "agentToken"; token: string; url: string } | { type: "ai"; 
 /**  Whether this build can reach AI providers. */
-available: boolean; kinds: AiKindInfo[]; providers: AiProvider[]; features: AiFeatureChoice[] } | { type: "aiProviderSaved"; provider: AiProvider } | { type: "aiModels"; models: AiModel[] } | { type: "aiCheck"; steps: AiCheckStep[] } | { type: "done" };
+available: boolean; kinds: AiKindInfo[]; providers: AiProvider[]; features: AiFeatureChoice[] } | { type: "aiProviderSaved"; provider: AiProvider } | { type: "aiModels"; models: AiModel[] } | { type: "askStatus"; status: AskStatus } | { type: "conversations"; conversations: ConversationSummary[] } | { type: "conversation"; conversation: Conversation } | { type: "aiCheck"; steps: AiCheckStep[] } | { type: "done" };
 
 /**  A page that matched a search, at the block that matched best (none when only the title did). */
 export type SearchHit = {
@@ -530,7 +619,7 @@ export type SearchHit = {
 };
 
 /**  One setting's new value. */
-export type Setting = { type: "journalParent"; value?: PageId | null } | { type: "journalTemplate"; value?: PageId | null } | { type: "weekStart"; value: number };
+export type Setting = { type: "journalParent"; value?: PageId | null } | { type: "journalTemplate"; value?: PageId | null } | { type: "weekStart"; value: number } | { type: "askJournal"; value: boolean };
 
 /**
  *  The settings that live in the workspace, so they sync with the account and a new device has
@@ -546,6 +635,8 @@ export type Settings = {
 	journalTemplate: PageId | null,
 	/**  The first day of the week in calendars: 0 is Sunday, 1 Monday. */
 	weekStart: number,
+	/**  Whether Ask your notes may read journal entries. Off unless switched on. */
+	askJournal: boolean,
 };
 
 /**  A piece of a search snippet; `highlight` marks the words that matched. */

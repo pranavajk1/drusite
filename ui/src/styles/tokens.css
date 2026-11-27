@@ -57,6 +57,7 @@
   --icon: 16px;
   --icon-lg: 20px;
   --sidebar-width: 248px;
+  --ask-width: 400px; /* the Ask panel beside the page */
   --page-width: 720px;
   --page-pad: var(--space-24);
   --topbar: 44px;
