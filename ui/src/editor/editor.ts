@@ -13,6 +13,7 @@ import { blockView, displayPlugin } from "./blocks";
 import { baseKeys, editorKeymap, markdownShortcuts } from "./commands";
 import { docNode } from "./convert";
 import { clipboardParser } from "./schema";
+import { slashMenu } from "./slash";
 import { PageSync, idPlugin } from "./sync";
 
 /** How a link to another page is written: the page's ID after this. */
@@ -35,7 +36,7 @@ export function createEditor(
   const sync = new PageSync(client, page.id, onError);
   const state = EditorState.create({
     doc: docNode(page.blocks),
-    plugins: [markdownShortcuts(), editorKeymap(), baseKeys(), history(), idPlugin, displayPlugin],
+    plugins: [slashMenu(), markdownShortcuts(), editorKeymap(), baseKeys(), history(), idPlugin, displayPlugin],
   });
   const view = new EditorView(mount, {
     state,

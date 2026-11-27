@@ -1,18 +1,53 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!--
+  Settings: a modal with its sections down the left, as Notion's. On phones it fills the screen:
+  a list of sections first, each opening as its own page with a back button.
+-->
+<script lang="ts" module>
+  import type { IconName } from "./icons/icons";
+
+  export type Section = "account" | "appearance" | "journal" | "markdown" | "import" | "ai" | "agents";
+  /** Where Settings opens: a section, or "home" (the first section on desktops, the list on phones). */
+  export type Opening = Section | "home";
+
+  const SECTIONS: { id: Section; label: string; icon: IconName; group: string; desc: string }[] = [
+    { id: "account", label: "Account & sync", icon: "user-round", group: "Account", desc: "The server this device syncs your notes with." },
+    { id: "appearance", label: "Appearance", icon: "palette", group: "Account", desc: "How Drusite looks on this device." },
+    {
+      id: "journal",
+      label: "Journal",
+      icon: "book-open",
+      group: "Notes",
+      desc: "Where entries go and what they start from. These sync, so every device you sign in on has them.",
+    },
+    { id: "markdown", label: "Markdown folder", icon: "folder-sync", group: "Notes", desc: "Your pages as Markdown files on this computer." },
+    { id: "import", label: "Import", icon: "folder-input", group: "Notes", desc: "Bring in a folder of Markdown notes." },
+    { id: "ai", label: "AI", icon: "sparkles", group: "Connections", desc: "Models that answer questions about your notes." },
+    { id: "agents", label: "Agents", icon: "bot", group: "Connections", desc: "Agents such as Claude Code that work with your notes." },
+  ];
+</script>
+
 <script lang="ts">
   import { onMount } from "svelte";
 
   import type { CoreClient } from "../core/client";
+  import { setThemeChoice, themeChoice, type ThemeChoice } from "../core/theme";
+  import type { AccountStatus, BridgeRound, BridgeStatus, PageId, PageInfo, Setting, Settings } from "../core/types";
+  import { WEEKDAYS } from "../journal/dates";
+  import Account from "./Account.svelte";
   import Agents from "./Agents.svelte";
   import Ai from "./Ai.svelte";
-  import type { BridgeRound, BridgeStatus, PageId, PageInfo, Setting, Settings } from "../core/types";
-  import { WEEKDAYS } from "../journal/dates";
+  import Icon from "./ui/Icon.svelte";
+  import Modal from "./ui/Modal.svelte";
+  import Select from "./ui/Select.svelte";
 
   let {
     client,
     settings,
     pages,
-    server = null,
+    account,
+    section,
+    onsection,
     onclose,
     onerror,
     onopen,
@@ -20,15 +55,38 @@
     client: CoreClient;
     settings: Settings;
     pages: PageInfo[];
-    /** The server this device syncs with, if signed in. */
-    server?: string | null;
+    account: AccountStatus;
+    section: Opening;
+    onsection: (s: Opening) => void;
     onclose: () => void;
     onerror: (e: unknown) => void;
     /** Opens a page (the one an import made). */
     onopen: (id: PageId) => void;
   } = $props();
 
+  const server = $derived(account.phase === "signedOut" ? null : account.server);
   const candidates = $derived(pages.filter((p) => p.kind === "page"));
+  const pageOptions = (empty: string) => [
+    { value: "", label: empty },
+    ...candidates.map((p) => ({ value: p.id as string, label: p.title || "Untitled" })),
+  ];
+
+  // The Markdown folder and import: desktops only, and only on this device.
+  let bridge = $state<BridgeStatus | null>(null);
+  let busy = $state(false);
+  onMount(() => {
+    const stop = client.subscribe((event) => {
+      if (event.type === "bridgeChanged") bridge = event.status;
+    });
+    client.bridgeStatus().then((s) => (bridge = s), onerror);
+    return stop;
+  });
+
+  const shown = $derived(SECTIONS.filter((s) => (s.id !== "markdown" && s.id !== "import") || bridge !== null));
+  /** The section on screen. On phones "home" is the list; on desktops, the first section. */
+  const current = $derived<Section>(section === "home" ? "account" : section);
+  const info = $derived(SECTIONS.find((s) => s.id === current)!);
+  const groups = $derived([...new Set(shown.map((s) => s.group))]);
 
   async function set(setting: Setting) {
     try {
@@ -40,16 +98,11 @@
 
   const page = (v: string): PageId | null => (v === "" ? null : (v as PageId));
 
-  // The Markdown folder: desktops only, and only on this device.
-  let bridge = $state<BridgeStatus | null>(null);
-  let busy = $state(false);
-  onMount(() => {
-    const stop = client.subscribe((event) => {
-      if (event.type === "bridgeChanged") bridge = event.status;
-    });
-    client.bridgeStatus().then((s) => (bridge = s), onerror);
-    return stop;
-  });
+  let theme = $state<ThemeChoice>(themeChoice());
+  function pickTheme(t: ThemeChoice) {
+    theme = t;
+    setThemeChoice(t);
+  }
 
   async function setFolder(folder: string | null) {
     busy = true;
@@ -98,61 +151,155 @@
   }
 </script>
 
-<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-<div class="sheet-backdrop" onclick={onclose}>
-  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="settings-title" tabindex="-1" onclick={(e) => e.stopPropagation()}>
-    <div class="sheet-head">
-      <h2 id="settings-title">Settings</h2>
-      <button class="sheet-close" aria-label="Close" onclick={onclose}>×</button>
+<Modal label="Settings" size="lg" phone="full" head={false} {onclose} class="settings {section === 'home' ? 'at-home' : 'in-section'}">
+  <nav class="settings-nav" aria-label="Settings sections">
+    <div class="settings-nav-head">
+      <h2 class="settings-nav-title">Settings</h2>
+      <button class="icon-btn settings-close-phone" aria-label="Close" onclick={onclose}><Icon name="x" size={20} /></button>
     </div>
-    <p class="hint">These sync with your account, so every device you sign in on has them.</p>
+    {#each groups as group (group)}
+      <div class="settings-nav-group">
+        <span class="settings-nav-label">{group}</span>
+        {#each shown.filter((s) => s.group === group) as s (s.id)}
+          <button
+            class="settings-nav-row"
+            class:current={s.id === current}
+            aria-current={s.id === current ? "page" : undefined}
+            onclick={() => onsection(s.id)}
+          >
+            <Icon name={s.icon} />
+            <span class="nav-label">{s.label}</span>
+            <Icon name="chevron-right" size={16} class="settings-nav-chevron" />
+          </button>
+        {/each}
+      </div>
+    {/each}
+  </nav>
 
-    <label for="journal-parent">Journal entries go under</label>
-    <select id="journal-parent" value={settings.journalParent ?? ""} onchange={(e) => set({ type: "journalParent", value: page(e.currentTarget.value) })}>
-      <option value="">A “Journal” page, made when needed</option>
-      {#each candidates as p (p.id)}<option value={p.id}>{p.title || "Untitled"}</option>{/each}
-    </select>
+  <section class="settings-page" aria-labelledby="settings-section-title">
+    <header class="settings-page-head">
+      <button class="icon-btn settings-back" aria-label="All settings" onclick={() => onsection("home")}>
+        <Icon name="chevron-left" size={22} />
+      </button>
+      <h2 id="settings-section-title" class="settings-page-title">{info.label}</h2>
+      <button class="icon-btn modal-close" aria-label="Close" onclick={onclose}><Icon name="x" size={18} /></button>
+    </header>
+    <div class="settings-page-body">
+      <p class="settings-page-desc">{info.desc}</p>
 
-    <label for="journal-template">New entries start from</label>
-    <select id="journal-template" value={settings.journalTemplate ?? ""} onchange={(e) => set({ type: "journalTemplate", value: page(e.currentTarget.value) })}>
-      <option value="">An empty page</option>
-      {#each candidates as p (p.id)}<option value={p.id}>{p.title || "Untitled"}</option>{/each}
-    </select>
-    <p class="hint">A template's <code>{"{{date}}"}</code>, <code>{"{{title}}"}</code> and <code>{"{{weekday}}"}</code> are filled in.</p>
-
-    <label for="week-start">Weeks start on</label>
-    <select id="week-start" value={settings.weekStart} onchange={(e) => set({ type: "weekStart", value: Number(e.currentTarget.value) })}>
-      {#each WEEKDAYS as d, i (d)}<option value={i}>{d}</option>{/each}
-    </select>
-
-    {#if bridge}
-      <h3 class="settings-section">Markdown folder</h3>
-      <p class="hint">
-        Every page as a Markdown file in a folder on this computer, kept in step both ways: edit the files in any
-        editor, or let an agent work on them, and the changes come back. Deleting a file moves its page to the trash.
-        The files are plain text, outside Drusite's encryption, and only on this computer.
-      </p>
-      {#if bridge.folder}
-        <p class="bridge-folder"><code>{bridge.folder}</code></p>
-        {#if bridge.last}<p class="hint" class:bridge-error={!!bridge.last.error}>{summary(bridge.last)}</p>{/if}
-        <button disabled={busy} onclick={chooseFolder}>Change folder…</button>
-        <button disabled={busy} onclick={() => setFolder(null)}>Turn off</button>
-      {:else}
-        <button disabled={busy} onclick={chooseFolder}>Choose a folder…</button>
+      {#if current === "account"}
+        <Account {client} status={account} />
+      {:else if current === "appearance"}
+        <div class="set-group">
+          <div class="set-row">
+            <div class="set-row-text">
+              <label class="set-label" for="theme">Theme</label>
+              <span class="set-desc">Light, dark, or whatever this device is set to.</span>
+            </div>
+            <Select
+              id="theme"
+              value={theme}
+              options={[
+                { value: "system", label: "Use system setting" },
+                { value: "light", label: "Light" },
+                { value: "dark", label: "Dark" },
+              ]}
+              onchange={pickTheme}
+            />
+          </div>
+        </div>
+      {:else if current === "journal"}
+        <div class="set-group">
+          <div class="set-row">
+            <div class="set-row-text">
+              <label class="set-label" for="journal-parent">Journal entries go under</label>
+              <span class="set-desc">The page that holds a page per day.</span>
+            </div>
+            <Select
+              id="journal-parent"
+              value={settings.journalParent ?? ""}
+              options={pageOptions("A “Journal” page, made when needed")}
+              onchange={(v) => set({ type: "journalParent", value: page(v) })}
+            />
+          </div>
+          <div class="set-row">
+            <div class="set-row-text">
+              <label class="set-label" for="journal-template">New entries start from</label>
+              <span class="set-desc">
+                A template's <code>{"{{date}}"}</code>, <code>{"{{title}}"}</code> and <code>{"{{weekday}}"}</code> are filled in.
+              </span>
+            </div>
+            <Select
+              id="journal-template"
+              value={settings.journalTemplate ?? ""}
+              options={pageOptions("An empty page")}
+              onchange={(v) => set({ type: "journalTemplate", value: page(v) })}
+            />
+          </div>
+          <div class="set-row">
+            <div class="set-row-text">
+              <label class="set-label" for="week-start">Weeks start on</label>
+              <span class="set-desc">For the journal's calendar.</span>
+            </div>
+            <Select
+              id="week-start"
+              value={settings.weekStart}
+              options={WEEKDAYS.map((d, i) => ({ value: i, label: d }))}
+              onchange={(v) => set({ type: "weekStart", value: v })}
+            />
+          </div>
+        </div>
+      {:else if current === "markdown" && bridge}
+        <div class="set-group">
+          <p class="set-desc">
+            Every page as a Markdown file in a folder on this computer, kept in step both ways: edit the files in any
+            editor, or let an agent work on them, and the changes come back. Deleting a file moves its page to the
+            trash. The files are plain text, outside Drusite's encryption, and only on this computer.
+          </p>
+          <div class="set-row">
+            <div class="set-row-text">
+              <span class="set-label">Folder</span>
+              {#if bridge.folder}
+                <code class="set-path">{bridge.folder}</code>
+              {:else}
+                <span class="set-desc">Off</span>
+              {/if}
+            </div>
+            <div class="button-row">
+              {#if bridge.folder}
+                <button class="btn" disabled={busy} onclick={chooseFolder}>Change folder…</button>
+                <button class="btn" disabled={busy} onclick={() => setFolder(null)}>Turn off</button>
+              {:else}
+                <button class="btn primary" disabled={busy} onclick={chooseFolder}>Choose a folder…</button>
+              {/if}
+            </div>
+          </div>
+          {#if bridge.folder && bridge.last}
+            <p class="hint" class:field-error={!!bridge.last.error}>{summary(bridge.last)}</p>
+          {/if}
+        </div>
+      {:else if current === "import" && bridge}
+        <div class="set-group">
+          <p class="set-desc">
+            Copies a folder of Markdown notes, such as an Obsidian vault, into new pages: folders become pages,
+            wikilinks become links, embedded files become attachments, and daily notes become journal entries. The
+            folder isn't changed.
+          </p>
+          <div class="set-row">
+            <div class="set-row-text">
+              <span class="set-label">Import a folder</span>
+              {#if imported}<span class="set-desc" role="status">{imported}</span>{/if}
+            </div>
+            <button class="btn" disabled={busy} onclick={importNotes}>
+              <Icon name="folder-input" size={15} />Import a folder…
+            </button>
+          </div>
+        </div>
+      {:else if current === "ai"}
+        <Ai {client} {onerror} />
+      {:else if current === "agents"}
+        <Agents {client} {server} {onerror} />
       {/if}
-
-      <h3 class="settings-section">Import</h3>
-      <p class="hint">
-        Copies a folder of Markdown notes, such as an Obsidian vault, into new pages: folders become pages, wikilinks
-        become links, embedded files become attachments, and daily notes become journal entries. The folder isn't
-        changed.
-      </p>
-      <button disabled={busy} onclick={importNotes}>Import a folder…</button>
-      {#if imported}<p class="hint">{imported}</p>{/if}
-    {/if}
-
-    <Ai {client} {onerror} />
-
-    <Agents {client} {server} {onerror} />
-  </div>
-</div>
+    </div>
+  </section>
+</Modal>

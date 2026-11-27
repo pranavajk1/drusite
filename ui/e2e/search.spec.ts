@@ -12,7 +12,7 @@ test("search finds a block on another page and opens it there", async ({ page })
   await page.keyboard.press("Enter");
   await page.keyboard.type("Call the plumber about the heron-shaped tap");
   await page.getByLabel("Page title").fill("Errands");
-  await page.getByRole("button", { name: "+ New page" }).click();
+  await page.getByRole("button", { name: "New page", exact: true }).click();
   await expect(page.getByLabel("Page title")).toBeFocused();
 
   await page.keyboard.press("ControlOrMeta+k");
@@ -32,7 +32,7 @@ test("search finds a block on another page and opens it there", async ({ page })
 
 test("search says when nothing matches, and Escape closes it", async ({ page }) => {
   await openApp(page);
-  await page.getByRole("button", { name: "🔍 Search" }).click();
+  await page.getByRole("button", { name: "Search ⌘K" }).click();
   const box = page.getByRole("dialog", { name: "Search" });
   await page.keyboard.type("zebra");
   await expect(box.getByText("Nothing matches “zebra”.")).toBeVisible();

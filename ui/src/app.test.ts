@@ -127,10 +127,16 @@ it("moves to another page when the open page's parent is deleted", async () => {
   const t = await start(memory);
   await t.ready("B");
   const row = t.rows().find((r) => r.querySelector(".tree-title")!.textContent === "A")!;
-  const del = () => row.querySelector<HTMLButtonElement>("[aria-label='Delete page']")!;
-  del().click();
+  // Page options → Move to Trash, twice in a row: the second lands on a page already going.
+  const del = () => {
+    row.querySelector<HTMLButtonElement>("[aria-label='Page options']")!.click();
+    flushSync();
+    const item = [...document.querySelectorAll<HTMLElement>("[role=menuitem]")].find((e) => e.textContent?.includes("Move to Trash"));
+    item?.click();
+  };
+  del();
   flushSync();
-  del().click();
+  del();
   await t.ready("C");
   expect(t.errors()).toBeNull();
   t.close();

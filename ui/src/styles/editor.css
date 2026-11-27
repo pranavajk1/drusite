@@ -1,0 +1,542 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+
+/* The editor's blocks. DESIGN.md §7.4. */
+
+.editor {
+  outline: none;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  caret-color: var(--text);
+}
+
+.editor:focus-visible {
+  outline: none;
+}
+
+.editor .block {
+  margin: 1px 0;
+  padding: 3px var(--space-0);
+  position: relative;
+  min-height: 1.6em;
+  border-radius: var(--radius-xs);
+}
+
+.editor [data-indent="1"] { margin-left: 26px; }
+.editor [data-indent="2"] { margin-left: 52px; }
+.editor [data-indent="3"] { margin-left: 78px; }
+.editor [data-indent="4"] { margin-left: 104px; }
+.editor [data-indent="5"] { margin-left: 130px; }
+.editor [data-indent="6"] { margin-left: 156px; }
+.editor [data-indent="7"] { margin-left: 182px; }
+.editor [data-indent="8"] { margin-left: 208px; }
+
+.editor h1,
+.editor h2,
+.editor h3 {
+  line-height: var(--leading-tight);
+  font-weight: var(--weight-semibold);
+  margin-bottom: 1px;
+}
+
+.editor h1 {
+  font-size: var(--text-h1);
+  margin-top: 1.1em;
+}
+
+.editor h2 {
+  font-size: var(--text-h2);
+  margin-top: 0.9em;
+}
+
+.editor h3 {
+  font-size: var(--text-h3);
+  margin-top: 0.6em;
+}
+
+.editor > h1:first-child,
+.editor > h2:first-child,
+.editor > h3:first-child {
+  margin-top: 0;
+}
+
+.editor .block-bulleted,
+.editor .block-numbered {
+  padding-left: 26px;
+}
+
+.editor .block-bulleted::before {
+  content: "";
+  position: absolute;
+  left: 9px;
+  top: calc(3px + 0.8em - 3px);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* Nested bullets change shape, as in print. */
+.editor .block-bulleted[data-indent="1"]::before,
+.editor .block-bulleted[data-indent="4"]::before,
+.editor .block-bulleted[data-indent="7"]::before {
+  background: none;
+  box-shadow: inset 0 0 0 1.25px currentColor;
+}
+
+.editor .block-bulleted[data-indent="2"]::before,
+.editor .block-bulleted[data-indent="5"]::before,
+.editor .block-bulleted[data-indent="8"]::before {
+  border-radius: 1px;
+}
+
+.editor .block-numbered::before {
+  content: attr(data-number);
+  position: absolute;
+  left: 0;
+  width: 22px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.editor .block-todo,
+.editor .block-toggle,
+.editor .block-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.editor .block-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.editor .todo-box {
+  margin: calc(0.8em - 8px) 2px 0 3px;
+}
+
+.editor .block-todo:has(.todo-box:checked) .block-text {
+  color: var(--text-3);
+  text-decoration: line-through;
+  text-decoration-color: var(--text-3);
+}
+
+.editor .toggle-arrow {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-top: calc(0.8em - 11px);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+}
+
+.editor .toggle-arrow .icon {
+  transition: transform var(--dur) var(--ease-out);
+}
+
+.editor .toggle-arrow[aria-expanded="true"] .icon {
+  transform: rotate(90deg);
+}
+
+.editor .toggle-arrow:hover {
+  background: var(--bg-hover);
+}
+
+.editor .block-callout {
+  background: var(--bg-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-3);
+  margin: var(--space-1) 0;
+}
+
+.editor .callout-icon {
+  flex: none;
+  width: 24px;
+  text-align: center;
+  font-size: 1.15em;
+  line-height: 1.4;
+  user-select: none;
+}
+
+.editor blockquote.block {
+  margin: var(--space-1) 0;
+  padding-left: var(--space-4);
+  box-shadow: inset 3px 0 0 var(--text);
+  font-size: 1.05em;
+}
+
+.editor pre.block {
+  background: var(--bg-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-6) var(--space-4) var(--space-6) var(--space-6);
+  margin: var(--space-1) 0;
+  font: 13.5px/1.6 var(--font-mono);
+  tab-size: 2;
+  overflow-x: auto;
+}
+
+.editor code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+}
+
+.editor pre code {
+  font-size: inherit;
+}
+
+.editor :not(pre) > code {
+  background: var(--bg-subtle);
+  box-shadow: inset 0 0 0 1px var(--border);
+  padding: 0.15em 0.35em;
+  border-radius: var(--radius-xs);
+  color: var(--code-text);
+}
+
+.editor .block-divider {
+  padding: var(--space-2) 0;
+}
+
+.editor .divider-rule {
+  border: 0;
+  border-top: 1px solid var(--border-strong);
+  margin: 0;
+}
+
+.editor .divider-text {
+  display: none;
+}
+
+.editor .folded-away {
+  display: none;
+}
+
+.editor a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--text-3);
+  text-underline-offset: 2px;
+  transition: text-decoration-color var(--dur-fast);
+}
+
+.editor a:hover {
+  text-decoration-color: currentColor;
+}
+
+/* A link to another page. */
+.editor a[href^="drusite:page/"] {
+  color: var(--accent-text);
+  text-decoration-color: color-mix(in srgb, var(--accent-text) 40%, transparent);
+}
+
+.editor strong {
+  font-weight: var(--weight-semibold);
+}
+
+/* An empty page shows a hint. */
+.editor .empty-hint::before {
+  content: "Write something, or press / for blocks";
+  position: absolute;
+  color: var(--text-3);
+  pointer-events: none;
+}
+
+/* The empty block the cursor is in says what / does, as Notion's does. */
+.editor.ProseMirror-focused .block.is-empty-current::after {
+  content: "Press / for blocks";
+  position: absolute;
+  left: var(--space-0);
+  top: 3px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+
+.editor.ProseMirror-focused .block-bulleted.is-empty-current::after,
+.editor.ProseMirror-focused .block-numbered.is-empty-current::after {
+  left: 26px;
+  content: "List";
+}
+
+.editor.ProseMirror-focused .block-todo.is-empty-current::after {
+  left: 30px;
+  content: "To-do";
+}
+
+.editor.ProseMirror-focused .block-toggle.is-empty-current::after {
+  left: 30px;
+  content: "Toggle";
+}
+
+.editor.ProseMirror-focused h1.is-empty-current::after,
+.editor.ProseMirror-focused h2.is-empty-current::after,
+.editor.ProseMirror-focused h3.is-empty-current::after {
+  content: "Heading";
+}
+
+.editor.ProseMirror-focused blockquote.is-empty-current::after {
+  left: var(--space-4);
+  content: "Quote";
+}
+
+.editor .block-callout.is-empty-current::after,
+.editor pre.is-empty-current::after,
+.editor .block-divider.is-empty-current::after,
+.editor .block-query.is-empty-current::after,
+.editor .block-attachment.is-empty-current::after {
+  content: none;
+}
+
+.block.revealed {
+  animation: revealed 1.6s ease-out;
+}
+
+@keyframes revealed {
+  from {
+    background: var(--accent-soft-2);
+  }
+}
+
+/* ---- Attachments ---- */
+
+.block-attachment .attachment-file {
+  margin: var(--space-1) 0;
+}
+
+.attachment-image {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  border-radius: var(--radius-sm);
+}
+
+.attachment-card {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  max-width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--text);
+  text-decoration: none;
+  font-size: var(--text-md);
+  transition: background var(--dur-fast);
+}
+
+.editor a.attachment-card {
+  text-decoration: none;
+}
+
+.attachment-card:hover {
+  background: var(--bg-hover);
+}
+
+.attachment-card .icon {
+  color: var(--text-2);
+}
+
+.attachment-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-size,
+.attachment-missing::after {
+  color: var(--text-3);
+  font-size: var(--text-sm);
+}
+
+.attachment-missing::after {
+  content: "This file isn't available.";
+}
+
+.attachment-caption {
+  color: var(--text-2);
+  font-size: var(--text-md);
+  margin-top: var(--space-1);
+}
+
+.attachment-caption:empty::before {
+  content: attr(data-placeholder);
+  color: var(--text-3);
+}
+
+.file-picker {
+  display: none;
+}
+
+/* ---- Filter block ---- */
+
+.block-query {
+  margin: var(--space-2) 0;
+}
+
+.query-widget {
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 1px var(--border);
+  padding: var(--space-1);
+  font-size: var(--text-md);
+  user-select: none;
+}
+
+.query-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: var(--row);
+  padding: 0 var(--space-1) 0 var(--space-2);
+  color: var(--text-2);
+}
+
+.query-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.query-summary .icon {
+  color: var(--text-3);
+}
+
+.query-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-1) var(--space-1) var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+
+.query-form[hidden] {
+  display: none;
+}
+
+.query-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.query-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-2);
+}
+
+.query-row .input {
+  width: auto;
+  flex: 1 1 120px;
+  background: var(--bg);
+}
+
+.query-row .select-native {
+  background-color: var(--bg);
+}
+
+.query-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.query-results button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--row);
+  text-align: left;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}
+
+.query-results button:hover {
+  background: var(--bg-hover);
+}
+
+.query-results .icon {
+  color: var(--text-3);
+}
+
+.query-mood {
+  margin-left: auto;
+  color: var(--text-3);
+}
+
+.query-empty {
+  color: var(--text-3);
+  padding: var(--space-1) var(--space-2);
+}
+
+.query-text {
+  display: none;
+}
+
+/* ---- Phone formatting toolbar ---- */
+
+.phone-toolbar {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .phone-toolbar {
+    display: flex;
+    align-items: center;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: var(--keyboard, 0px);
+    z-index: var(--z-toolbar);
+    gap: var(--space-0);
+    height: 48px;
+    padding: 0 max(var(--space-1), env(safe-area-inset-right)) 0 max(var(--space-1), env(safe-area-inset-left));
+    background: var(--bg-elevated);
+    box-shadow: 0 -1px 0 var(--divider);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .phone-toolbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .phone-toolbar:not(.keyboard-up) {
+    height: calc(48px + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .phone-toolbar button {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 44px;
+    height: 40px;
+    border-radius: var(--radius-sm);
+    color: var(--text-2);
+  }
+
+  .phone-toolbar button:active {
+    background: var(--bg-active);
+    color: var(--text);
+  }
+
+  .phone-toolbar .tb-sep {
+    flex: none;
+    width: 1px;
+    height: 20px;
+    margin: 0 var(--space-1);
+    background: var(--divider);
+  }
+
+  .phone-toolbar .hide {
+    margin-left: auto;
+  }
+}

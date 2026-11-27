@@ -11,6 +11,7 @@
   import type { EditorView } from "prosemirror-view";
 
   import { toolbar } from "../editor/commands";
+  import Icon from "./ui/Icon.svelte";
 
   let { view }: { view: EditorView } = $props();
 
@@ -42,6 +43,16 @@
     };
   }
 
+  /** Types a `/`, after a space if needed, which opens the block menu. */
+  function blocks(e: PointerEvent) {
+    e.preventDefault();
+    const { state } = view;
+    const at = state.selection.$from;
+    const before = at.parent.textBetween(Math.max(0, at.parentOffset - 1), at.parentOffset);
+    view.dispatch(state.tr.insertText(before === "" || /\s/.test(before) ? "/" : " /"));
+    view.focus();
+  }
+
   function hide(e: PointerEvent) {
     e.preventDefault();
     view.dom.blur();
@@ -49,14 +60,17 @@
 </script>
 
 <div class="phone-toolbar" class:keyboard-up={keyboard > 0} role="toolbar" aria-label="Formatting">
-  <button aria-label="Heading" onpointerdown={run(toolbar.heading)}>H</button>
-  <button aria-label="Bulleted list" onpointerdown={run(toolbar.toggleKind("bulleted"))}>•</button>
-  <button aria-label="To-do" onpointerdown={run(toolbar.toggleKind("todo"))}>☐</button>
-  <button aria-label="Outdent" onpointerdown={run(toolbar.outdent)}>⇤</button>
-  <button aria-label="Indent" onpointerdown={run(toolbar.indent)}>⇥</button>
-  <button aria-label="Bold" class="bold" onpointerdown={run(toolbar.bold)}>B</button>
-  <button aria-label="Italic" class="italic" onpointerdown={run(toolbar.italic)}>I</button>
-  <button aria-label="Undo" onpointerdown={run(toolbar.undo)}>↶</button>
-  <button aria-label="Redo" onpointerdown={run(toolbar.redo)}>↷</button>
-  <button aria-label="Hide keyboard" class="hide" onpointerdown={hide}>⌄</button>
+  <button aria-label="Add a block" onpointerdown={blocks}><Icon name="plus" size={20} /></button>
+  <span class="tb-sep"></span>
+  <button aria-label="Heading" onpointerdown={run(toolbar.heading)}><Icon name="heading" size={20} /></button>
+  <button aria-label="Bulleted list" onpointerdown={run(toolbar.toggleKind("bulleted"))}><Icon name="list" size={20} /></button>
+  <button aria-label="To-do" onpointerdown={run(toolbar.toggleKind("todo"))}><Icon name="square-check" size={20} /></button>
+  <button aria-label="Bold" onpointerdown={run(toolbar.bold)}><Icon name="bold" size={20} /></button>
+  <button aria-label="Italic" onpointerdown={run(toolbar.italic)}><Icon name="italic" size={20} /></button>
+  <button aria-label="Outdent" onpointerdown={run(toolbar.outdent)}><Icon name="list-indent-decrease" size={20} /></button>
+  <button aria-label="Indent" onpointerdown={run(toolbar.indent)}><Icon name="list-indent-increase" size={20} /></button>
+  <span class="tb-sep"></span>
+  <button aria-label="Undo" onpointerdown={run(toolbar.undo)}><Icon name="undo-2" size={20} /></button>
+  <button aria-label="Redo" onpointerdown={run(toolbar.redo)}><Icon name="redo-2" size={20} /></button>
+  <button aria-label="Hide keyboard" class="hide" onpointerdown={hide}><Icon name="keyboard-off" size={20} /></button>
 </div>

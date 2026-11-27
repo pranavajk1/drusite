@@ -5,18 +5,17 @@
 
 import { expect, test } from "@playwright/test";
 
-import { openApp } from "./helpers";
+import { choose, openApp, openSettings } from "./helpers";
 
 test("an AI provider is added, tested, picked per feature and removed", async ({ page }) => {
   await openApp(page);
-  await page.getByRole("button", { name: "⚙️ Settings" }).click();
-  const sheet = page.getByRole("dialog", { name: "Settings" });
+  const sheet = await openSettings(page, "AI");
   await expect(sheet.getByRole("heading", { name: "AI", exact: true })).toBeVisible();
 
   // A custom endpoint needs its address.
   await sheet.getByRole("button", { name: "Add a provider…" }).click();
   const form = sheet.getByRole("form", { name: "Add a provider" });
-  await expect(form.getByLabel("Provider")).toHaveValue("openAiCompatible");
+  await expect(form.getByLabel("Provider")).toHaveText("OpenAI-compatible");
   await form.getByLabel("Name").fill("Home box");
   await form.getByLabel("Address", { exact: true }).fill("http://ai.local:4000/v1");
   await form.getByLabel("API key (if it needs one)").fill("sk-home-1234");
@@ -34,7 +33,7 @@ test("an AI provider is added, tested, picked per feature and removed", async ({
 
   // A vendor needs a key.
   await sheet.getByRole("button", { name: "Add a provider…" }).click();
-  await form.getByLabel("Provider").selectOption("anthropic");
+  await choose(page, form.getByLabel("Provider"), "Anthropic");
   await expect(form.getByLabel("Address (optional)")).toHaveAttribute("placeholder", "https://api.anthropic.com/v1");
   await form.getByLabel("API key", { exact: true }).fill("sk-ant-9876");
   await form.getByRole("button", { name: "Save" }).click();
@@ -42,12 +41,13 @@ test("an AI provider is added, tested, picked per feature and removed", async ({
 
   // Each feature picks its own provider; Anthropic isn't offered for embeddings.
   const chatProvider = sheet.getByLabel("Chat: provider");
-  await chatProvider.selectOption({ label: "Anthropic" });
+  await choose(page, chatProvider, "Anthropic");
   await sheet.getByLabel("Chat: model").fill("claude-x");
   await sheet.getByLabel("Chat: model").press("Enter");
   const embedProvider = sheet.getByLabel("Embeddings: provider");
-  await expect(embedProvider.locator("option")).toHaveText(["Off", "Home box"]);
-  await embedProvider.selectOption({ label: "Home box" });
+  await embedProvider.click();
+  await expect(page.getByRole("listbox").getByRole("option")).toHaveText(["Off", "Home box"]);
+  await page.getByRole("listbox").getByRole("option", { name: "Home box" }).click();
   await sheet.getByLabel("Embeddings: model").fill("nomic-embed-text");
   await sheet.getByLabel("Embeddings: model").blur();
 
@@ -62,13 +62,13 @@ test("an AI provider is added, tested, picked per feature and removed", async ({
 
   // Closed and opened again: the choices were saved.
   await sheet.getByRole("button", { name: "Close" }).click();
-  await page.getByRole("button", { name: "⚙️ Settings" }).click();
+  await openSettings(page, "AI");
   await expect(sheet.getByLabel("Chat: model")).toHaveValue("claude-x");
   await expect(sheet.getByLabel("Embeddings: model")).toHaveValue("nomic-embed-text");
 
   // Removing a provider turns off the features that used it.
   await list.locator("li", { hasText: "Home box" }).getByRole("button", { name: "Remove" }).click();
   await expect(list).not.toContainText("Home box");
-  await expect(sheet.getByLabel("Embeddings: provider")).toHaveValue("");
-  await expect(sheet.getByLabel("Chat: provider")).not.toHaveValue("");
+  await expect(sheet.getByLabel("Embeddings: provider")).toHaveText("Off");
+  await expect(sheet.getByLabel("Chat: provider")).not.toHaveText("Off");
 });

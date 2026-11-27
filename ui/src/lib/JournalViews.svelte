@@ -3,6 +3,9 @@
   import type { PageInfo } from "../core/types";
   import { MONTHS, WEEKDAYS, addDays, dateOf, monthGrid, today } from "../journal/dates";
   import { MOODS, dateOfEntry, moodOf } from "../journal/mood";
+  import { ICONS } from "./icons/icons";
+  import Icon from "./ui/Icon.svelte";
+  import Select from "./ui/Select.svelte";
 
   let {
     pages,
@@ -73,9 +76,16 @@
 <section class="journal-views" aria-label="Journal">
   <div class="jv-calendar">
     <div class="jv-head">
-      <button aria-label="Previous month" onclick={() => step(-1)}>‹</button>
       <h3>{MONTHS[month]} {year}</h3>
-      <button aria-label="Next month" onclick={() => step(1)}>›</button>
+      <div class="jv-nav">
+        <button class="btn small ghost" aria-label="Go to this month" onclick={() => {
+          const d = dateOf(now);
+          year = d.getFullYear();
+          month = d.getMonth();
+        }}>Today</button>
+        <button class="icon-btn" aria-label="Previous month" onclick={() => step(-1)}><Icon name="chevron-left" /></button>
+        <button class="icon-btn" aria-label="Next month" onclick={() => step(1)}><Icon name="chevron-right" /></button>
+      </div>
     </div>
     <table>
       <thead>
@@ -109,17 +119,21 @@
   </div>
 
   <div class="jv-side">
-    <h3>On this day</h3>
+    <div class="jv-head"><h3>On this day</h3></div>
     {#if onThisDay.length === 0}
-      <p class="hint">Nothing from this day in earlier years yet.</p>
+      <p class="hint jv-empty">Nothing from this day in earlier years yet.</p>
     {:else}
       <ul class="jv-list">
         {#each onThisDay as e (e.page.id)}
+          {@const mood = moodOf(e.page)}
           <li>
             <button onclick={() => onselect(e.page)}>
-              <span class="jv-ago">{e.years} {e.years === 1 ? "year" : "years"} ago</span>
-              {e.page.title || "Untitled"}
-              {#if moodOf(e.page)}<span aria-label={moodOf(e.page)!.label}>{moodOf(e.page)!.emoji}</span>{/if}
+              <Icon name="calendar-days" />
+              <span class="jv-entry">
+                <span class="jv-entry-title">{e.page.title || "Untitled"}</span>
+                <span class="jv-ago">{e.years} {e.years === 1 ? "year" : "years"} ago</span>
+              </span>
+              {#if mood}<span class="jv-entry-mood mood-{mood.score}" role="img" aria-label={mood.label}><Icon name={mood.icon} /></span>{/if}
             </button>
           </li>
         {/each}
@@ -130,11 +144,16 @@
   <div class="jv-mood">
     <div class="jv-head">
       <h3>Mood over time</h3>
-      <select aria-label="Range" bind:value={range}>
-        <option value={30}>30 days</option>
-        <option value={90}>90 days</option>
-        <option value={365}>A year</option>
-      </select>
+      <Select
+        label="Range"
+        value={range}
+        options={[
+          { value: 30, label: "30 days" },
+          { value: 90, label: "90 days" },
+          { value: 365, label: "A year" },
+        ]}
+        onchange={(r) => (range = r)}
+      />
     </div>
     {#if points.length === 0}
       <p class="hint">Pick a mood on your entries to see it here.</p>
@@ -142,7 +161,20 @@
       <svg viewBox="-30 -8 {W + 38} {H + 16}" role="img" aria-label="Mood over the last {range} days, averaging {average?.toFixed(1)} out of 5">
         {#each MOODS as m (m.score)}
           <line class="jv-grid" x1="0" x2={W} y1={H - ((m.score - 1) / 4) * H} y2={H - ((m.score - 1) / 4) * H} />
-          <text class="jv-axis" x="-10" y={H - ((m.score - 1) / 4) * H} dominant-baseline="central" text-anchor="end">{m.emoji}</text>
+          <svg
+            class="jv-axis mood-{m.score}"
+            x="-26"
+            y={H - ((m.score - 1) / 4) * H - 8}
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.75"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true">{@html ICONS[m.icon]}</svg
+          >
         {/each}
         <polyline class="jv-line" points={points.map((p) => `${p.x},${p.y}`).join(" ")} />
         {#each points as p (p.day)}

@@ -2,17 +2,20 @@
 <script lang="ts">
   import { onMount } from "svelte";
 
+  import mark from "./assets/mark-64.png";
   import type { CoreClient } from "./core/client";
   import type { AccountStatus, BlockId, PageId, PageInfo, SearchHit, Settings } from "./core/types";
   import { setAttachmentClient } from "./editor/attachments";
   import { setQueryHost } from "./editor/query";
   import { today } from "./journal/dates";
-  import Account, { phaseLabel } from "./lib/Account.svelte";
+  import { phaseLabel } from "./lib/Account.svelte";
   import PageEditor from "./lib/PageEditor.svelte";
   import PageTree from "./lib/PageTree.svelte";
   import SearchPalette from "./lib/Search.svelte";
-  import SettingsSheet from "./lib/Settings.svelte";
+  import SettingsSheet, { type Opening } from "./lib/Settings.svelte";
   import TrashSheet from "./lib/Trash.svelte";
+  import Icon from "./lib/ui/Icon.svelte";
+  import Menu, { type MenuItem } from "./lib/ui/Menu.svelte";
 
   let { client }: { client: CoreClient } = $props();
 
@@ -21,8 +24,8 @@
   let error = $state<string | null>(null);
   let readySent = false;
   let account = $state<AccountStatus>({ server: null, email: null, phase: "signedOut", message: null });
-  let showAccount = $state(false);
-  let showSettings = $state(false);
+  /** The open Settings section, or null when Settings is closed. */
+  let settingsAt = $state<Opening | null>(null);
   let showSearch = $state(false);
   let showTrash = $state(false);
   /** The page just moved to the trash, for the Undo toast. */
@@ -33,6 +36,19 @@
   let settings = $state<Settings>({ journalParent: null, journalTemplate: null, weekStart: 1 });
   /** On phones, the page list is a drawer over the page. */
   let drawer = $state(false);
+  /** On desktops, the sidebar can be put away. */
+  let collapsed = $state(localStorage.getItem("drusite.sidebar") === "collapsed");
+  /** Something takes typing on a touch screen: the keyboard is up, so the tab bar steps aside. */
+  let writing = $state(false);
+  const touch = window.matchMedia?.("(pointer: coarse)").matches ?? false;
+  function focusChanged() {
+    // After focusout the new focus isn't set yet; look once it is.
+    setTimeout(() => {
+      const el = document.activeElement;
+      writing = touch && !!el?.closest("input:not([type=checkbox]):not([type=radio]), textarea, [contenteditable='true']");
+    });
+  }
+  let pageMenu = $state<HTMLElement | null>(null);
 
   const LAST = "drusite.lastPage";
 
@@ -99,10 +115,22 @@
   }
 
   function globalKey(e: KeyboardEvent) {
-    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "k") {
+    const mod = (e.metaKey || e.ctrlKey) && !e.altKey;
+    if (mod && !e.shiftKey && e.key.toLowerCase() === "k") {
       e.preventDefault();
       showSearch = true;
+    } else if (mod && !e.shiftKey && e.key === ",") {
+      e.preventDefault();
+      settingsAt = "home";
+    } else if (mod && e.key === "\\") {
+      e.preventDefault();
+      toggleSidebar();
     }
+  }
+
+  function toggleSidebar() {
+    collapsed = !collapsed;
+    localStorage.setItem("drusite.sidebar", collapsed ? "collapsed" : "open");
   }
 
   /** Opens the journal entry for `date`, making it from the template if it's new. */
@@ -156,86 +184,190 @@
     }
   }
 
+  function pageActions(id: PageId): MenuItem[] {
+    return [
+      { label: "Add a page inside", icon: "plus", run: () => createPage(id) },
+      { label: "Search", icon: "search", hint: "⌘K", run: () => (showSearch = true) },
+      { label: "Move to Trash", icon: "trash-2", danger: true, run: () => deletePage(id) },
+    ];
+  }
+
   function opened() {
     if (readySent) return;
     readySent = true;
     void client.ready();
   }
 
-  const info = $derived(pages.find((p) => p.id === current) ?? null);
+  const byId = $derived(new Map(pages.map((p) => [p.id, p])));
+  const info = $derived(current ? (byId.get(current) ?? null) : null);
   const title = $derived(info?.title ?? "");
+  /** The open page's ancestors, outermost first, for the breadcrumb. */
+  const trail = $derived.by(() => {
+    const out: PageInfo[] = [];
+    for (let p = info?.parent ? byId.get(info.parent) : undefined; p && out.length < 20; p = p.parent ? byId.get(p.parent) : undefined)
+      out.unshift(p);
+    return out;
+  });
+  const syncLabel = $derived(phaseLabel(account.phase));
 </script>
 
-<svelte:window onkeydown={globalKey} />
+<svelte:window onkeydown={globalKey} onfocusin={focusChanged} onfocusout={focusChanged} />
 
-<div class="app" class:drawer-open={drawer}>
-  <header class="topbar">
-    <button class="topbar-menu" aria-label="Pages" aria-expanded={drawer} onclick={() => (drawer = !drawer)}>☰</button>
-    <span class="topbar-title">{title || "Untitled"}</span>
-    <button class="topbar-sync" aria-label="Sync: {phaseLabel(account.phase)}" onclick={() => (showAccount = true)}>
-      <span class="sync-dot {account.phase}"></span>
-    </button>
-  </header>
-  <aside class="sidebar">
-    <div class="sidebar-head">Drusite</div>
-    <div class="sidebar-actions">
-      <button class="sidebar-action" aria-keyshortcuts="Meta+K Control+K" onclick={() => (showSearch = true)}>🔍 Search</button>
-      <button class="sidebar-action" onclick={() => openDay(today())}>📅 Today</button>
-      {#if settings.journalParent}
-        <button class="sidebar-action" onclick={() => select(settings.journalParent!)}>📖 Journal</button>
-      {/if}
+{#snippet syncDot()}
+  <span class="dot sync-dot {account.phase}" aria-hidden="true"></span>
+{/snippet}
+
+<div class="app" class:drawer-open={drawer} class:collapsed class:writing>
+  <aside class="sidebar" aria-label="Sidebar">
+    <div class="sidebar-head">
+      <div class="workspace">
+        <img class="workspace-mark" src={mark} alt="" width="20" height="20" />
+        <span class="workspace-name">Drusite</span>
+      </div>
+      <button class="icon-btn sidebar-collapse" aria-label="Close sidebar" title="Close sidebar (⌘\)" onclick={() => (drawer ? (drawer = false) : toggleSidebar())}>
+        <Icon name="panel-left" />
+      </button>
     </div>
-    <PageTree {pages} {current} onselect={select} oncreate={createPage} ondelete={deletePage} onmove={movePage} />
-    <button class="sidebar-action" onclick={() => (showTrash = true)}>🗑️ Trash</button>
-    <button class="sidebar-action" onclick={() => (showSettings = true)}>⚙️ Settings</button>
-    <button class="sync-status" onclick={() => (showAccount = true)}>
-      <span class="sync-dot {account.phase}"></span>
-      <span class="sync-label">{phaseLabel(account.phase)}{account.phase === "online" && account.email ? ` · ${account.email}` : ""}</span>
+    <div class="sidebar-scroll">
+      <div class="nav-group">
+        <button class="nav-row" aria-keyshortcuts="Meta+K Control+K" onclick={() => ((drawer = false), (showSearch = true))}>
+          <Icon name="search" /><span class="nav-label">Search</span><kbd>⌘K</kbd>
+        </button>
+        <button class="nav-row" onclick={() => openDay(today())}>
+          <Icon name="calendar-days" /><span class="nav-label">Today</span>
+        </button>
+        {#if settings.journalParent}
+          <button class="nav-row" class:current={current === settings.journalParent} onclick={() => select(settings.journalParent!)}>
+            <Icon name="book-open" /><span class="nav-label">Journal</span>
+          </button>
+        {/if}
+      </div>
+      <div class="nav-section">
+        <span class="nav-section-label">Pages</span>
+        <button class="icon-btn nav-section-add" aria-label="Add a page" title="Add a page" onclick={() => createPage(null)}>
+          <Icon name="plus" size={14} />
+        </button>
+      </div>
+      <PageTree
+        {pages}
+        {current}
+        journalParent={settings.journalParent}
+        onselect={select}
+        oncreate={createPage}
+        ondelete={deletePage}
+        onmove={movePage}
+      />
+      <div class="nav-group nav-bottom">
+        <button class="nav-row" onclick={() => ((drawer = false), (settingsAt = "home"))}>
+          <Icon name="settings" /><span class="nav-label">Settings</span>
+        </button>
+        <button class="nav-row" onclick={() => ((drawer = false), (showTrash = true))}>
+          <Icon name="trash-2" /><span class="nav-label">Trash</span>
+        </button>
+      </div>
+    </div>
+    <button class="sync-status" onclick={() => ((drawer = false), (settingsAt = "account"))}>
+      {@render syncDot()}
+      <span class="sync-label">{syncLabel}</span>
+      {#if account.phase === "online" && account.email}<span class="sync-email">{account.email}</span>{/if}
     </button>
   </aside>
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div class="drawer-backdrop" onclick={() => (drawer = false)}></div>
-  <main class="main">
-    {#if error}
-      <div class="error" role="alert">
-        {error}
-        <button onclick={() => (error = null)}>Dismiss</button>
-      </div>
-    {/if}
-    {#if current}
-      {#key current}
-        <PageEditor
-          {client}
-          page={current}
-          {title}
-          {info}
-          {pages}
-          {settings}
-          onday={openDay}
-          {reveal}
-          onselect={select}
-          onopened={opened}
-          onerror={show}
-        />
-      {/key}
-    {/if}
-  </main>
+
+  <div class="main">
+    <header class="topbar">
+      <button class="icon-btn topbar-menu" aria-label="Pages" aria-expanded={drawer} onclick={() => (drawer = !drawer)}>
+        <Icon name="menu" size={20} />
+      </button>
+      {#if collapsed}
+        <button class="icon-btn topbar-expand" aria-label="Open sidebar" title="Open sidebar (⌘\)" onclick={toggleSidebar}>
+          <Icon name="panel-left" />
+        </button>
+      {/if}
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        {#each trail as p (p.id)}
+          <button class="crumb" onclick={() => select(p.id)}>{p.title || "Untitled"}</button>
+          <span class="crumb-sep" aria-hidden="true">/</span>
+        {/each}
+        <span class="crumb current topbar-title" aria-current="page">{title || "Untitled"}</span>
+      </nav>
+      <button class="topbar-sync" aria-label="Sync: {syncLabel}" title={syncLabel} onclick={() => (settingsAt = "account")}>
+        {@render syncDot()}<span class="topbar-sync-label">{syncLabel}</span>
+      </button>
+      <button
+        class="icon-btn topbar-more"
+        aria-label="Page actions"
+        aria-haspopup="menu"
+        aria-expanded={pageMenu !== null}
+        onclick={(e) => (pageMenu = pageMenu ? null : e.currentTarget)}
+      >
+        <Icon name="ellipsis" size={18} />
+      </button>
+    </header>
+
+    <main class="content">
+      {#if error}
+        <div class="error" role="alert">
+          <Icon name="circle-alert" />
+          <span class="error-text">{error}</span>
+          <button class="btn small ghost" onclick={() => (error = null)}>Dismiss</button>
+        </div>
+      {/if}
+      {#if current}
+        {#key current}
+          <PageEditor
+            {client}
+            page={current}
+            {title}
+            {info}
+            {pages}
+            {settings}
+            onday={openDay}
+            {reveal}
+            onselect={select}
+            onopened={opened}
+            onerror={show}
+          />
+        {/key}
+      {/if}
+    </main>
+  </div>
+
+  <nav class="tabbar" aria-label="Main">
+    <button class="tab" aria-label="Pages" onclick={() => (drawer = true)}><Icon name="house" size={22} /><span>Pages</span></button>
+    <button class="tab" onclick={() => openDay(today())}><Icon name="calendar-days" size={22} /><span>Today</span></button>
+    <button class="tab" onclick={() => (showSearch = true)}><Icon name="search" size={22} /><span>Search</span></button>
+    <button class="tab" onclick={() => createPage(null)}><Icon name="square-pen" size={22} /><span>New page</span></button>
+  </nav>
 </div>
-{#if showAccount}
-  <Account {client} status={account} onclose={() => (showAccount = false)} />
+
+{#if pageMenu && current}
+  <Menu anchor={pageMenu} label="Page actions" onclose={() => (pageMenu = null)} items={pageActions(current)} />
 {/if}
 {#if showSearch}
-  <SearchPalette {client} onopen={openHit} onclose={() => (showSearch = false)} />
+  <SearchPalette {client} {pages} onopen={openHit} onclose={() => (showSearch = false)} />
 {/if}
 {#if showTrash}
   <TrashSheet {client} onrestore={select} onclose={() => (showTrash = false)} onerror={show} />
 {/if}
 {#if trashed}
   <div class="toast" role="status">
-    <span>Moved “{trashed.title}” to the trash</span>
-    <button onclick={undoDelete}>Undo</button>
+    <Icon name="trash-2" />
+    <span class="toast-text">Moved “{trashed.title}” to the trash</span>
+    <button class="toast-action" onclick={undoDelete}>Undo</button>
   </div>
 {/if}
-{#if showSettings}
-  <SettingsSheet {client} {settings} {pages} server={account.server} onclose={() => (showSettings = false)} onerror={show} onopen={select} />
+{#if settingsAt}
+  <SettingsSheet
+    {client}
+    {settings}
+    {pages}
+    {account}
+    section={settingsAt}
+    onsection={(s) => (settingsAt = s)}
+    onclose={() => (settingsAt = null)}
+    onerror={show}
+    onopen={select}
+  />
 {/if}

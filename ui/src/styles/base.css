@@ -1,0 +1,107 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+
+/* Element defaults: reset, type, focus, selection, scrollbars. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font: var(--weight-regular) var(--text-base) / var(--leading-body) var(--font);
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: var(--selection);
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-align: inherit;
+}
+
+button:disabled {
+  cursor: default;
+}
+
+code,
+pre,
+kbd {
+  font-family: var(--font-mono);
+}
+
+a {
+  color: inherit;
+}
+
+/* One focus ring for everything, keyboard only. */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+  border-radius: var(--radius-sm);
+}
+
+.icon {
+  flex: none;
+  display: block;
+}
+
+/* Quiet scrollbars where the system draws them (Windows, Linux). */
+@supports not (-webkit-touch-callout: none) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Tauri's isolation frame. Tauri hides it with an injected <style>, which the app's CSP blocks
+   (style-src 'self'), so the stylesheet hides it instead. */
+#__tauri_isolation__ {
+  display: none !important;
+}

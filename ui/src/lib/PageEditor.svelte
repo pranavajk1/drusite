@@ -185,7 +185,7 @@
   });
 </script>
 
-<article class="page">
+<article class="page" class:journal-page={info?.kind === "journal"}>
   <input
     bind:this={titleInput}
     class="page-title"

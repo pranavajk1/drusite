@@ -3,10 +3,14 @@
   import { SvelteSet } from "svelte/reactivity";
 
   import type { PageId, PageInfo } from "../core/types";
+  import type { IconName } from "./icons/icons";
+  import Icon from "./ui/Icon.svelte";
+  import Menu, { type MenuItem } from "./ui/Menu.svelte";
 
   let {
     pages,
     current,
+    journalParent = null,
     onselect,
     oncreate,
     ondelete,
@@ -14,6 +18,8 @@
   }: {
     pages: PageInfo[];
     current: PageId | null;
+    /** The journal's page, which gets the journal's icon. */
+    journalParent?: PageId | null;
     onselect: (id: PageId) => void;
     oncreate: (parent: PageId | null) => void;
     ondelete: (id: PageId) => void;
@@ -43,6 +49,29 @@
     for (const id of expanded) if (!byId.has(id)) expanded.delete(id);
     localStorage.setItem(EXPANDED, JSON.stringify([...expanded]));
   });
+  /** The row whose menu is open, and the button it opened from. */
+  let menu = $state<{ id: PageId; anchor: HTMLElement } | null>(null);
+
+  function rowMenu(id: PageId): MenuItem[] {
+    return [
+      {
+        label: "Add a page inside",
+        icon: "plus",
+        run: () => {
+          expanded.add(id);
+          oncreate(id);
+        },
+      },
+      { label: "Move to Trash", icon: "trash-2", danger: true, run: () => ondelete(id) },
+    ];
+  }
+
+  function iconOf(page: PageInfo): IconName {
+    if (page.id === journalParent) return "book-open";
+    if (page.kind === "journal") return "calendar-days";
+    return page.children.length > 0 ? "file-text" : "file";
+  }
+
   let dragging = $state<PageId | null>(null);
   // Where a dragged page would land: before or after a row, inside it, or at the end of the top level.
   type Zone = "before" | "inside" | "after";
@@ -137,27 +166,32 @@
             e.stopPropagation();
             if (expanded.has(id)) expanded.delete(id);
             else expanded.add(id);
-          }}>{page.children.length === 0 ? "•" : "▶"}</button
+          }}
         >
+          <Icon name={iconOf(page)} class="tree-page-icon" />
+          {#if page.children.length > 0}<Icon name="chevron-right" class="tree-chevron" />{/if}
+        </button>
         <span class="tree-title">{page.title || "Untitled"}</span>
         <button
-          class="tree-action"
+          class="icon-btn tree-action"
+          title="Delete, and more"
+          aria-label="Page options"
+          aria-haspopup="menu"
+          aria-expanded={menu?.id === id}
+          onclick={(e) => {
+            e.stopPropagation();
+            menu = menu?.id === id ? null : { id, anchor: e.currentTarget };
+          }}><Icon name="ellipsis" size={14} /></button
+        >
+        <button
+          class="icon-btn tree-action"
           title="Add a page inside"
           aria-label="Add a page inside"
           onclick={(e) => {
             e.stopPropagation();
             expanded.add(id);
             oncreate(id);
-          }}>+</button
-        >
-        <button
-          class="tree-action"
-          title="Move to Trash"
-          aria-label="Delete page"
-          onclick={(e) => {
-            e.stopPropagation();
-            ondelete(id);
-          }}>×</button
+          }}><Icon name="plus" size={14} /></button
         >
       </div>
       {#if page.children.length > 0 && expanded.has(id)}
@@ -184,6 +218,10 @@
     ondragover={(e) => over(e, "root")}
     ondrop={drop}
   >
-    <button class="new-page" onclick={() => oncreate(null)}>+ New page</button>
+    <button class="new-page" onclick={() => oncreate(null)}><Icon name="plus" />New page</button>
   </div>
 </nav>
+
+{#if menu}
+  <Menu anchor={menu.anchor} label="Page options" onclose={() => (menu = null)} items={rowMenu(menu.id)} />
+{/if}

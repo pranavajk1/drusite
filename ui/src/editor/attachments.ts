@@ -10,6 +10,7 @@ import type { EditorView, NodeView } from "prosemirror-view";
 
 import { CoreError, type CoreClient } from "../core/client";
 import type { BlockKind } from "../core/types";
+import { iconSvg } from "../lib/icons/icons";
 import { attrsOf } from "./convert";
 import { blockType } from "./schema";
 
@@ -158,7 +159,11 @@ export function attachmentView(node: Node, setAttrs: (n: Node) => void, dom: HTM
       const link = document.createElement("a");
       link.className = "attachment-card";
       link.download = kind.name;
-      link.textContent = `📎 ${kind.name}`;
+      link.innerHTML = iconSvg("paperclip");
+      const name = document.createElement("span");
+      name.className = "attachment-name";
+      name.textContent = kind.name;
+      link.append(name);
       const size = document.createElement("span");
       size.className = "attachment-size";
       size.textContent = formatSize(kind.size);

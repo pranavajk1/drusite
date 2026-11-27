@@ -1,6 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
   import { MOODS } from "../journal/mood";
+  import Icon from "./ui/Icon.svelte";
 
   let { score, onpick }: { score: number | null; onpick: (score: number | null) => void } = $props();
 </script>
@@ -16,7 +17,7 @@
       title={m.label}
       onclick={() => onpick(score === m.score ? null : m.score)}
     >
-      <span aria-hidden="true">{m.emoji}</span>
+      <Icon name={m.icon} size={20} />
     </button>
   {/each}
 </div>
