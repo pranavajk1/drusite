@@ -111,6 +111,8 @@ export function sameKind(a: BlockKind, b: BlockKind): boolean {
       return b.type === "callout" && a.icon === b.icon;
     case "query":
       return b.type === "query" && a.query === b.query;
+    case "attachment":
+      return b.type === "attachment" && a.blob === b.blob && a.name === b.name && a.mime === b.mime && a.size === b.size;
     default:
       return a.type === b.type;
   }

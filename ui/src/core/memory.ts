@@ -103,6 +103,8 @@ export class MemoryCore {
   private pages: MemPage[] = [];
   /** How many views have each page open, as the core counts them. */
   private readonly open = new Map<PageId, number>();
+  /** Attachments, in base64, by ID (here a counter, not a hash: nothing checks it). */
+  private readonly files = new Map<string, string>();
   private readonly listeners = new Set<(e: Event) => void>();
 
   readonly transport: Transport = {
@@ -339,6 +341,18 @@ export class MemoryCore {
         }
         this.deleteForever([command.page]);
         return { type: "done" };
+      case "addAttachment": {
+        const blob = newId().replaceAll("-", "").padStart(64, "0");
+        this.files.set(blob, command.data);
+        const name = command.name.split(/[\\/]/).pop() || "file";
+        const mime = command.mime || "application/octet-stream";
+        return { type: "attachment", kind: { type: "attachment", blob, name, mime, size: atob(command.data).length } };
+      }
+      case "readAttachment": {
+        const data = this.files.get(command.blob);
+        if (data === undefined) fail("notHere", "the file is on its way from the server");
+        return { type: "attachmentData", data };
+      }
       case "emptyTrash":
         this.deleteForever(this.trash().map((t) => t.id));
         return { type: "done" };

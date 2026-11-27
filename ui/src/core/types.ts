@@ -89,6 +89,18 @@ export type Command =
 /**  Deletes everything in the trash for good. */
 { type: "emptyTrash" } | 
 /**
+ *  Keeps a file on this device, to put on a page; it goes to the server when the device
+ *  syncs. `data` is the file, in base64. Answered with [`Response::Attachment`], whose kind
+ *  is the block to insert.
+ */
+{ type: "addAttachment"; name: string; mime: string; data: string } | 
+/**
+ *  A file a page's attachment block names. Answered with [`Response::AttachmentData`], or
+ *  [`ErrorCode::NotHere`] while it's being fetched from the server; then
+ *  [`Event::AttachmentArrived`] says when it's here.
+ */
+{ type: "readAttachment"; blob: string } | 
+/**
  *  Loads a page for editing. Answered with [`Response::Opened`]. Each open is matched by a
  *  [`Command::ClosePage`]; the page stays open until every view that opened it has closed it.
  */
@@ -180,7 +192,9 @@ export type ErrorCode = "unknownPage" | "unknownBlock" |
 /**  Signing in or out failed. */
 "account" | 
 /**  A value the command can't use (an empty property name, a template that isn't a page). */
-"invalid" | "internal";
+"invalid" | 
+/**  The file isn't on this device yet; it's being fetched. */
+"notHere" | "internal";
 
 /**
  *  Something that happened in the core that the UI didn't ask for, or that other views of the
@@ -191,6 +205,8 @@ export type Event =
 { type: "pagesChanged"; pages: PageInfo[] } | 
 /**  What's in the trash changed. */
 { type: "trashChanged"; pages: TrashItem[] } | 
+/**  A file this device was waiting for has come from the server. */
+{ type: "attachmentArrived"; blob: string } | 
 /**
  *  An open page changed other than through the edits just answered (another device, or the
  *  part of a batch that was applied before one edit failed).
@@ -292,7 +308,9 @@ export type PropertyValue = { type: "text"; value: string } | { type: "number"; 
 /**  The core's answer to a [`Command`]. */
 export type Response = { type: "pages"; pages: PageInfo[] } | { type: "pageCreated"; page: PageInfo } | { type: "opened"; view: PageView } | { type: "edited"; outcome: EditOutcome } | { type: "account"; status: AccountStatus } | 
 /**  The journal entry for a day; `created` when it was made just now. */
-{ type: "journalDay"; page: PageInfo; created: boolean } | { type: "settings"; settings: Settings } | { type: "searchResults"; hits: SearchHit[] } | { type: "trash"; pages: TrashItem[] } | { type: "done" };
+{ type: "journalDay"; page: PageInfo; created: boolean } | { type: "settings"; settings: Settings } | { type: "searchResults"; hits: SearchHit[] } | { type: "trash"; pages: TrashItem[] } | { type: "attachment"; kind: BlockKind } | 
+/**  A file, in base64. */
+{ type: "attachmentData"; data: string } | { type: "done" };
 
 /**  A page that matched a search, at the block that matched best (none when only the title did). */
 export type SearchHit = {

@@ -19,6 +19,7 @@ net = ["sqlite", "drusite-proto/zstd", "dep:tokio", "dep:tokio-tungstenite", "de
 
 [dependencies]
 base64.workspace = true
+blake3.workspace = true
 drusite-dpop.workspace = true
 sha2.workspace = true
 url.workspace = true

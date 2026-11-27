@@ -8,6 +8,7 @@ import { EditorView } from "prosemirror-view";
 
 import type { CoreClient } from "../core/client";
 import type { PageView } from "../core/types";
+import { PICK_FILES, insertFiles, pickFiles } from "./attachments";
 import { blockView, displayPlugin } from "./blocks";
 import { baseKeys, editorKeymap, markdownShortcuts } from "./commands";
 import { docNode } from "./convert";
@@ -36,7 +37,24 @@ export function createEditor(
     state,
     nodeViews: { block: blockView },
     clipboardParser,
-    dispatchTransaction: (tr) => sync.dispatch(tr),
+    dispatchTransaction: (tr) => {
+      sync.dispatch(tr);
+      if (tr.getMeta(PICK_FILES)) pickFiles(view);
+    },
+    // Files pasted or dropped become attachments.
+    handlePaste: (v, event) => {
+      const files = [...(event.clipboardData?.files ?? [])];
+      if (files.length === 0) return false;
+      insertFiles(v, files).catch((e: unknown) => onError?.(e));
+      return true;
+    },
+    handleDrop: (v, event) => {
+      const files = [...(event.dataTransfer?.files ?? [])];
+      if (files.length === 0) return false;
+      const pos = v.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
+      insertFiles(v, files, pos).catch((e: unknown) => onError?.(e));
+      return true;
+    },
     attributes: { class: "editor", spellcheck: "true", "aria-label": "Page content" },
   });
   sync.attach(view);

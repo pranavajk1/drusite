@@ -116,6 +116,7 @@ pub fn router(state: AppState) -> Router {
         .merge(health::routes())
         .merge(auth::routes(&state))
         .merge(search::routes())
+        .merge(crate::attachments::routes(&state))
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
             timeout,

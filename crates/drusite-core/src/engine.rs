@@ -35,6 +35,8 @@ pub struct Core {
     /// Called after every local change, so a sync driver knows to push.
     pub(crate) on_change: Option<Box<dyn Fn() + Send>>,
     pub(crate) search: crate::search::Search,
+    /// Attachments the UI asked for that aren't here: the sync driver fetches them.
+    pub(crate) wanted_blobs: HashSet<String>,
 }
 
 pub(crate) struct OpenPage {
@@ -78,6 +80,7 @@ impl Core {
             sync: None,
             on_change: None,
             search: crate::search::Search::default(),
+            wanted_blobs: HashSet::new(),
         };
         core.purge_trash(crate::trash::now_ms())
             .map_err(|e| Error::Corrupt(format!("emptying old trash: {}", e.message)))?;
@@ -156,6 +159,12 @@ impl Core {
                 self.delete_forever(&[page])?;
                 Ok(Response::Done)
             }
+            Command::AddAttachment { name, mime, data } => Ok(Response::Attachment {
+                kind: self.add_attachment(&name, &mime, &data)?,
+            }),
+            Command::ReadAttachment { blob } => Ok(Response::AttachmentData {
+                data: self.read_attachment(&blob)?,
+            }),
             Command::EmptyTrash => {
                 let all: Vec<PageId> = self.workspace.trash()?.iter().map(|t| t.id).collect();
                 self.delete_forever(&all)?;

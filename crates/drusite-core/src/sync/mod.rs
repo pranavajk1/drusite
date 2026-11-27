@@ -17,6 +17,8 @@
 //! snapshot; every other copy comes from there.
 
 #[cfg(feature = "net")]
+mod files;
+#[cfg(feature = "net")]
 pub mod net;
 
 use std::collections::{HashMap, HashSet};

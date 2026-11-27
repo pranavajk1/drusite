@@ -1189,3 +1189,51 @@ button {
   font-weight: 600;
   text-decoration: underline;
 }
+
+/* Attachments */
+.block-attachment .attachment-file {
+  margin: 4px 0;
+}
+
+.attachment-image {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  border-radius: 6px;
+}
+
+.attachment-card {
+  display: inline-flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.attachment-size,
+.attachment-missing::after {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.attachment-missing::after {
+  content: "This file isn't available.";
+}
+
+.attachment-caption {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.attachment-caption:empty::before {
+  content: attr(data-placeholder);
+  color: var(--muted);
+  opacity: 0.6;
+}
+
+.file-picker {
+  display: none;
+}

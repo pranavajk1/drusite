@@ -6,6 +6,8 @@
 #[cfg(feature = "net")]
 pub mod account;
 pub mod api;
+#[cfg(feature = "sqlite")]
+pub mod attachments;
 pub mod auth;
 #[cfg(feature = "sqlite")]
 mod engine;

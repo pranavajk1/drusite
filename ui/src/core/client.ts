@@ -7,6 +7,7 @@
 import type {
   AccountStatus,
   ApiError,
+  BlockKind,
   Command,
   Edit,
   EditOutcome,
@@ -105,6 +106,16 @@ export class CoreClient {
 
   async emptyTrash(): Promise<void> {
     await this.call({ type: "emptyTrash" }, "done");
+  }
+
+  /** Keeps a file (`data` in base64) on the device and returns the block kind for it. */
+  async addAttachment(name: string, mime: string, data: string): Promise<BlockKind> {
+    return (await this.call({ type: "addAttachment", name, mime, data }, "attachment")).kind;
+  }
+
+  /** A file, in base64. Fails with code `notHere` while it's still coming from the server. */
+  async readAttachment(blob: string): Promise<string> {
+    return (await this.call({ type: "readAttachment", blob }, "attachmentData")).data;
   }
 
   async openPage(page: PageId): Promise<PageView> {

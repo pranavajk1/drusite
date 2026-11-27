@@ -163,8 +163,12 @@ pub async fn run_observed(
         }
     };
 
+    // Attachments move over HTTP beside the connection.
+    let (files_done, mut files_end) = tokio::sync::mpsc::unbounded_channel();
+    let mut files = super::files::Files::default();
     let result = async {
         queue_all(first);
+        files.start(&core, server, access_token, key, &files_done);
         let mut ping = tokio::time::interval(PING_EVERY);
         ping.tick().await;
         let mut nonce = 0;
@@ -191,6 +195,11 @@ pub async fn run_observed(
                 }
                 () = changed.notified() => {
                     queue_all(lock(&core)?.sync_outgoing().map_err(SyncError::from)?);
+                    files.start(&core, server, access_token, key, &files_done);
+                }
+                Some(done) = files_end.recv() => {
+                    files.finish(&core, done);
+                    files.start(&core, server, access_token, key, &files_done);
                 }
                 _ = ping.tick() => {
                     if heard.elapsed() > SILENT_FOR {
@@ -199,6 +208,7 @@ pub async fn run_observed(
                     nonce += 1;
                     queue_all(vec![ClientMessage::new(client_message::Body::Ping(Ping { nonce }))]);
                     queue_all(lock(&core)?.sync_retry().map_err(SyncError::from)?);
+                    files.start(&core, server, access_token, key, &files_done);
                 }
                 ended = &mut writer => {
                     return match ended {

@@ -399,7 +399,10 @@ impl Reader<'_> {
                 // A callout's title is its first line; what follows is its body.
                 if let (Some(at), Some(c)) = (self.target, self.containers.last())
                     && c.block == at
-                    && matches!(self.out[at].kind, BlockKind::Callout { .. } | BlockKind::Toggle)
+                    && matches!(
+                        self.out[at].kind,
+                        BlockKind::Callout { .. } | BlockKind::Toggle
+                    )
                 {
                     let body = self.push(BlockKind::Paragraph);
                     self.target = Some(body);
@@ -631,7 +634,8 @@ fn take_ref(spans: &mut Vec<Span>, src: &str, tail: Option<Range<usize>>) -> Opt
     let raw = &src[tail.clone()];
     let raw_caret = raw.rfind('^')?;
     // An escape's text starts after its backslash.
-    if src[..tail.start + raw_caret].ends_with('\\') || raw[raw_caret + 1..] != last.text[caret + 1..]
+    if src[..tail.start + raw_caret].ends_with('\\')
+        || raw[raw_caret + 1..] != last.text[caret + 1..]
     {
         return None;
     }

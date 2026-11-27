@@ -4,6 +4,7 @@
 
   import type { CoreClient } from "./core/client";
   import type { AccountStatus, BlockId, PageId, PageInfo, SearchHit, Settings } from "./core/types";
+  import { setAttachmentClient } from "./editor/attachments";
   import { setQueryHost } from "./editor/query";
   import { today } from "./journal/dates";
   import Account, { phaseLabel } from "./lib/Account.svelte";
@@ -55,6 +56,7 @@
       if (event.type === "settingsChanged") settings = event.settings;
     });
     setQueryHost({ client, open: (id) => select(id), pages: () => pages });
+    setAttachmentClient(client);
     (async () => {
       try {
         account = await client.accountStatus();

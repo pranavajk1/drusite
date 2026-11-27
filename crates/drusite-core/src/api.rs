@@ -60,6 +60,20 @@ pub enum Command {
     },
     /// Deletes everything in the trash for good.
     EmptyTrash,
+    /// Keeps a file on this device, to put on a page; it goes to the server when the device
+    /// syncs. `data` is the file, in base64. Answered with [`Response::Attachment`], whose kind
+    /// is the block to insert.
+    AddAttachment {
+        name: String,
+        mime: String,
+        data: String,
+    },
+    /// A file a page's attachment block names. Answered with [`Response::AttachmentData`], or
+    /// [`ErrorCode::NotHere`] while it's being fetched from the server; then
+    /// [`Event::AttachmentArrived`] says when it's here.
+    ReadAttachment {
+        blob: String,
+    },
     /// Loads a page for editing. Answered with [`Response::Opened`]. Each open is matched by a
     /// [`Command::ClosePage`]; the page stays open until every view that opened it has closed it.
     OpenPage {
@@ -274,6 +288,13 @@ pub enum Response {
     Trash {
         pages: Vec<TrashItem>,
     },
+    Attachment {
+        kind: BlockKind,
+    },
+    /// A file, in base64.
+    AttachmentData {
+        data: String,
+    },
     Done,
 }
 
@@ -290,6 +311,8 @@ pub enum Event {
     PagesChanged { pages: Vec<PageInfo> },
     /// What's in the trash changed.
     TrashChanged { pages: Vec<TrashItem> },
+    /// A file this device was waiting for has come from the server.
+    AttachmentArrived { blob: String },
     /// An open page changed other than through the edits just answered (another device, or the
     /// part of a batch that was applied before one edit failed).
     PageChanged { page: PageId, patch: PagePatch },
@@ -430,6 +453,8 @@ pub enum ErrorCode {
     Account,
     /// A value the command can't use (an empty property name, a template that isn't a page).
     Invalid,
+    /// The file isn't on this device yet; it's being fetched.
+    NotHere,
     Internal,
 }
 

@@ -22,6 +22,7 @@ import { type Plugin, type Command as PmCommand, type EditorState, TextSelection
 import type { BlockKind } from "../core/types";
 import { childrenEnd, isFolded } from "./blocks";
 import { attrsOf } from "./convert";
+import { PICK_FILES } from "./attachments";
 import { defaultQueryJson } from "./query";
 import { type BlockAttrs, MAX_INDENT, blockType, schema } from "./schema";
 
@@ -321,6 +322,12 @@ export function markdownShortcuts(): Plugin {
         return tr.setSelection(TextSelection.create(tr.doc, at + 1));
       }),
       rule(/^>\s$/, () => ({ type: "toggle" })),
+      // `/file` and a space opens the file picker; what's chosen goes on the page.
+      new InputRule(/^\/file\s$/, (state, _match, start, end) => {
+        const $start = state.doc.resolve(start);
+        if ($start.parentOffset !== 0 || $start.parent.content.size !== end - start) return null;
+        return state.tr.delete(start, end).setMeta(PICK_FILES, true);
+      }),
     ],
   });
 }

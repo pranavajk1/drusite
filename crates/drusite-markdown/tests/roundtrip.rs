@@ -97,14 +97,16 @@ fn marks() -> impl Strategy<Value = Marks> {
             ],
         ),
     )
-        .prop_map(|(bold, italic, underline, strikethrough, code, link)| Marks {
-            bold,
-            italic,
-            underline,
-            strikethrough,
-            code,
-            link,
-        })
+        .prop_map(
+            |(bold, italic, underline, strikethrough, code, link)| Marks {
+                bold,
+                italic,
+                underline,
+                strikethrough,
+                code,
+                link,
+            },
+        )
 }
 
 fn spans() -> impl Strategy<Value = Vec<Span>> {
@@ -153,36 +155,38 @@ fn kind() -> impl Strategy<Value = BlockKind> {
 }
 
 fn block() -> impl Strategy<Value = Block> {
-    (any::<u128>(), kind(), spans(), 0u8..4, text(true)).prop_map(|(id, kind, spans, indent, code)| {
-        let spans = match &kind {
-            // What a page holds for these: code as one plain run, no text at all, or a plain
-            // one-line caption.
-            BlockKind::Code { .. } => {
-                if code.is_empty() {
-                    Vec::new()
-                } else {
-                    vec![Span::plain(code)]
+    (any::<u128>(), kind(), spans(), 0u8..4, text(true)).prop_map(
+        |(id, kind, spans, indent, code)| {
+            let spans = match &kind {
+                // What a page holds for these: code as one plain run, no text at all, or a plain
+                // one-line caption.
+                BlockKind::Code { .. } => {
+                    if code.is_empty() {
+                        Vec::new()
+                    } else {
+                        vec![Span::plain(code)]
+                    }
                 }
-            }
-            BlockKind::Divider | BlockKind::Query { .. } => Vec::new(),
-            BlockKind::Attachment { .. } => {
-                let caption: String = spans.iter().map(|s| s.text.as_str()).collect();
-                let caption = caption.replace(['\n', '\t'], " ").trim().to_owned();
-                if caption.is_empty() {
-                    Vec::new()
-                } else {
-                    vec![Span::plain(caption)]
+                BlockKind::Divider | BlockKind::Query { .. } => Vec::new(),
+                BlockKind::Attachment { .. } => {
+                    let caption: String = spans.iter().map(|s| s.text.as_str()).collect();
+                    let caption = caption.replace(['\n', '\t'], " ").trim().to_owned();
+                    if caption.is_empty() {
+                        Vec::new()
+                    } else {
+                        vec![Span::plain(caption)]
+                    }
                 }
+                _ => spans,
+            };
+            Block {
+                id: BlockId::from_uuid(Uuid::from_u128(id)),
+                kind,
+                indent,
+                spans,
             }
-            _ => spans,
-        };
-        Block {
-            id: BlockId::from_uuid(Uuid::from_u128(id)),
-            kind,
-            indent,
-            spans,
-        }
-    })
+        },
+    )
 }
 
 /// A page as the editor allows: never more than one level deeper than the block before.
@@ -284,7 +288,9 @@ fn ordinary_prose_stays_clean() {
         },
         Block {
             id: id(5),
-            kind: BlockKind::Callout { icon: "💡".into() },
+            kind: BlockKind::Callout {
+                icon: "💡".into()
+            },
             indent: 0,
             spans: vec![Span::plain("Bring a jacket")],
         },
@@ -303,7 +309,12 @@ fn ordinary_prose_stays_clean() {
             "# Trip to the coast ^{}\n\nWe left early, and the *fog* lifted by nine. ^{}\n\n\
              - [ ] Book the ferry ^{}\n\n  - Ask about bikes ^{}\n\n\
              > [!tip] Bring a jacket ^{}\n>\n> Even in summer. ^{}\n",
-            id(1), id(2), id(3), id(4), id(5), id(6)
+            id(1),
+            id(2),
+            id(3),
+            id(4),
+            id(5),
+            id(6)
         )
     );
 }
@@ -317,22 +328,43 @@ fn hand_written_obsidian_reads() {
     assert_eq!(
         kinds,
         [
-            "heading", "paragraph", "callout", "paragraph", "todo", "todo", "numbered",
-            "paragraph", "code", "paragraph"
+            "heading",
+            "paragraph",
+            "callout",
+            "paragraph",
+            "todo",
+            "todo",
+            "numbered",
+            "paragraph",
+            "code",
+            "paragraph"
         ]
     );
     let b = &page.blocks;
     assert_eq!(b[1].spans[1].marks.link.as_deref(), Some("Alex"));
     assert_eq!(b[1].spans[1].text, "Alex");
-    assert_eq!(b[2].kind, BlockKind::Callout { icon: "⚠️".into() });
+    assert_eq!(
+        b[2].kind,
+        BlockKind::Callout {
+            icon: "⚠️".into()
+        }
+    );
     assert_eq!(b[2].text(), "Careful");
-    assert_eq!((b[3].indent, b[3].text().as_str()), (1, "Callouts are quotes with a marker."));
+    assert_eq!(
+        (b[3].indent, b[3].text().as_str()),
+        (1, "Callouts are quotes with a marker.")
+    );
     assert_eq!(b[4].id, Some(BlockRef::Other("task1".into())));
     assert_eq!(b[4].text(), "follow up");
     assert!(b[5].spans[0].marks.strikethrough);
     // An embed Files doesn't know stays a link.
     assert_eq!(b[7].spans[0].marks.link.as_deref(), Some("diagram.png"));
-    assert_eq!(b[8].kind, BlockKind::Code { language: "table".into() });
+    assert_eq!(
+        b[8].kind,
+        BlockKind::Code {
+            language: "table".into()
+        }
+    );
     assert!(b[8].text().starts_with("| a | b |"));
     assert_eq!(b[9].id, None);
     assert_eq!(b[9].text(), "Text ending in an escaped ^ref1");

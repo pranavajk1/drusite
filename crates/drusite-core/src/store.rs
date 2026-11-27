@@ -29,7 +29,7 @@ use crate::{Error, Result};
 pub const STORE_FILE: &str = "workspace.drusite";
 
 /// The layout of the database itself (not of the documents in it).
-const STORE_SCHEMA: i32 = 3;
+const STORE_SCHEMA: i32 = 4;
 
 /// Compact a document after this many logged updates…
 pub const COMPACT_AFTER_UPDATES: u64 = 500;
@@ -173,6 +173,20 @@ impl Store {
                      email         TEXT
                  ) STRICT;
                  PRAGMA user_version = 3;",
+            )?;
+            tx.commit()?;
+        }
+        if version < 4 {
+            // Attachments: files on pages, by the BLAKE3 hash of their content, and whether the
+            // server has each one yet.
+            let tx = self.conn.transaction()?;
+            tx.execute_batch(
+                "CREATE TABLE blobs (
+                     id       TEXT PRIMARY KEY,
+                     bytes    BLOB NOT NULL,
+                     uploaded INTEGER NOT NULL DEFAULT 0
+                 ) STRICT;
+                 PRAGMA user_version = 4;",
             )?;
             tx.commit()?;
         }
@@ -409,6 +423,48 @@ impl Store {
     /// with it (foreign keys cascade).
     pub fn delete_doc(&mut self, id: &str) -> Result<()> {
         self.conn.execute("DELETE FROM docs WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
+    // ---- Attachments ----
+
+    /// Keeps a file. `uploaded` when it came from the server, so it needn't go back.
+    pub fn put_blob(&mut self, id: &str, bytes: &[u8], uploaded: bool) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO blobs (id, bytes, uploaded) VALUES (?1, ?2, ?3)
+             ON CONFLICT (id) DO UPDATE SET uploaded = max(uploaded, excluded.uploaded)",
+            rusqlite::params![id, bytes, i64::from(uploaded)],
+        )?;
+        Ok(())
+    }
+
+    pub fn blob(&self, id: &str) -> Result<Option<Vec<u8>>> {
+        Ok(self
+            .conn
+            .query_row("SELECT bytes FROM blobs WHERE id = ?1", [id], |r| r.get(0))
+            .optional()?)
+    }
+
+    pub fn has_blob(&self, id: &str) -> Result<bool> {
+        Ok(self
+            .conn
+            .query_row("SELECT 1 FROM blobs WHERE id = ?1", [id], |_| Ok(()))
+            .optional()?
+            .is_some())
+    }
+
+    /// Files the server doesn't have yet.
+    pub fn blobs_to_upload(&self) -> Result<Vec<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id FROM blobs WHERE uploaded = 0 ORDER BY id")?;
+        let rows = stmt.query_map([], |r| r.get(0))?;
+        Ok(rows.collect::<std::result::Result<_, _>>()?)
+    }
+
+    pub fn blob_uploaded(&mut self, id: &str) -> Result<()> {
+        self.conn
+            .execute("UPDATE blobs SET uploaded = 1 WHERE id = ?1", [id])?;
         Ok(())
     }
 

@@ -101,6 +101,29 @@ pub struct Config {
     pub telemetry: TelemetryConfig,
     #[serde(default)]
     pub search: SearchConfig,
+    #[serde(default)]
+    pub attachments: AttachmentsConfig,
+}
+
+/// Files on pages.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AttachmentsConfig {
+    /// The largest file a page can hold, in bytes. 100 MiB unless set.
+    #[serde(default = "default_max_attachment")]
+    pub max_bytes: u64,
+}
+
+impl Default for AttachmentsConfig {
+    fn default() -> Self {
+        Self {
+            max_bytes: default_max_attachment(),
+        }
+    }
+}
+
+const fn default_max_attachment() -> u64 {
+    100 * 1024 * 1024
 }
 
 /// Search over the live documents: Postgres full-text search, plus semantic search when an
