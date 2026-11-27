@@ -103,6 +103,38 @@ pub struct Config {
     pub search: SearchConfig,
     #[serde(default)]
     pub attachments: AttachmentsConfig,
+    #[serde(default)]
+    pub agents: AgentsConfig,
+}
+
+/// Agents (MCP clients) reading and writing notes at `/mcp`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgentsConfig {
+    /// Agents can connect. On unless set.
+    #[serde(default = "yes")]
+    pub enabled: bool,
+    /// For development and tests only: accept client ID metadata documents served over plain
+    /// HTTP, or from loopback and private addresses.
+    #[serde(default)]
+    pub allow_insecure_client_ids: bool,
+    /// The longest an agent token made on the account page may last, in days.
+    #[serde(default = "default_agent_token_days")]
+    pub max_token_days: u32,
+}
+
+impl Default for AgentsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            allow_insecure_client_ids: false,
+            max_token_days: default_agent_token_days(),
+        }
+    }
+}
+
+const fn default_agent_token_days() -> u32 {
+    365
 }
 
 /// Files on pages.

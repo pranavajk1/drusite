@@ -33,7 +33,7 @@ pub(super) fn routes() -> Router<AppState> {
         )
 }
 
-fn security_headers() -> [(HeaderName, HeaderValue); 5] {
+pub(super) fn security_headers() -> [(HeaderName, HeaderValue); 5] {
     [
         (
             header::CONTENT_SECURITY_POLICY,
@@ -79,7 +79,7 @@ fn asset(body: &'static str, content_type: &'static str) -> Response {
         .into_response()
 }
 
-fn escape(text: &str) -> String {
+pub(super) fn escape(text: &str) -> String {
     text.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
@@ -96,6 +96,40 @@ pub(super) fn message_page(title: &str, message: &str) -> String {
          <body><main><h1>{t}</h1><p>{m}</p></main></body></html>",
         t = escape(title),
         m = escape(message),
+    )
+}
+
+/// The consent page for an agent. `choices` is the workspace checkboxes, already escaped.
+pub(super) fn consent_page(
+    agent: &str,
+    request: &str,
+    choices: &str,
+    read_checked: &str,
+    write_checked: &str,
+) -> String {
+    format!(
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
+         <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
+         <title>Connect an agent</title><link rel=\"stylesheet\" href=\"/assets/signin.css\">\
+         </head><body><main><h1>Connect {a}?</h1>\
+         <p class=\"muted\">{a} wants to use your Drusite notes. Choose what it may do. You can \
+         see everything it changes, undo it, and disconnect it from your account page.</p>\
+         <form method=\"post\" action=\"/oauth/consent\" class=\"consent\">\
+         <input type=\"hidden\" name=\"request\" value=\"{r}\">\
+         <fieldset><legend>Workspaces</legend>{choices}</fieldset>\
+         <fieldset><legend>Access</legend>\
+         <label class=\"choice\"><input type=\"radio\" name=\"access\" value=\"read\"{read_checked}> \
+         Read only</label>\
+         <label class=\"choice\"><input type=\"radio\" name=\"access\" value=\"write\"{write_checked}> \
+         Read, add and edit pages</label>\
+         <label class=\"choice\"><input type=\"checkbox\" name=\"journal\"> \
+         Edit journal entries too (otherwise it can only read them)</label>\
+         <p class=\"muted\">Agents can never delete pages.</p></fieldset>\
+         <div class=\"actions\"><button type=\"submit\" name=\"decision\" value=\"deny\">Don't allow\
+         </button> <button type=\"submit\" name=\"decision\" value=\"allow\" class=\"primary\">\
+         Allow</button></div></form></main></body></html>",
+        a = escape(agent),
+        r = escape(request),
     )
 }
 

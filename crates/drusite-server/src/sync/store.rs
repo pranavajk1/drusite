@@ -280,7 +280,7 @@ async fn claim_workspace(
 
 /// Appends an update inside the caller's transaction; returns its sequence number and whether
 /// the document is due for compaction.
-async fn append_in(
+pub(crate) async fn append_in(
     state: &AppState,
     tx: &mut PgConnection,
     user: UserId,

@@ -41,6 +41,7 @@ async fn issue_pair(
     conn: &mut sqlx::PgConnection,
     grant: Uuid,
     scope: String,
+    dpop: bool,
 ) -> Result<TokenResponse, AuthError> {
     let minutes = i64::from(state.config().auth.access_token_minutes);
     let access = secret::generate(Kind::Access)?;
@@ -58,7 +59,7 @@ async fn issue_pair(
         .await?;
     Ok(TokenResponse {
         access_token: access,
-        token_type: "DPoP",
+        token_type: if dpop { "DPoP" } else { "Bearer" },
         expires_in: minutes * 60,
         refresh_token: refresh,
         scope,
@@ -71,9 +72,16 @@ pub struct NewGrant<'a> {
     pub user: UserId,
     pub client_id: &'a str,
     pub scope: String,
-    pub dpop_jkt: &'a str,
+    /// The device key its tokens are bound to. Agents may have none: their tokens are bearer
+    /// tokens, good only at their resource.
+    pub dpop_jkt: Option<&'a str>,
     pub method: Method,
     pub device_name: &'a str,
+    /// The resource its tokens are for (RFC 8707): the MCP endpoint, for agents.
+    pub resource: Option<&'a str>,
+    /// What an agent may do.
+    pub access: Option<serde_json::Value>,
+    pub client_name: &'a str,
 }
 
 /// Starts a device's sign-in, inside the caller's transaction (which also spends the code).
@@ -87,8 +95,8 @@ pub async fn create_grant(
     let id = Uuid::now_v7();
     sqlx::query(
         "INSERT INTO oauth_grants (id, user_id, client_id, scope, dpop_jkt, auth_method,
-             device_name, idle_expires_at, absolute_expires_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+             device_name, idle_expires_at, absolute_expires_at, resource, access, client_name)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
     )
     .bind(id)
     .bind(grant.user.as_uuid())
@@ -99,9 +107,19 @@ pub async fn create_grant(
     .bind(grant.device_name.chars().take(100).collect::<String>())
     .bind(now + Duration::days(i64::from(auth.device_idle_days)))
     .bind(now + Duration::days(i64::from(auth.device_max_days)))
+    .bind(grant.resource)
+    .bind(&grant.access)
+    .bind(grant.client_name.chars().take(100).collect::<String>())
     .execute(&mut *conn)
     .await?;
-    let tokens = issue_pair(state, conn, id, grant.scope.clone()).await?;
+    let tokens = issue_pair(
+        state,
+        conn,
+        id,
+        grant.scope.clone(),
+        grant.dpop_jkt.is_some(),
+    )
+    .await?;
     Ok((GrantId(id), tokens))
 }
 
@@ -125,16 +143,17 @@ impl From<sqlx::Error> for RefreshError {
 }
 
 /// Swaps a refresh token for a new pair. `jkt` is the thumbprint of the key that signed the
-/// request's DPoP proof.
+/// request's DPoP proof, if it had one; a grant bound to a key needs it.
 pub async fn refresh(
     state: &AppState,
     refresh_token: &str,
-    jkt: &str,
+    jkt: Option<&str>,
 ) -> Result<TokenResponse, RefreshError> {
     let hash = secret::hash(Kind::Refresh, refresh_token).ok_or(RefreshError::Invalid)?;
     let mut tx = state.db().pool().begin().await?;
     // Lock the grant's row, so two refreshes of one grant run one after the other.
-    let row: Option<(Uuid, Option<OffsetDateTime>, String, String, bool)> = sqlx::query_as(
+    type Row = (Uuid, Option<OffsetDateTime>, Option<String>, String, bool);
+    let row: Option<Row> = sqlx::query_as(
         "SELECT g.id, r.used_at, g.dpop_jkt, g.scope,
                 g.revoked_at IS NULL AND g.idle_expires_at > now()
                     AND g.absolute_expires_at > now() AND u.disabled_at IS NULL
@@ -155,10 +174,14 @@ pub async fn refresh(
     }
     // The token alone is worth nothing without the device's key: refuse, but don't punish the
     // grant for it.
-    if !bool::from(subtle::ConstantTimeEq::ct_eq(
-        bound_jkt.as_bytes(),
-        jkt.as_bytes(),
-    )) {
+    if let Some(bound) = &bound_jkt
+        && !jkt.is_some_and(|jkt| {
+            bool::from(subtle::ConstantTimeEq::ct_eq(
+                bound.as_bytes(),
+                jkt.as_bytes(),
+            ))
+        })
+    {
         return Err(RefreshError::WrongKey);
     }
     match used_at {
@@ -208,7 +231,7 @@ pub async fn refresh(
         .bind(grant)
         .execute(&mut *tx)
         .await?;
-    let tokens = issue_pair(state, &mut tx, grant, scope).await?;
+    let tokens = issue_pair(state, &mut tx, grant, scope, bound_jkt.is_some()).await?;
     tx.commit().await?;
     Ok(tokens)
 }
@@ -218,8 +241,12 @@ pub async fn refresh(
 pub struct AccessGrant {
     pub grant: GrantId,
     pub user: UserId,
-    pub dpop_jkt: String,
+    pub dpop_jkt: Option<String>,
     pub scope: String,
+    /// `None` for the app's tokens; the MCP endpoint's URL for an agent's.
+    pub resource: Option<String>,
+    pub access: Option<serde_json::Value>,
+    pub client_name: String,
 }
 
 pub async fn lookup_access(
@@ -229,8 +256,17 @@ pub async fn lookup_access(
     let Some(hash) = secret::hash(Kind::Access, token) else {
         return Ok(None);
     };
-    let row: Option<(Uuid, Uuid, String, String)> = sqlx::query_as(
-        "SELECT g.id, g.user_id, g.dpop_jkt, g.scope
+    type Row = (
+        Uuid,
+        Uuid,
+        Option<String>,
+        String,
+        Option<String>,
+        Option<serde_json::Value>,
+        String,
+    );
+    let row: Option<Row> = sqlx::query_as(
+        "SELECT g.id, g.user_id, g.dpop_jkt, g.scope, g.resource, g.access, g.client_name
          FROM access_tokens a
          JOIN oauth_grants g ON g.id = a.grant_id
          JOIN users u ON u.id = g.user_id
@@ -240,12 +276,17 @@ pub async fn lookup_access(
     .bind(hash.as_slice())
     .fetch_optional(state.db().pool())
     .await?;
-    Ok(row.map(|(grant, user, dpop_jkt, scope)| AccessGrant {
-        grant: GrantId(grant),
-        user: UserId::from_uuid(user),
-        dpop_jkt,
-        scope,
-    }))
+    Ok(row.map(
+        |(grant, user, dpop_jkt, scope, resource, access, client_name)| AccessGrant {
+            grant: GrantId(grant),
+            user: UserId::from_uuid(user),
+            dpop_jkt,
+            scope,
+            resource,
+            access,
+            client_name,
+        },
+    ))
 }
 
 /// Whether a device's sign-in still stands: not revoked or expired, its account not disabled.
