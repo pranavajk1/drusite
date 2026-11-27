@@ -24,9 +24,16 @@ export function visibleBottom(): number {
   return bottom;
 }
 
-/** The top of what's visible: iOS moves the visual viewport down when the keyboard opens. */
+/**
+ * The top of what's visible: below the phone's top bar (which also covers the status bar's safe
+ * area), and below where iOS moves the visual viewport when its keyboard opens.
+ */
 export function visibleTop(): number {
-  return window.visualViewport?.offsetTop ?? 0;
+  const vv = window.visualViewport?.offsetTop ?? 0;
+  const bar = document.querySelector(".topbar")?.getBoundingClientRect();
+  return bar && bar.height > 0 && getComputedStyle(document.querySelector(".topbar")!).position !== "static"
+    ? Math.max(vv, bar.bottom)
+    : vv;
 }
 
 /** Below `anchor` (above if there's no room), left edges lined up, kept on screen. */
