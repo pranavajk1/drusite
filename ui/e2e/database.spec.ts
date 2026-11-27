@@ -149,6 +149,18 @@ test("a property chip goes into a formula where the cursor is, and typing carrie
   await expect(formula).toHaveValue('1 + prop("Status") == 1');
 });
 
+test("on a phone-width screen, the table's title column scrolls away with the others", async ({ page }) => {
+  await newBoard(page);
+  await addCard(page, "Not started", "Sow the seeds");
+  await page.getByRole("tab", { name: "All tasks" }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+  const title = page.locator(".db-table th").first();
+  const before = (await title.boundingBox())!.x;
+  await page.locator(".table-scroll").evaluate((el) => (el.scrollLeft = 200));
+  await expect.poll(async () => (await title.boundingBox())!.x).toBeLessThan(before - 150);
+});
+
 test("a task board goes inline in a page from the slash menu", async ({ page }) => {
   await openApp(page);
   await page.keyboard.type("/kanban");

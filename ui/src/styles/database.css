@@ -1109,18 +1109,11 @@ tr:hover .open-row,
     scroll-snap-align: start;
   }
 
-  /* The table scrolls sideways with the title column held at the left. */
+  /* The table scrolls sideways edge to edge, the title column with the rest, as on Notion's
+     phone apps: a phone has no width to spare for a column held in place. */
   .table-scroll {
     margin: 0 calc(-1 * var(--page-pad));
     padding: 0 var(--page-pad);
-  }
-
-  .db-table td:first-child,
-  .db-table th:first-child {
-    position: sticky;
-    left: 0;
-    z-index: 1;
-    background: var(--bg);
   }
 
   .cal-day {
