@@ -44,7 +44,12 @@ export type BlockKind = { type: "paragraph" } | { type: "heading"; level: Headin
 /**  Has no text of its own; any text it gets (from a concurrent edit) is kept, not shown. */
 { type: "divider" } | { type: "callout"; icon: string } | 
 /**  Its children are the blocks after it with a deeper indent. */
-{ type: "toggle" };
+{ type: "toggle" } | 
+/**
+ *  Lists the pages a query matches. `query` is a [`PageQuery`] as JSON; the block has no
+ *  text of its own.
+ */
+{ type: "query"; query: string };
 
 /**  Something the UI asks the core to do. */
 export type Command = 
@@ -77,7 +82,35 @@ export type Command =
 /**  Gives up a sign-in still waiting in the browser. */
 { type: "cancelSignIn" } | 
 /**  Signs this device out of its server. Its notes stay on the device. */
-{ type: "signOut" };
+{ type: "signOut" } | 
+/**  Sets a page's property, or removes it (`value` none). */
+{ type: "setProperty"; page: PageId; name: string; value: PropertyValue | null } | 
+/**
+ *  The journal entry for `date` (the person's own day, as their device has it), made from
+ *  the template if there isn't one yet. Answered with [`Response::JournalDay`].
+ */
+{ type: "openJournalDay"; date: string } | 
+/**  The pages a query matches. Answered with [`Response::Pages`]. */
+{ type: "queryPages"; query: PageQuery } | 
+/**  The settings that sync with the account. Answered with [`Response::Settings`]. */
+{ type: "settings" } | 
+/**  Changes one setting. Answered with [`Response::Settings`]. */
+{ type: "setSetting"; setting: Setting };
+
+/**  How a condition compares a property. */
+export type Comparison = 
+/**  The page has the property, whatever its value. */
+"exists" | "missing" | "equals" | "notEquals" | 
+/**  Text containing the value (ignoring case). */
+"contains" | "less" | "lessOrEqual" | "greater" | "greaterOrEqual";
+
+/**  One test a page must pass. */
+export type Condition = {
+	property: string,
+	comparison: Comparison,
+	/**  Unused for [`Comparison::Exists`] and [`Comparison::Missing`]. */
+	value: PropertyValue | null,
+};
 
 /**  One change to a page, as the editor makes it. */
 export type Edit = { type: "insertText"; block: BlockId; pos: number; text: string } | { type: "deleteText"; block: BlockId; pos: number; len: number } | { type: "format"; block: BlockId; start: number; end: number; mark: Mark; on: boolean } | 
@@ -111,7 +144,9 @@ export type ErrorCode = "unknownPage" | "unknownBlock" |
 /**  This build can't do that (signing in, in the browser build). */
 "unsupported" | 
 /**  Signing in or out failed. */
-"account" | "internal";
+"account" | 
+/**  A value the command can't use (an empty property name, a template that isn't a page). */
+"invalid" | "internal";
 
 /**
  *  Something that happened in the core that the UI didn't ask for, or that other views of the
@@ -131,7 +166,9 @@ export type Event =
  */
 { type: "pageReloaded"; view: PageView; reason: string } | 
 /**  The account or sync status changed. */
-{ type: "accountChanged"; status: AccountStatus };
+{ type: "accountChanged"; status: AccountStatus } | 
+/**  The settings changed, here or on another device. */
+{ type: "settingsChanged"; settings: Settings };
 
 /**  Heading levels 1 to 3, as in Notion. Serialized as `"h1"`, `"h2"`, `"h3"`. */
 export type HeadingLevel = "h1" | "h2" | "h3";
@@ -162,7 +199,15 @@ export type PageInfo = {
 	parent: PageId | null,
 	title: string,
 	children: PageId[],
+	kind: PageKind,
+	/**  In name order. */
+	properties: Property[],
 };
+
+/**  What a page is for. */
+export type PageKind = "page" | 
+/**  One day of the journal. */
+"journal";
 
 /**
  *  The blocks that changed, and only those. Apply `removed`, then `upserted` in order: each
@@ -173,6 +218,16 @@ export type PagePatch = {
 	upserted: PlacedBlock[],
 	removed: BlockId[],
 	order: BlockId[] | null,
+};
+
+/**  Which pages to list: every condition must hold. */
+export type PageQuery = {
+	/**  Only pages of this kind, when set. */
+	kind: PageKind | null,
+	conditions: Condition[],
+	sort: Sort | null,
+	/**  At most this many pages, when set. */
+	limit: number | null,
 };
 
 /**  An open page: everything the editor needs to show it. */
@@ -189,8 +244,45 @@ export type PlacedBlock = {
 	after: BlockId | null,
 };
 
+/**  A named property on a page. */
+export type Property = {
+	name: string,
+	value: PropertyValue,
+};
+
+/**  A property's value. */
+export type PropertyValue = { type: "text"; value: string } | { type: "number"; value: number | null } | { type: "checkbox"; value: boolean } | { type: "date"; value: string };
+
 /**  The core's answer to a [`Command`]. */
-export type Response = { type: "pages"; pages: PageInfo[] } | { type: "pageCreated"; page: PageInfo } | { type: "opened"; view: PageView } | { type: "edited"; outcome: EditOutcome } | { type: "account"; status: AccountStatus } | { type: "done" };
+export type Response = { type: "pages"; pages: PageInfo[] } | { type: "pageCreated"; page: PageInfo } | { type: "opened"; view: PageView } | { type: "edited"; outcome: EditOutcome } | { type: "account"; status: AccountStatus } | 
+/**  The journal entry for a day; `created` when it was made just now. */
+{ type: "journalDay"; page: PageInfo; created: boolean } | { type: "settings"; settings: Settings } | { type: "done" };
+
+/**  One setting's new value. */
+export type Setting = { type: "journalParent"; value?: PageId | null } | { type: "journalTemplate"; value?: PageId | null } | { type: "weekStart"; value: number };
+
+/**
+ *  The settings that live in the workspace, so they sync with the account and a new device has
+ *  them after signing in.
+ */
+export type Settings = {
+	/**  The page new journal entries go under. Made on first use. */
+	journalParent: PageId | null,
+	/**
+	 *  The page new journal entries are copied from: its blocks, with `{{date}}`,
+	 *  `{{title}}` and `{{weekday}}` filled in.
+	 */
+	journalTemplate: PageId | null,
+	/**  The first day of the week in calendars: 0 is Sunday, 1 Monday. */
+	weekStart: number,
+};
+
+/**  How a query orders its pages. */
+export type Sort = {
+	/**  A property name, or `"title"`. */
+	by: string,
+	descending: boolean,
+};
 
 /**  A run of text with the same formatting. */
 export type Span = {

@@ -184,6 +184,37 @@ impl Page {
         self.guard.run(|| Ok(utf16_len(&self.inner.raw_text(id)?)))
     }
 
+    /// Fills a new page with copies of `blocks` (a template's), each with a new ID, with
+    /// `map_text` applied to every span's text. The page's empty first block becomes the first
+    /// copy. Meant for a page nobody has edited yet.
+    pub fn fill_from(&mut self, blocks: &[Block], map_text: impl Fn(&str) -> String) -> Result<()> {
+        let mut prev: Option<BlockId> = None;
+        for (i, block) in blocks.iter().enumerate() {
+            let id = match (i, self.order().as_slice()) {
+                (0, [only]) if self.text_len(*only)? == 0 => {
+                    self.set_kind(*only, &block.kind)?;
+                    *only
+                }
+                _ => self.insert_block_after(prev, block.kind.clone())?.0,
+            };
+            let mut pos = 0;
+            for span in &block.spans {
+                let text = map_text(&span.text);
+                let len = text.encode_utf16().count();
+                self.insert_text(id, pos, &text)?;
+                for mark in marks_of(&span.marks) {
+                    self.format(id, pos, pos + len, &mark, true)?;
+                }
+                pos += len;
+            }
+            if block.indent > 0 {
+                self.set_indent(id, block.indent)?;
+            }
+            prev = Some(id);
+        }
+        Ok(())
+    }
+
     /// Types `text` into block `id` at `pos`.
     pub fn insert_text(&mut self, id: BlockId, pos: usize, text: &str) -> Result<Patch> {
         let inner = &mut self.inner;

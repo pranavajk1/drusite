@@ -29,6 +29,9 @@ pub enum Error {
     Poisoned,
     #[error("Loro: {0}")]
     Loro(String),
+    /// A value the document can't hold (an empty property name, say).
+    #[error("{0}")]
+    Invalid(String),
 }
 
 impl From<loro::LoroError> for Error {

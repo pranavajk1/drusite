@@ -66,6 +66,7 @@ pub(crate) fn write_kind(map: &LoroMap, kind: &BlockKind) -> LoroResult<()> {
         BlockKind::Todo { checked } => map.insert("checked", *checked),
         BlockKind::Code { language } => map.insert("language", language.as_str()),
         BlockKind::Callout { icon } => map.insert("icon", icon.as_str()),
+        BlockKind::Query { query } => map.insert("query", query.as_str()),
         BlockKind::Paragraph
         | BlockKind::Bulleted
         | BlockKind::Numbered
@@ -99,6 +100,9 @@ pub(crate) fn read_kind(map: Option<&LoroMap>) -> BlockKind {
             icon: get_str(map, "icon").unwrap_or_default(),
         },
         Some("toggle") => BlockKind::Toggle,
+        Some("query") => BlockKind::Query {
+            query: get_str(map, "query").unwrap_or_default(),
+        },
         _ => BlockKind::Paragraph,
     }
 }

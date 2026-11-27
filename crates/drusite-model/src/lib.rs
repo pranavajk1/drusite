@@ -13,6 +13,11 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use uuid::Uuid;
 
+pub mod journal;
+pub use journal::{
+    Comparison, Condition, Day, DayError, Mood, PageKind, PageQuery, Property, PropertyValue, Sort,
+};
+
 /// The version of the page and workspace document layout. Stored in every document, so a newer
 /// build can migrate an older document and an older build can refuse a newer one.
 pub const SCHEMA_VERSION: u32 = 1;
@@ -147,6 +152,11 @@ pub enum BlockKind {
     },
     /// Its children are the blocks after it with a deeper indent.
     Toggle,
+    /// Lists the pages a query matches. `query` is a [`PageQuery`] as JSON; the block has no
+    /// text of its own.
+    Query {
+        query: String,
+    },
 }
 
 impl BlockKind {
@@ -163,6 +173,7 @@ impl BlockKind {
             Self::Divider => "divider",
             Self::Callout { .. } => "callout",
             Self::Toggle => "toggle",
+            Self::Query { .. } => "query",
         }
     }
 }
