@@ -8,6 +8,8 @@ import { type EditorState, Plugin, PluginKey, TextSelection, type Transaction } 
 import { ReplaceStep } from "prosemirror-transform";
 import { Decoration, DecorationSet, type EditorView, type NodeView } from "prosemirror-view";
 
+import { queryView } from "./query";
+
 import { attrsOf } from "./convert";
 import { blockDom, blockType, schema } from "./schema";
 
@@ -140,7 +142,7 @@ function control(tag: string, className: string): HTMLElement {
 }
 
 /** Kinds whose view has more than text. */
-const CUSTOM: ReadonlySet<string> = new Set(["todo", "toggle", "callout", "divider"]);
+const CUSTOM: ReadonlySet<string> = new Set(["todo", "toggle", "callout", "divider", "query"]);
 
 /** One view for every block: the text, plus whatever its kind shows next to the text. */
 export function blockView(node: Node, view: EditorView, getPos: () => number | undefined): NodeView {
@@ -206,6 +208,8 @@ export function blockView(node: Node, view: EditorView, getPos: () => number | u
       ignoreMutation: (m) => m.target === box,
     };
   }
+
+  if (kind.type === "query") return queryView(node, view, getPos, setAttrs);
 
   if (kind.type === "toggle") {
     const arrow = control("button", "toggle-arrow");

@@ -109,6 +109,8 @@ export function sameKind(a: BlockKind, b: BlockKind): boolean {
       return b.type === "code" && a.language === b.language;
     case "callout":
       return b.type === "callout" && a.icon === b.icon;
+    case "query":
+      return b.type === "query" && a.query === b.query;
     default:
       return a.type === b.type;
   }

@@ -13,8 +13,12 @@ import type {
   Event,
   PageId,
   PageInfo,
+  PageQuery,
   PageView,
+  PropertyValue,
   Response,
+  Setting,
+  Settings,
 } from "./types";
 
 export type * from "./types";
@@ -111,6 +115,28 @@ export class CoreClient {
 
   async signOut(): Promise<void> {
     await this.call({ type: "signOut" }, "done");
+  }
+
+  async setProperty(page: PageId, name: string, value: PropertyValue | null): Promise<void> {
+    await this.call({ type: "setProperty", page, name, value }, "done");
+  }
+
+  /** The journal entry for `date` (YYYY-MM-DD, the device's own day), made if there isn't one. */
+  async openJournalDay(date: string): Promise<{ page: PageInfo; created: boolean }> {
+    const { page, created } = await this.call({ type: "openJournalDay", date }, "journalDay");
+    return { page, created };
+  }
+
+  async queryPages(query: PageQuery): Promise<PageInfo[]> {
+    return (await this.call({ type: "queryPages", query }, "pages")).pages;
+  }
+
+  async settings(): Promise<Settings> {
+    return (await this.call({ type: "settings" }, "settings")).settings;
+  }
+
+  async setSetting(setting: Setting): Promise<Settings> {
+    return (await this.call({ type: "setSetting", setting }, "settings")).settings;
   }
 
   /** Tells the core the UI is showing what it opened (benchmarks wait for this). */

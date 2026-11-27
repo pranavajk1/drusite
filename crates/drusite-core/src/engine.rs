@@ -151,6 +151,27 @@ impl Core {
             Command::SignIn { .. } | Command::CancelSignIn | Command::SignOut => Err(
                 ApiError::new(ErrorCode::Unsupported, "signing in needs the Drusite app"),
             ),
+            Command::SetProperty { page, name, value } => {
+                self.workspace.set_property(page, &name, value.as_ref())?;
+                self.save_workspace()?;
+                Ok(Response::Done)
+            }
+            Command::OpenJournalDay { date } => {
+                let (page, created) = self.journal_day(date)?;
+                Ok(Response::JournalDay { page, created })
+            }
+            Command::QueryPages { query } => Ok(Response::Pages {
+                pages: self.query_pages(&query)?,
+            }),
+            Command::Settings => Ok(Response::Settings {
+                settings: self.settings()?,
+            }),
+            Command::SetSetting { setting } => {
+                self.set_setting(setting)?;
+                Ok(Response::Settings {
+                    settings: self.settings()?,
+                })
+            }
         }
     }
 
@@ -164,6 +185,8 @@ impl Core {
                 parent: n.parent,
                 title: n.title,
                 children: n.children,
+                kind: n.kind,
+                properties: n.properties,
             })
             .collect())
     }
@@ -172,8 +195,16 @@ impl Core {
         self.store
             .save_workspace(&self.workspace, &mut self.workspace_at)?;
         self.changed(*self.workspace.id().as_uuid());
+        self.announce_workspace()
+    }
+
+    /// Tells the UI what the workspace document now holds: the page tree and the settings.
+    pub(crate) fn announce_workspace(&self) -> Result<(), ApiError> {
         (self.events)(Event::PagesChanged {
             pages: self.pages()?,
+        });
+        (self.events)(Event::SettingsChanged {
+            settings: self.settings()?,
         });
         Ok(())
     }

@@ -154,9 +154,8 @@ impl Core {
         };
         self.store.set_sync_state(&id.to_string(), &state)?;
         self.workspace = workspace;
-        (self.events)(Event::PagesChanged {
-            pages: self.pages().map_err(|e| Error::Corrupt(e.message))?,
-        });
+        self.announce_workspace()
+            .map_err(|e| Error::Corrupt(e.message))?;
         Ok(())
     }
 
@@ -609,9 +608,8 @@ impl Core {
             local = self.workspace.version();
             self.store
                 .save_workspace(&self.workspace, &mut self.workspace_at)?;
-            (self.events)(Event::PagesChanged {
-                pages: self.pages().map_err(|e| Error::Corrupt(e.message))?,
-            });
+            self.announce_workspace()
+                .map_err(|e| Error::Corrupt(e.message))?;
         } else {
             let id = PageId::from_uuid(doc);
             if let Some(open) = self.open.get_mut(&id) {

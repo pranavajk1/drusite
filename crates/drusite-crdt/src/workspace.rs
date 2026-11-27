@@ -8,9 +8,10 @@
 
 use std::collections::HashMap;
 
-use drusite_model::{PageId, SCHEMA_VERSION, WorkspaceId};
+use drusite_model::{PageId, PageKind, Property, PropertyValue, SCHEMA_VERSION, WorkspaceId};
 use loro::{
-    ExportMode, LoroDoc, LoroText, LoroTree, TreeID, TreeParentId, ValueOrContainer, VersionVector,
+    ExportMode, LoroDoc, LoroMap, LoroText, LoroTree, LoroValue, TreeID, TreeParentId,
+    ValueOrContainer, VersionVector,
 };
 
 use crate::guard::Guard;
@@ -18,12 +19,23 @@ use crate::page::Page;
 use crate::{Error, MARKER, Result, attrs};
 
 /// A page's place in the tree.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PageNode {
     pub id: PageId,
     pub parent: Option<PageId>,
     pub title: String,
     pub children: Vec<PageId>,
+    pub kind: PageKind,
+    /// In name order.
+    pub properties: Vec<Property>,
+}
+
+/// A setting's value, as the workspace document stores it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingValue {
+    Text(String),
+    Int(i64),
+    Bool(bool),
 }
 
 #[derive(Debug)]
@@ -132,6 +144,17 @@ impl Workspace {
     /// Creates a page as the last child of `parent` (or at the top level) and returns its
     /// document, which the caller saves. This is the only place pages come from.
     pub fn create_page(&mut self, parent: Option<PageId>, title: &str) -> Result<Page> {
+        self.create_page_of(parent, title, PageKind::Page, &[])
+    }
+
+    /// Creates a page of `kind` with `properties`, as [`Self::create_page`] does.
+    pub fn create_page_of(
+        &mut self,
+        parent: Option<PageId>,
+        title: &str,
+        kind: PageKind,
+        properties: &[Property],
+    ) -> Result<Page> {
         let page = Page::create()?;
         let id = page.id();
         let node = self.guard.run(|| {
@@ -141,8 +164,14 @@ impl Workspace {
             let node = tree.create_at(parent, index)?;
             let meta = tree.get_meta(node)?;
             meta.insert("page", id.to_string())?;
+            if kind != PageKind::Page {
+                meta.insert("kind", kind.name())?;
+            }
             let text = meta.insert_container("title", LoroText::new())?;
             text.insert(0, &clean_title(title))?;
+            for p in properties {
+                meta.insert(&prop_key(&p.name), encode_value(&p.value))?;
+            }
             self.doc.commit();
             Ok(node)
         })?;
@@ -216,6 +245,86 @@ impl Workspace {
         })
     }
 
+    pub fn kind(&self, id: PageId) -> Result<PageKind> {
+        self.guard.run(|| {
+            let meta = self.tree().get_meta(self.node(id)?)?;
+            Ok(attrs::get_str(&meta, "kind").map_or(PageKind::Page, |k| PageKind::from_name(&k)))
+        })
+    }
+
+    /// A page's properties, in name order. Values this build can't read are left out.
+    pub fn properties(&self, id: PageId) -> Result<Vec<Property>> {
+        self.guard.run(|| {
+            let meta = self.tree().get_meta(self.node(id)?)?;
+            Ok(read_props(&meta))
+        })
+    }
+
+    /// Sets property `name` on a page, or removes it (`None`). Each property is its own key in
+    /// the page's tree entry (never a map of their own, which two devices could each create and
+    /// one lose), so concurrent changes to different properties both stay; to the same one, the
+    /// last writer wins.
+    pub fn set_property(
+        &mut self,
+        id: PageId,
+        name: &str,
+        value: Option<&PropertyValue>,
+    ) -> Result<()> {
+        let name = name.trim();
+        if name.is_empty() || name.chars().any(char::is_control) {
+            return Err(Error::Invalid(format!("not a property name: {name:?}")));
+        }
+        self.guard.run(|| {
+            let meta = self.tree().get_meta(self.node(id)?)?;
+            match value {
+                Some(v) => meta.insert(&prop_key(name), encode_value(v))?,
+                None => meta.delete(&prop_key(name))?,
+            }
+            self.doc.commit();
+            Ok(())
+        })
+    }
+
+    fn settings_map(&self) -> LoroMap {
+        self.doc.get_map("settings")
+    }
+
+    /// Every setting stored in the workspace, which syncs with it.
+    pub fn settings(&self) -> Result<Vec<(String, SettingValue)>> {
+        self.guard.run(|| {
+            let map = self.settings_map();
+            let mut out = Vec::new();
+            map.for_each(|key, value| {
+                let value = match value {
+                    ValueOrContainer::Value(LoroValue::String(s)) => {
+                        SettingValue::Text(s.to_string())
+                    }
+                    ValueOrContainer::Value(LoroValue::I64(i)) => SettingValue::Int(i),
+                    ValueOrContainer::Value(LoroValue::Bool(b)) => SettingValue::Bool(b),
+                    _ => return,
+                };
+                out.push((key.to_owned(), value));
+            });
+            out.sort_by(|a, b| a.0.cmp(&b.0));
+            Ok(out)
+        })
+    }
+
+    /// Sets a setting, or removes it (`None`). Last writer wins, per setting.
+    pub fn set_setting(&mut self, key: &str, value: Option<SettingValue>) -> Result<()> {
+        self.guard.run(|| {
+            let map = self.settings_map();
+            match value {
+                Some(SettingValue::Text(s)) => map.insert(key, s)?,
+                Some(SettingValue::Int(i)) => map.insert(key, i)?,
+                Some(SettingValue::Bool(b)) => map.insert(key, b)?,
+                None => map.delete(key)?,
+            }
+            self.doc.commit();
+            Ok(())
+        })
+    }
+
     fn title_text(&self, id: PageId) -> Result<LoroText> {
         let meta = self.tree().get_meta(self.node(id)?)?;
         match meta.get("title") {
@@ -269,11 +378,15 @@ impl Workspace {
                 let node = self.node(id)?;
                 let children = self.children_of(TreeParentId::Node(node));
                 stack.extend(children.iter().rev().map(|&c| (Some(id), c)));
+                let meta = self.tree().get_meta(node)?;
                 out.push(PageNode {
                     id,
                     parent,
                     title: self.title_text(id)?.to_string(),
                     children,
+                    kind: attrs::get_str(&meta, "kind")
+                        .map_or(PageKind::Page, |k| PageKind::from_name(&k)),
+                    properties: read_props(&meta),
                 });
             }
             Ok(out)
@@ -312,6 +425,70 @@ impl Workspace {
     pub fn version(&self) -> VersionVector {
         self.doc.oplog_vv()
     }
+}
+
+/// A property value as stored: `{t: type, v: value}`, so a date stays a date and a text that
+/// looks like one stays text.
+fn encode_value(value: &PropertyValue) -> LoroValue {
+    let (t, v): (&str, LoroValue) = match value {
+        PropertyValue::Text(s) => ("text", s.as_str().into()),
+        PropertyValue::Number(n) => ("number", (*n).into()),
+        PropertyValue::Checkbox(b) => ("checkbox", (*b).into()),
+        PropertyValue::Date(d) => ("date", d.to_string().into()),
+    };
+    let mut map = std::collections::HashMap::new();
+    map.insert("t".to_owned(), t.into());
+    map.insert("v".to_owned(), v);
+    map.into()
+}
+
+fn decode_value(value: &LoroValue) -> Option<PropertyValue> {
+    let LoroValue::Map(map) = value else {
+        return None;
+    };
+    let v = map.get("v")?;
+    Some(match (map.get("t")?, v) {
+        (LoroValue::String(t), LoroValue::String(s)) if t.as_str() == "text" => {
+            PropertyValue::Text(s.to_string())
+        }
+        (LoroValue::String(t), LoroValue::Double(n)) if t.as_str() == "number" => {
+            PropertyValue::Number(*n)
+        }
+        (LoroValue::String(t), LoroValue::I64(n)) if t.as_str() == "number" => {
+            PropertyValue::Number(*n as f64)
+        }
+        (LoroValue::String(t), LoroValue::Bool(b)) if t.as_str() == "checkbox" => {
+            PropertyValue::Checkbox(*b)
+        }
+        (LoroValue::String(t), LoroValue::String(s)) if t.as_str() == "date" => {
+            PropertyValue::Date(s.parse().ok()?)
+        }
+        _ => return None,
+    })
+}
+
+/// The key a property is stored under in its page's tree entry.
+fn prop_key(name: &str) -> String {
+    format!("{PROP_PREFIX}{name}")
+}
+
+const PROP_PREFIX: &str = "prop:";
+
+fn read_props(meta: &LoroMap) -> Vec<Property> {
+    let mut out = Vec::new();
+    meta.for_each(|key, value| {
+        if let Some(name) = key.strip_prefix(PROP_PREFIX)
+            && let ValueOrContainer::Value(v) = value
+            && let Some(value) = decode_value(&v)
+        {
+            out.push(Property {
+                name: name.to_owned(),
+                value,
+            });
+        }
+    });
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out
 }
 
 /// Titles are one line, without the block marker.

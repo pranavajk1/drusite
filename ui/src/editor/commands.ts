@@ -22,6 +22,7 @@ import { type Plugin, type Command as PmCommand, type EditorState, TextSelection
 import type { BlockKind } from "../core/types";
 import { childrenEnd, isFolded } from "./blocks";
 import { attrsOf } from "./convert";
+import { defaultQueryJson } from "./query";
 import { type BlockAttrs, MAX_INDENT, blockType, schema } from "./schema";
 
 const LISTS = new Set<BlockKind["type"]>(["bulleted", "numbered", "todo"]);
@@ -307,6 +308,18 @@ export function markdownShortcuts(): Plugin {
         return tr.setSelection(TextSelection.create(tr.doc, at + 1));
       }),
       rule(/^!\s$/, () => ({ type: "callout", icon: "💡" })),
+      // `/filter` and a space makes a filter block, with a paragraph after it to carry on in.
+      new InputRule(/^\/filter\s$/, (state, _match, start, end) => {
+        const $start = state.doc.resolve(start);
+        if ($start.parentOffset !== 0 || $start.parent.content.size !== end - start) return null;
+        const pos = $start.before(1);
+        const block = state.doc.nodeAt(pos)!;
+        const tr = state.tr.delete(start, end);
+        tr.setNodeAttribute(pos, "kind", { type: "query", query: defaultQueryJson() });
+        const at = pos + tr.doc.nodeAt(pos)!.nodeSize;
+        tr.insert(at, blockType.create({ id: null, kind: { type: "paragraph" }, indent: attrsOf(block).indent }));
+        return tr.setSelection(TextSelection.create(tr.doc, at + 1));
+      }),
       rule(/^>\s$/, () => ({ type: "toggle" })),
     ],
   });

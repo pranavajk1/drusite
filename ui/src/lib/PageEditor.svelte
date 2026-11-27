@@ -4,7 +4,9 @@
   import { TextSelection } from "prosemirror-state";
 
   import { CoreError, type CoreClient } from "../core/client";
-  import type { PageId } from "../core/types";
+  import type { PageId, PageInfo, Settings } from "../core/types";
+  import JournalViews from "./JournalViews.svelte";
+  import Properties from "./Properties.svelte";
   import { focusEnd } from "../editor/commands";
   import { type Editor, createEditor } from "../editor/editor";
   import PhoneToolbar from "./PhoneToolbar.svelte";
@@ -13,12 +15,23 @@
     client,
     page,
     title,
+    info,
+    pages,
+    settings,
+    onday,
+    onselect,
     onopened,
     onerror,
   }: {
     client: CoreClient;
     page: PageId;
     title: string;
+    /** The page's entry in the page list: its kind and properties. */
+    info: PageInfo | null;
+    pages: PageInfo[];
+    settings: Settings;
+    onday: (date: string) => void;
+    onselect: (id: PageId) => void;
     onopened: () => void;
     onerror: (e: unknown) => void;
   } = $props();
@@ -158,6 +171,12 @@
     oninput={rename}
     onkeydown={titleKey}
   />
+  {#if info}
+    <Properties {client} page={info} {onerror} />
+  {/if}
+  {#if settings.journalParent === id}
+    <JournalViews {pages} weekStart={settings.weekStart} {onday} onselect={(p) => onselect(p.id)} />
+  {/if}
   {#if arriving}
     <p class="page-arriving">This page is still on its way from the server…</p>
   {/if}

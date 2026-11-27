@@ -10,7 +10,9 @@
 //!
 //! Positions are UTF-16 code units within one block's text, as in the browser.
 
-use drusite_model::{Block, BlockId, BlockKind, Mark, PageId};
+use drusite_model::{
+    Block, BlockId, BlockKind, Day, Mark, PageId, PageKind, PageQuery, Property, PropertyValue,
+};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -70,6 +72,60 @@ pub enum Command {
     CancelSignIn,
     /// Signs this device out of its server. Its notes stay on the device.
     SignOut,
+    /// Sets a page's property, or removes it (`value` none).
+    SetProperty {
+        page: PageId,
+        name: String,
+        value: Option<PropertyValue>,
+    },
+    /// The journal entry for `date` (the person's own day, as their device has it), made from
+    /// the template if there isn't one yet. Answered with [`Response::JournalDay`].
+    OpenJournalDay {
+        date: Day,
+    },
+    /// The pages a query matches. Answered with [`Response::Pages`].
+    QueryPages {
+        query: PageQuery,
+    },
+    /// The settings that sync with the account. Answered with [`Response::Settings`].
+    Settings,
+    /// Changes one setting. Answered with [`Response::Settings`].
+    SetSetting {
+        setting: Setting,
+    },
+}
+
+/// The settings that live in the workspace, so they sync with the account and a new device has
+/// them after signing in.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Settings {
+    /// The page new journal entries go under. Made on first use.
+    pub journal_parent: Option<PageId>,
+    /// The page new journal entries are copied from: its blocks, with `{{date}}`,
+    /// `{{title}}` and `{{weekday}}` filled in.
+    pub journal_template: Option<PageId>,
+    /// The first day of the week in calendars: 0 is Sunday, 1 Monday.
+    pub week_start: u8,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            journal_parent: None,
+            journal_template: None,
+            week_start: 1,
+        }
+    }
+}
+
+/// One setting's new value.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(tag = "type", content = "value", rename_all = "camelCase")]
+pub enum Setting {
+    JournalParent(Option<PageId>),
+    JournalTemplate(Option<PageId>),
+    WeekStart(u8),
 }
 
 /// One change to a page, as the editor makes it.
@@ -138,11 +194,29 @@ pub enum Edit {
     rename_all_fields = "camelCase"
 )]
 pub enum Response {
-    Pages { pages: Vec<PageInfo> },
-    PageCreated { page: PageInfo },
-    Opened { view: PageView },
-    Edited { outcome: EditOutcome },
-    Account { status: AccountStatus },
+    Pages {
+        pages: Vec<PageInfo>,
+    },
+    PageCreated {
+        page: PageInfo,
+    },
+    Opened {
+        view: PageView,
+    },
+    Edited {
+        outcome: EditOutcome,
+    },
+    Account {
+        status: AccountStatus,
+    },
+    /// The journal entry for a day; `created` when it was made just now.
+    JournalDay {
+        page: PageInfo,
+        created: bool,
+    },
+    Settings {
+        settings: Settings,
+    },
     Done,
 }
 
@@ -165,6 +239,8 @@ pub enum Event {
     PageReloaded { view: PageView, reason: String },
     /// The account or sync status changed.
     AccountChanged { status: AccountStatus },
+    /// The settings changed, here or on another device.
+    SettingsChanged { settings: Settings },
 }
 
 /// A page's place in the tree.
@@ -175,6 +251,9 @@ pub struct PageInfo {
     pub parent: Option<PageId>,
     pub title: String,
     pub children: Vec<PageId>,
+    pub kind: PageKind,
+    /// In name order.
+    pub properties: Vec<Property>,
 }
 
 /// An open page: everything the editor needs to show it.
@@ -290,6 +369,8 @@ pub enum ErrorCode {
     Unsupported,
     /// Signing in or out failed.
     Account,
+    /// A value the command can't use (an empty property name, a template that isn't a page).
+    Invalid,
     Internal,
 }
 
@@ -311,6 +392,7 @@ impl From<drusite_crdt::Error> for ApiError {
             E::OutOfRange { .. } | E::InsideCharacter(_) => ErrorCode::InvalidPosition,
             E::Cycle => ErrorCode::Cycle,
             E::Poisoned => ErrorCode::Reloaded,
+            E::Invalid(_) => ErrorCode::Invalid,
             _ => ErrorCode::Internal,
         };
         Self::new(code, err.to_string())

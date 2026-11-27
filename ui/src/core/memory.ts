@@ -3,6 +3,9 @@
 // An in-memory stand-in for the core, with the same commands and the same edit semantics, for
 // tests and for working on the UI in a plain browser (`npm run dev`). Nothing is saved.
 
+import { DATE } from "../journal/mood";
+import { runQuery } from "../journal/query";
+import { dayTitle } from "../journal/dates";
 import type { Transport } from "./client";
 import type {
   ApiError,
@@ -15,8 +18,11 @@ import type {
   Marks,
   PageId,
   PageInfo,
+  PageKind,
   PagePatch,
+  Property,
   Response,
+  Settings,
   Span,
 } from "./types";
 
@@ -40,6 +46,8 @@ interface MemPage {
   title: string;
   children: PageId[];
   blocks: MemBlock[];
+  kind: PageKind;
+  properties: Property[];
 }
 
 let counter = 0;
@@ -105,11 +113,73 @@ export class MemoryCore {
   private info(): PageInfo[] {
     const out: PageInfo[] = [];
     const walk = (p: MemPage) => {
-      out.push({ id: p.id, parent: p.parent, title: p.title, children: [...p.children] });
+      out.push({
+        id: p.id,
+        parent: p.parent,
+        title: p.title,
+        children: [...p.children],
+        kind: p.kind,
+        properties: [...p.properties].sort((a, b) => (a.name < b.name ? -1 : 1)),
+      });
       for (const c of p.children) walk(this.page(c));
     };
     for (const p of this.pages.filter((p) => p.parent === null)) walk(p);
     return out;
+  }
+
+  private settings: Settings = { journalParent: null, journalTemplate: null, weekStart: 1 };
+
+  private currentSettings(): Settings {
+    const exists = (id: PageId | null) => (id !== null && this.pages.some((p) => p.id === id) ? id : null);
+    return {
+      ...this.settings,
+      journalParent: exists(this.settings.journalParent),
+      journalTemplate: exists(this.settings.journalTemplate),
+    };
+  }
+
+  private workspaceChanged(): void {
+    this.emit({ type: "pagesChanged", pages: this.info() });
+    this.emit({ type: "settingsChanged", settings: this.currentSettings() });
+  }
+
+  private addPage(parent: PageId | null, title: string, kind: PageKind, properties: Property[]): MemPage {
+    const page: MemPage = {
+      id: newId(),
+      parent,
+      title,
+      children: [],
+      blocks: [{ id: newId(), kind: { type: "paragraph" }, indent: 0, text: "", marks: [] }],
+      kind,
+      properties,
+    };
+    if (parent !== null) this.page(parent).children.push(page.id);
+    this.pages.push(page);
+    return page;
+  }
+
+  private journalDay(date: string): { page: PageInfo; created: boolean } {
+    const existing = this.info().find(
+      (p) => p.kind === "journal" && p.properties.some((x) => x.name === DATE && x.value.type === "date" && x.value.value === date),
+    );
+    if (existing) return { page: existing, created: false };
+    let parent = this.currentSettings().journalParent;
+    if (parent === null) {
+      parent = this.addPage(null, "Journal", "page", []).id;
+      this.settings.journalParent = parent;
+    }
+    const page = this.addPage(parent, dayTitle(date), "journal", [{ name: DATE, value: { type: "date", value: date } }]);
+    const template = this.currentSettings().journalTemplate;
+    if (template !== null) {
+      const fill = (t: string) =>
+        t.replaceAll("{{date}}", date).replaceAll("{{title}}", dayTitle(date)).replaceAll("{{weekday}}", dayTitle(date).split(",")[0]!);
+      page.blocks = this.page(template).blocks.map((b) => {
+        const text = fill(b.text);
+        return { id: newId(), kind: b.kind, indent: b.indent, text, marks: text.split("").map((_, i) => b.marks[Math.min(i, b.marks.length - 1)] ?? {}) };
+      });
+    }
+    this.workspaceChanged();
+    return { page: this.info().find((p) => p.id === page.id)!, created: true };
   }
 
   private emit(event: Event): void {
@@ -146,6 +216,8 @@ export class MemoryCore {
           title: command.title,
           children: [],
           blocks: [{ id: newId(), kind: { type: "paragraph" }, indent: 0, text: "", marks: [] }],
+          kind: "page",
+          properties: [],
         };
         if (command.parent !== null) this.page(command.parent).children.push(id);
         this.pages.push(page);
@@ -213,6 +285,35 @@ export class MemoryCore {
       case "cancelSignIn":
       case "signOut":
         fail("unsupported", "Signing in needs the Drusite app; in a browser, notes aren't saved.");
+      case "setProperty": {
+        const page = this.page(command.page);
+        const name = command.name.trim();
+        if (name === "" || /[\u0000-\u001f]/.test(name)) fail("invalid", `not a property name: ${JSON.stringify(name)}`);
+        page.properties = page.properties.filter((p) => p.name !== name);
+        if (command.value) page.properties.push({ name, value: command.value });
+        this.workspaceChanged();
+        return { type: "done" };
+      }
+      case "openJournalDay":
+        return { type: "journalDay", ...this.journalDay(command.date) };
+      case "queryPages":
+        return { type: "pages", pages: runQuery(this.info(), command.query) };
+      case "settings":
+        return { type: "settings", settings: this.currentSettings() };
+      case "setSetting": {
+        const s = command.setting;
+        if (s.type === "weekStart") {
+          if (s.value < 0 || s.value > 6) fail("invalid", `week start ${s.value} isn't a weekday (0-6)`);
+          this.settings.weekStart = s.value;
+        } else {
+          const id = s.value ?? null;
+          if (id !== null) this.page(id);
+          if (s.type === "journalParent") this.settings.journalParent = id;
+          else this.settings.journalTemplate = id;
+        }
+        this.workspaceChanged();
+        return { type: "settings", settings: this.currentSettings() };
+      }
       case "ready":
         return { type: "done" };
       case "edit":

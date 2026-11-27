@@ -9,6 +9,7 @@ pub mod api;
 pub mod auth;
 #[cfg(feature = "sqlite")]
 mod engine;
+pub mod journal;
 pub mod key;
 #[cfg(feature = "sqlite")]
 pub mod store;
