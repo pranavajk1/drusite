@@ -39,9 +39,9 @@
   /** On desktops, the sidebar can be put away. */
   let collapsed = $state(localStorage.getItem("drusite.sidebar") === "collapsed");
   /**
-   * The tab bar steps aside on a touch screen while the editor has the focus (its formatting bar
-   * takes the bottom edge) or while the keyboard is up for some other field. Focus alone doesn't
-   * mean a keyboard: iOS doesn't open one for a field focused without a tap.
+   * The tab bar steps aside on a touch screen while the keyboard is up (the editor's formatting
+   * bar takes the bottom edge then). Focus alone doesn't mean a keyboard: iOS doesn't open one for
+   * a field focused without a tap.
    */
   let writing = $state(false);
   const touch = window.matchMedia?.("(pointer: coarse)").matches ?? false;
@@ -59,7 +59,7 @@
       const el = document.activeElement;
       const inEditor = !!el?.closest(".ProseMirror");
       const typing = !!el?.closest("input:not([type=checkbox]):not([type=radio]), textarea");
-      writing = inEditor || (typing && keyboardUp());
+      writing = (inEditor || typing) && keyboardUp();
     });
   }
   onMount(() => {

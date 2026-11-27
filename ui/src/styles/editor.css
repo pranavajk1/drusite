@@ -540,3 +540,8 @@
     margin-left: auto;
   }
 }
+
+/* No keyboard, no formatting bar: a field can have the focus with no keyboard up (iOS). */
+.phone-toolbar.away {
+  display: none;
+}

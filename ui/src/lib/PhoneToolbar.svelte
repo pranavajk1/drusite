@@ -16,12 +16,17 @@
   let { view }: { view: EditorView } = $props();
 
   let keyboard = $state(0);
+  /** The keyboard is up: it covers the window (iOS, Android 15+), or it shrank it (older Android). */
+  let up = $state(false);
+  let tallest = window.innerHeight;
 
   onMount(() => {
     const vv = window.visualViewport;
     if (!vv) return;
     const place = () => {
       keyboard = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+      tallest = Math.max(tallest, window.innerHeight);
+      up = keyboard > 120 || window.innerHeight < tallest - 120;
       document.documentElement.style.setProperty("--keyboard", `${keyboard}px`);
       // Where the keyboard covers the window rather than shrinking it (Android 15 and later draw
       // edge to edge), the editor has to keep the cursor above the keyboard and this bar itself.
@@ -68,7 +73,7 @@
   }
 </script>
 
-<div class="phone-toolbar" class:keyboard-up={keyboard > 0} role="toolbar" aria-label="Formatting">
+<div class="phone-toolbar" class:keyboard-up={keyboard > 0} class:away={!up} role="toolbar" aria-label="Formatting">
   <button aria-label="Add a block" onpointerdown={blocks}><Icon name="plus" size={20} /></button>
   <span class="tb-sep"></span>
   <button aria-label="Heading" onpointerdown={run(toolbar.heading)}><Icon name="heading" size={20} /></button>
