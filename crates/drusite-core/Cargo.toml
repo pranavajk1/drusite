@@ -11,8 +11,9 @@ publish.workspace = true
 
 [features]
 default = ["sqlite"]
-# The encrypted SQLite store. Off for the browser build, which stores documents in OPFS.
-sqlite = ["dep:rusqlite"]
+# The encrypted SQLite store and the in-memory search index. Off for the browser build, which
+# stores documents in OPFS.
+sqlite = ["dep:rusqlite", "dep:tantivy"]
 # The WebSocket sync driver, for native apps and tests.
 net = ["sqlite", "drusite-proto/zstd", "dep:tokio", "dep:tokio-tungstenite", "dep:futures-util", "dep:http", "dep:ureq", "dep:rustls"]
 
@@ -34,6 +35,7 @@ tokio-tungstenite = { workspace = true, optional = true, features = ["connect", 
 # with Mozilla's roots, because it cross-compiles to phones without extra tooling.
 ureq = { workspace = true, optional = true, features = ["rustls", "json"] }
 rustls = { workspace = true, optional = true, features = ["ring", "std"] }
+tantivy = { workspace = true, optional = true }
 uuid.workspace = true
 getrandom.workspace = true
 serde.workspace = true

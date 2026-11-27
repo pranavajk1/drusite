@@ -10,6 +10,7 @@
 //!
 //! Positions are UTF-16 code units within one block's text, as in the browser.
 
+pub use drusite_model::search::SnippetPart;
 use drusite_model::{
     Block, BlockId, BlockKind, Day, Mark, PageId, PageKind, PageQuery, Property, PropertyValue,
 };
@@ -93,6 +94,22 @@ pub enum Command {
     SetSetting {
         setting: Setting,
     },
+    /// Full-text search of this device's pages: every word must match, the last as a prefix.
+    /// Answered with [`Response::SearchResults`], best first, one hit per page.
+    Search {
+        query: String,
+        limit: u32,
+    },
+}
+
+/// A page that matched a search, at the block that matched best (none when only the title did).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchHit {
+    pub page: PageId,
+    pub title: String,
+    pub block: Option<BlockId>,
+    pub snippet: Vec<SnippetPart>,
 }
 
 /// The settings that live in the workspace, so they sync with the account and a new device has
@@ -216,6 +233,9 @@ pub enum Response {
     },
     Settings {
         settings: Settings,
+    },
+    SearchResults {
+        hits: Vec<SearchHit>,
     },
     Done,
 }

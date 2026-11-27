@@ -433,6 +433,66 @@ async fn open_sealed(
     Ok(key.decrypt(&context(doc, seq, snapshot), sealed)?)
 }
 
+/// A stored document, opened: its snapshot (if any) and every update after it, in order, ready
+/// for `Page::load_all` or `Workspace::load_all`.
+#[derive(Debug)]
+pub struct OpenedDoc {
+    pub workspace: Uuid,
+    /// `"page"` or `"workspace"`.
+    pub kind: String,
+    pub parts: Vec<Vec<u8>>,
+}
+
+impl OpenedDoc {
+    pub fn parts(&self) -> Vec<&[u8]> {
+        self.parts.iter().map(Vec::as_slice).collect()
+    }
+}
+
+/// Opens document `doc` through `conn`, whose row-level security decides whether it may.
+pub async fn load(
+    state: &AppState,
+    conn: &mut PgConnection,
+    doc: Uuid,
+) -> Result<Option<OpenedDoc>, DocError> {
+    let row: Option<(Uuid, String, i64)> =
+        sqlx::query_as("SELECT workspace_id, kind, head_seq FROM documents WHERE id = $1")
+            .bind(doc)
+            .fetch_optional(&mut *conn)
+            .await?;
+    let Some((workspace, kind, head)) = row else {
+        return Ok(None);
+    };
+    let mut parts = Vec::new();
+    let snapshot: Option<(i64, Vec<u8>)> =
+        sqlx::query_as("SELECT through_seq, data FROM document_snapshots WHERE doc_id = $1")
+            .bind(doc)
+            .fetch_optional(&mut *conn)
+            .await?;
+    let mut after = 0;
+    if let Some((through, sealed)) = snapshot {
+        parts.push(open_sealed(state, conn, workspace, doc, through, true, &sealed).await?);
+        after = through;
+    }
+    let rows: Vec<(i64, Vec<u8>)> = sqlx::query_as(
+        "SELECT seq, data FROM document_updates WHERE doc_id = $1 AND seq > $2 AND seq <= $3
+         ORDER BY seq",
+    )
+    .bind(doc)
+    .bind(after)
+    .bind(head)
+    .fetch_all(&mut *conn)
+    .await?;
+    for (seq, sealed) in rows {
+        parts.push(open_sealed(state, conn, workspace, doc, seq, false, &sealed).await?);
+    }
+    Ok(Some(OpenedDoc {
+        workspace,
+        kind,
+        parts,
+    }))
+}
+
 /// The workspaces `user` belongs to, and their role in each.
 pub async fn workspaces(state: &AppState, user: UserId) -> Result<Vec<(Uuid, String)>, DocError> {
     let mut tx = state.db().as_user(user).await?;

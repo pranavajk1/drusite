@@ -201,6 +201,12 @@ async fn serve(config: Config) -> anyhow::Result<()> {
     let state = AppState::new(config, db, blobs, Keyring::new(source), policy, auth);
     let _sweeper = drusite_server::auth::spawn_sweeper(state.clone());
     let _sync = drusite_server::sync::Hub::spawn_workers(&state);
+    match drusite_server::search::backfill(&state).await {
+        Ok(0) => {}
+        Ok(n) => tracing::info!(documents = n, "queued for search indexing"),
+        Err(error) => tracing::warn!(%error, "queueing documents for search indexing"),
+    }
+    let _indexer = drusite_server::search::spawn_indexer(state.clone());
     let listener = tokio::net::TcpListener::bind(listen)
         .await
         .with_context(|| format!("listening on {listen}"))?;

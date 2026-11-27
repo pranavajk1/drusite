@@ -20,9 +20,10 @@ use crate::config::Config;
 use crate::db::Db;
 use crate::keys::Keyring;
 use crate::policy::Policy;
+use crate::search::Embedder;
 use crate::storage::BlobStore;
 use crate::sync::Hub;
-use crate::{auth, health, sync, telemetry};
+use crate::{auth, health, search, sync, telemetry};
 
 #[derive(Debug)]
 struct Inner {
@@ -33,6 +34,7 @@ struct Inner {
     policy: Policy,
     auth: AuthState,
     hub: Hub,
+    embedder: Option<Embedder>,
 }
 
 /// Everything a request handler needs. Cheap to clone.
@@ -48,7 +50,15 @@ impl AppState {
         policy: Policy,
         auth: AuthState,
     ) -> Self {
+        let embedder = match Embedder::from_config(&config) {
+            Ok(e) => e,
+            Err(error) => {
+                tracing::error!(%error, "the embedding model can't be used; searching words only");
+                None
+            }
+        };
         Self(Arc::new(Inner {
+            embedder,
             config,
             db,
             blobs,
@@ -90,6 +100,11 @@ impl AppState {
     pub fn policy(&self) -> &Policy {
         &self.0.policy
     }
+
+    /// The embedding model for semantic search, when one is configured.
+    pub fn embedder(&self) -> Option<&Embedder> {
+        self.0.embedder.as_ref()
+    }
 }
 
 const REQUEST_ID: HeaderName = HeaderName::from_static("x-request-id");
@@ -100,6 +115,7 @@ pub fn router(state: AppState) -> Router {
     let requests = Router::new()
         .merge(health::routes())
         .merge(auth::routes(&state))
+        .merge(search::routes())
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
             timeout,

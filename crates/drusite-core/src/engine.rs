@@ -34,6 +34,7 @@ pub struct Core {
     pub(crate) sync: Option<crate::sync::Session>,
     /// Called after every local change, so a sync driver knows to push.
     pub(crate) on_change: Option<Box<dyn Fn() + Send>>,
+    pub(crate) search: crate::search::Search,
 }
 
 pub(crate) struct OpenPage {
@@ -76,14 +77,25 @@ impl Core {
             events,
             sync: None,
             on_change: None,
+            search: crate::search::Search::default(),
         })
     }
 
     /// Tells the sync driver, if any, that `doc` changed locally.
     pub(crate) fn changed(&mut self, doc: uuid::Uuid) {
+        self.search_changed(doc);
         self.mark_changed(doc);
         if let Some(notify) = &self.on_change {
             notify();
+        }
+    }
+
+    /// Tells the search index that `doc` changed.
+    pub(crate) fn search_changed(&mut self, doc: uuid::Uuid) {
+        if doc == *self.workspace.id().as_uuid() {
+            self.search.workspace_changed();
+        } else {
+            self.search.page_changed(PageId::from_uuid(doc));
         }
     }
 
@@ -165,6 +177,9 @@ impl Core {
             }),
             Command::Settings => Ok(Response::Settings {
                 settings: self.settings()?,
+            }),
+            Command::Search { query, limit } => Ok(Response::SearchResults {
+                hits: self.search(&query, limit.min(100))?,
             }),
             Command::SetSetting { setting } => {
                 self.set_setting(setting)?;
