@@ -183,7 +183,7 @@ fn a_property_removed_while_another_device_fills_it_stays_removed() {
     for ws in [&a, &b] {
         let s = schema(ws, db);
         assert!(s.property("pts").is_none());
-        assert!(ws.row(row, &s).unwrap().values.get("pts").is_none());
+        assert!(!ws.row(row, &s).unwrap().values.contains_key("pts"));
     }
 }
 

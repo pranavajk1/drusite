@@ -255,10 +255,12 @@ impl Core {
             drusite_formula::check(&expr, &compute::Types(&with))
                 .map_err(|e| invalid(e.message))?;
         }
-        if prop.kind.has_options() && prop.options.is_empty() && old.is_none() {
-            if matches!(prop.kind, PropertyKind::Status) {
-                prop.options = default_status_options();
-            }
+        if prop.kind.has_options()
+            && prop.options.is_empty()
+            && old.is_none()
+            && matches!(prop.kind, PropertyKind::Status)
+        {
+            prop.options = default_status_options();
         }
         if let PropertyKind::Relation {
             database: other,

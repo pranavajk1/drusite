@@ -77,6 +77,9 @@ pub struct ViewResult {
     pub total: u32,
 }
 
+/// For each row, the rows that link to it through one relation.
+type Links = HashMap<PageId, Vec<PageId>>;
+
 /// One database, loaded for a computation.
 pub struct Loaded {
     schema: Schema,
@@ -122,7 +125,7 @@ pub struct Db<'a> {
     memo: RefCell<HashMap<(PageId, String), Result<F, String>>>,
     busy: RefCell<HashSet<(PageId, String)>>,
     /// `twin` index: (database, property) → row → the rows that link to it.
-    back: RefCell<HashMap<(PageId, String), Rc<HashMap<PageId, Vec<PageId>>>>>,
+    back: RefCell<HashMap<(PageId, String), Rc<Links>>>,
     pub now: DateTime,
     pub utc_offset: i32,
 }
@@ -819,7 +822,7 @@ pub fn roll(function: RollupFunction, values: &[F]) -> F {
             let mut v = nums.clone();
             v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
             let m = v.len() / 2;
-            F::Number(if v.len() % 2 == 0 {
+            F::Number(if v.len().is_multiple_of(2) {
                 f64::midpoint(v[m - 1], v[m])
             } else {
                 v[m]

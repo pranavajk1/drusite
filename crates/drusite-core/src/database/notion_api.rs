@@ -290,7 +290,7 @@ fn person(u: &J) -> Option<Person> {
 
 fn ms(s: Option<&str>) -> Option<i64> {
     let t = time::OffsetDateTime::parse(s?, &time::format_description::well_known::Rfc3339).ok()?;
-    Some(i64::try_from(t.unix_timestamp_nanos() / 1_000_000).ok()?)
+    i64::try_from(t.unix_timestamp_nanos() / 1_000_000).ok()
 }
 
 fn id_of(obj: &J) -> String {
@@ -1017,12 +1017,12 @@ impl Core {
                     if !def.kind.is_stored() {
                         continue;
                     }
-                    if let Some(v) = api_value(p, def, &ids) {
-                        if let Err(e) = self.workspace.set_value(row, ours, Some(&v)) {
-                            report
-                                .unmapped
-                                .push(format!("{} › {} › {name}: {e}", d.title, r.title));
-                        }
+                    if let Some(v) = api_value(p, def, &ids)
+                        && let Err(e) = self.workspace.set_value(row, ours, Some(&v))
+                    {
+                        report
+                            .unmapped
+                            .push(format!("{} › {} › {name}: {e}", d.title, r.title));
                     }
                 }
             }
@@ -1231,23 +1231,6 @@ pub mod token {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn formula_references_become_prop_calls() {
-        let names = HashMap::from([("ab%3Ac".replace("%3A", ":"), "Points".to_owned())]);
-        assert_eq!(
-            formula_text(
-                "{{notion:block_property:ab%3Ac:00000000-0000-0000-0000-000000000000:8994905a}} * 2",
-                &names
-            ),
-            "prop(\"Points\") * 2"
-        );
-    }
-}
-
 /// Whether `command` is one of the Notion API commands, which [`run`] carries out.
 pub fn is_notion_api(command: &crate::api::Command) -> bool {
     use crate::api::Command as C;
@@ -1329,5 +1312,22 @@ pub async fn run(
             .map_err(|e| ApiError::new(ErrorCode::Internal, e.to_string()))?
         }
         _ => Err(ApiError::new(ErrorCode::Internal, "not a Notion command")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn formula_references_become_prop_calls() {
+        let names = HashMap::from([("ab%3Ac".replace("%3A", ":"), "Points".to_owned())]);
+        assert_eq!(
+            formula_text(
+                "{{notion:block_property:ab%3Ac:00000000-0000-0000-0000-000000000000:8994905a}} * 2",
+                &names
+            ),
+            "prop(\"Points\") * 2"
+        );
     }
 }
