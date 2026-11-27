@@ -562,3 +562,78 @@ async fn an_agent_connects_reads_writes_and_the_person_undoes_it() {
         .await;
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_token_from_the_account_page_works_until_disconnected() {
+    let Some(server) = common::serve(&[
+        ("DRUSITE__AUTH__PASSWORD__ENABLED", "true"),
+        ("DRUSITE__AUTH__SELF_SIGNUP", "true"),
+    ])
+    .await
+    else {
+        return;
+    };
+    let base = server.url.clone();
+    let mut browser = Browser::new(&base);
+    let (status, _) = browser
+        .post(
+            "/api/v1/auth/password/signup",
+            json!({ "email": "ops@example.com", "password": "correct horse battery" }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, body) = browser
+        .post(
+            "/api/v1/account/agent-tokens",
+            json!({ "name": "Hermes", "write": true, "days": 400 }),
+        )
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "longer than allowed: {body}"
+    );
+    let (status, made) = browser
+        .post(
+            "/api/v1/account/agent-tokens",
+            json!({ "name": "Hermes", "write": true, "days": 30 }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{made}");
+    assert_eq!(made["mcpUrl"], base.join("mcp").unwrap().as_str());
+    let agent = Mcp {
+        url: base.join("mcp").unwrap(),
+        token: made["token"].as_str().unwrap().to_owned(),
+        http: reqwest::Client::new(),
+    };
+    agent.initialize().await;
+    let (text, err) = agent.tool("list_workspaces", json!({})).await;
+    assert!(!err, "{text}");
+
+    let response = browser
+        .get(&base.join("api/v1/account/devices").unwrap())
+        .await;
+    let list: Value = response.json().await.unwrap();
+    let hermes = list
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["agent"] == true)
+        .unwrap();
+    assert_eq!(hermes["name"], "Hermes");
+    assert_eq!(hermes["access"]["write"], true);
+    assert_eq!(hermes["access"]["journal"], false);
+
+    let status = browser
+        .delete(&format!(
+            "/api/v1/account/devices/{}",
+            hermes["id"].as_str().unwrap()
+        ))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let response = agent
+        .post(&json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }))
+        .await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}

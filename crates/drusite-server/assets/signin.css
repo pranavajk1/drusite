@@ -36,6 +36,6 @@ code.secret { word-break: break-all; font-size: .85rem; }
 /* The consent page for agents. */
 .consent fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 0 0 1rem; padding: .5rem .9rem .75rem; }
 .consent legend { font-weight: 600; padding: 0 .25rem; }
-.consent .choice { display: flex; gap: .5rem; align-items: baseline; margin: .4rem 0; font-size: 1rem; }
-.consent .choice input { padding: 0; }
+.choice { display: flex; gap: .5rem; align-items: baseline; margin: .4rem 0; font-size: 1rem; }
+.choice input { padding: 0; }
 .consent .actions { display: flex; justify-content: flex-end; gap: .5rem; }

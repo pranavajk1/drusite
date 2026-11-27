@@ -123,6 +123,51 @@ pub async fn create_grant(
     Ok((GrantId(id), tokens))
 }
 
+/// A token for an agent that can't sign in with a browser (one running on a server): a
+/// grant for the MCP endpoint with one long-lived bearer token and no refresh token, made on
+/// the account page and shown once. It lasts `days`, or until the person disconnects it.
+pub async fn create_agent_token(
+    state: &AppState,
+    user: UserId,
+    name: &str,
+    access: &drusite_mcp::Access,
+    days: u32,
+    method: Method,
+) -> Result<(GrantId, String, OffsetDateTime), AuthError> {
+    let id = Uuid::now_v7();
+    let until = OffsetDateTime::now_utc() + Duration::days(i64::from(days));
+    let scope = match (access.write, access.journal) {
+        (false, _) => "read",
+        (true, false) => "read write",
+        (true, true) => "read write journal",
+    };
+    let token = secret::generate(Kind::Access)?;
+    let mut tx = state.db().pool().begin().await?;
+    sqlx::query(
+        "INSERT INTO oauth_grants (id, user_id, client_id, scope, dpop_jkt, auth_method,
+             device_name, idle_expires_at, absolute_expires_at, resource, access, client_name)
+         VALUES ($1, $2, 'drusite-agent-token', $3, NULL, $4, '', $5, $5, $6, $7, $8)",
+    )
+    .bind(id)
+    .bind(user.as_uuid())
+    .bind(scope)
+    .bind(method.as_str())
+    .bind(until)
+    .bind(crate::auth::oauth::mcp_resource(state))
+    .bind(serde_json::to_value(access)?)
+    .bind(name.chars().take(100).collect::<String>())
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("INSERT INTO access_tokens (token_hash, grant_id, expires_at) VALUES ($1, $2, $3)")
+        .bind(hashed(Kind::Access, &token)?)
+        .bind(id)
+        .bind(until)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok((GrantId(id), token, until))
+}
+
 /// How long after a refresh the device may retry it with the same refresh token.
 const REFRESH_RETRY_GRACE: Duration = Duration::seconds(60);
 

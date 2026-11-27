@@ -30,7 +30,8 @@ pub(super) fn routes(state: &AppState) -> Router<AppState> {
         .route("/", get(me))
         .route("/logout", post(logout))
         .route("/devices", get(devices))
-        .route("/devices/{id}", delete(sign_out_device));
+        .route("/devices/{id}", delete(sign_out_device))
+        .route("/agent-tokens", post(make_agent_token));
     let auth = &state.config().auth;
     if auth.password.enabled {
         router = router
@@ -107,6 +108,11 @@ struct Device {
     signed_in_with: String,
     created_at: String,
     last_used_at: String,
+    /// An agent (MCP client), not one of the apps.
+    agent: bool,
+    /// For an agent: what it may do.
+    access: Option<drusite_mcp::Access>,
+    expires_at: String,
 }
 
 fn rfc3339(t: OffsetDateTime) -> String {
@@ -119,8 +125,21 @@ async fn devices(
     headers: HeaderMap,
 ) -> AuthResult<Json<Vec<Device>>> {
     let browser = session::require(&state, &headers).await?;
-    let rows: Vec<(Uuid, String, String, OffsetDateTime, OffsetDateTime)> = sqlx::query_as(
-        "SELECT id, device_name, auth_method, created_at, last_used_at FROM oauth_grants
+    type Row = (
+        Uuid,
+        String,
+        String,
+        OffsetDateTime,
+        OffsetDateTime,
+        Option<String>,
+        Option<serde_json::Value>,
+        String,
+        OffsetDateTime,
+    );
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT id, device_name, auth_method, created_at, last_used_at, resource, access,
+                client_name, least(idle_expires_at, absolute_expires_at)
+         FROM oauth_grants
          WHERE user_id = $1 AND revoked_at IS NULL
            AND idle_expires_at > now() AND absolute_expires_at > now()
          ORDER BY last_used_at DESC",
@@ -130,13 +149,18 @@ async fn devices(
     .await?;
     Ok(Json(
         rows.into_iter()
-            .map(|(id, name, method, created, used)| Device {
-                id,
-                name,
-                signed_in_with: method,
-                created_at: rfc3339(created),
-                last_used_at: rfc3339(used),
-            })
+            .map(
+                |(id, name, method, created, used, resource, access, client, expires)| Device {
+                    id,
+                    name: if resource.is_some() { client } else { name },
+                    signed_in_with: method,
+                    created_at: rfc3339(created),
+                    last_used_at: rfc3339(used),
+                    agent: resource.is_some(),
+                    access: access.and_then(|a| serde_json::from_value(a).ok()),
+                    expires_at: rfc3339(expires),
+                },
+            )
             .collect(),
     ))
 }
@@ -259,4 +283,82 @@ async fn totp_confirm(
     Ok(Json(
         serde_json::json!({ "status": "signed_in", "next": "/account" }),
     ))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentTokenBody {
+    name: String,
+    #[serde(default)]
+    write: bool,
+    #[serde(default)]
+    journal: bool,
+    /// Leave out for every workspace the account is in now.
+    workspaces: Option<Vec<Uuid>>,
+    days: u32,
+}
+
+/// `POST /api/v1/account/agent-tokens`: a token for an agent that can't sign in with a
+/// browser. Shown once.
+async fn make_agent_token(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<AgentTokenBody>,
+) -> AuthResult<Json<serde_json::Value>> {
+    let browser = session::require(&state, &headers).await?;
+    let agents = &state.config().agents;
+    if !agents.enabled {
+        return Err(AuthError::bad(
+            "agents_off",
+            "agents can't connect to this server",
+        ));
+    }
+    let name = body.name.trim();
+    if name.is_empty() || name.chars().count() > 100 {
+        return Err(AuthError::bad(
+            "bad_name",
+            "give the agent a name of up to 100 characters",
+        ));
+    }
+    if body.days == 0 || body.days > agents.max_token_days {
+        return Err(AuthError::BadRequest(
+            "bad_days",
+            format!("a token lasts from 1 to {} days", agents.max_token_days),
+        ));
+    }
+    let theirs: Vec<Uuid> = crate::sync::store::workspaces(&state, browser.user)
+        .await
+        .map_err(|e| AuthError::internal(anyhow::anyhow!("{e}")))?
+        .into_iter()
+        .map(|(w, _)| w)
+        .collect();
+    let chosen: Vec<Uuid> = match body.workspaces {
+        Some(list) => list.into_iter().filter(|w| theirs.contains(w)).collect(),
+        None => theirs,
+    };
+    let access = drusite_mcp::Access {
+        write: body.write,
+        journal: body.write && body.journal,
+        workspaces: Some(
+            chosen
+                .into_iter()
+                .map(drusite_model::WorkspaceId::from_uuid)
+                .collect(),
+        ),
+    };
+    let (grant, token, until) = tokens::create_agent_token(
+        &state,
+        browser.user,
+        name,
+        &access,
+        body.days,
+        browser.method,
+    )
+    .await?;
+    tracing::info!(grant = %grant.0, user = %browser.user, "agent token made");
+    Ok(Json(serde_json::json!({
+        "token": token,
+        "mcpUrl": crate::auth::oauth::mcp_resource(&state),
+        "expiresAt": rfc3339(until),
+    })))
 }
