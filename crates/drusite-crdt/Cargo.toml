@@ -12,6 +12,8 @@ publish.workspace = true
 [dependencies]
 drusite-model.workspace = true
 loro.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 similar.workspace = true
 thiserror.workspace = true
 
