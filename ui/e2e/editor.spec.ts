@@ -209,3 +209,35 @@ test("Tab and Shift-Tab indent and outdent, one level past the block before at m
   // Tab keeps the focus in the editor.
   await expect(page.locator(".editor")).toBeFocused();
 });
+
+test("the slash menu turns an empty block into another kind, and filters as you type", async ({ page }) => {
+  await page.keyboard.type("/");
+  const menu = page.getByRole("listbox", { name: "Blocks" });
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("option")).toHaveCount(14);
+  await page.keyboard.type("todo");
+  await expect(menu.getByRole("option")).toHaveText(["To-do list[]"]);
+  await page.keyboard.press("Enter");
+  await expect(menu).toBeHidden();
+  await page.keyboard.type("Buy milk");
+  await expectBlocks(page, [{ kind: { type: "todo", checked: false }, text: "Buy milk" }]);
+});
+
+test("on a block with text, the slash menu's choice goes in a new block below", async ({ page }) => {
+  await page.keyboard.type("Intro /");
+  const menu = page.getByRole("listbox", { name: "Blocks" });
+  await menu.getByRole("option", { name: "Heading 2" }).click();
+  await page.keyboard.type("Next");
+  await expectBlocks(page, [
+    { kind: paragraph, text: "Intro " },
+    { kind: { type: "heading", level: "h2" }, text: "Next" },
+  ]);
+});
+
+test("Escape closes the slash menu and leaves the slash as text", async ({ page }) => {
+  await page.keyboard.type("/");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("listbox", { name: "Blocks" })).toBeHidden();
+  await page.keyboard.type("x");
+  await expectBlocks(page, [{ kind: paragraph, text: "/x" }]);
+});

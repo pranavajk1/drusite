@@ -128,11 +128,19 @@ class MenuView {
     // Keep the editor's focus and selection while the menu is used with a pointer.
     this.dom.addEventListener("mousedown", (e) => e.preventDefault());
     document.body.append(this.dom);
+    // Only while the editor has the focus: not over a dialog, and not for a `/` another device typed.
+    this.onFocus = () => this.update(this.view);
+    this.onBlur = () => (this.dom.hidden = true);
+    view.dom.addEventListener("focus", this.onFocus);
+    view.dom.addEventListener("blur", this.onBlur);
   }
+
+  private onFocus: () => void;
+  private onBlur: () => void;
 
   update(view: EditorView) {
     const s = key.getState(view.state)!;
-    if (s.from === null) {
+    if (s.from === null || !view.hasFocus()) {
       this.dom.hidden = true;
       return;
     }
@@ -194,6 +202,8 @@ class MenuView {
   }
 
   destroy() {
+    this.view.dom.removeEventListener("focus", this.onFocus);
+    this.view.dom.removeEventListener("blur", this.onBlur);
     this.dom.remove();
   }
 }
@@ -224,7 +234,7 @@ export function slashMenu(): Plugin<SlashState> {
     props: {
       handleKeyDown(view, e) {
         const s = key.getState(view.state)!;
-        if (s.from === null) return false;
+        if (s.from === null || !view.hasFocus()) return false;
         const n = matches(s.query).length;
         if (n === 0) return false;
         const set = (index: number) => view.dispatch(view.state.tr.setMeta(key, { ...s, index }));
