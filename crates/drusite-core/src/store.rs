@@ -29,7 +29,7 @@ use crate::{Error, Result};
 pub const STORE_FILE: &str = "workspace.drusite";
 
 /// The layout of the database itself (not of the documents in it).
-const STORE_SCHEMA: i32 = 4;
+const STORE_SCHEMA: i32 = 5;
 
 /// Compact a document after this many logged updates…
 pub const COMPACT_AFTER_UPDATES: u64 = 500;
@@ -50,6 +50,24 @@ impl DocKind {
             Self::Page => "page",
         }
     }
+}
+
+/// What the Markdown bridge last wrote for a page.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BridgeFile {
+    pub page: String,
+    /// Relative to the folder, with `/` between parts.
+    pub path: String,
+    /// The page's version the file was written from (a Loro version vector).
+    pub version: Vec<u8>,
+    /// BLAKE3 of the file's bytes as written.
+    pub hash: String,
+    /// BLAKE3 of the file's path and frontmatter, to notice a rename or a property change.
+    pub meta: String,
+    /// The file's modification time (Unix nanoseconds) and size when written, to skip reading
+    /// files nobody touched.
+    pub mtime: i64,
+    pub size: i64,
 }
 
 /// A stored document, ready to load: its newest snapshot and the updates after it.
@@ -187,6 +205,28 @@ impl Store {
                      uploaded INTEGER NOT NULL DEFAULT 0
                  ) STRICT;
                  PRAGMA user_version = 4;",
+            )?;
+            tx.commit()?;
+        }
+        if version < 5 {
+            // The Markdown bridge, on this device only: its folder, and for each page the file
+            // it was last written to, from which version, and what the file held then.
+            let tx = self.conn.transaction()?;
+            tx.execute_batch(
+                "CREATE TABLE bridge (
+                     id     INTEGER PRIMARY KEY CHECK (id = 1),
+                     folder TEXT NOT NULL
+                 ) STRICT;
+                 CREATE TABLE bridge_files (
+                     page    TEXT PRIMARY KEY,
+                     path    TEXT NOT NULL UNIQUE,
+                     version BLOB NOT NULL,
+                     hash    TEXT NOT NULL,
+                     meta    TEXT NOT NULL,
+                     mtime   INTEGER NOT NULL,
+                     size    INTEGER NOT NULL
+                 ) STRICT;
+                 PRAGMA user_version = 5;",
             )?;
             tx.commit()?;
         }
@@ -466,6 +506,91 @@ impl Store {
         self.conn
             .execute("UPDATE blobs SET uploaded = 1 WHERE id = ?1", [id])?;
         Ok(())
+    }
+
+    // ---- The Markdown bridge ----
+
+    pub fn bridge_folder(&self) -> Result<Option<String>> {
+        Ok(self
+            .conn
+            .query_row("SELECT folder FROM bridge WHERE id = 1", [], |r| r.get(0))
+            .optional()?)
+    }
+
+    /// Sets the bridge's folder (or turns it off), forgetting every file of the old one.
+    pub fn set_bridge_folder(&mut self, folder: Option<&str>) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        tx.execute("DELETE FROM bridge_files", [])?;
+        match folder {
+            Some(f) => tx.execute(
+                "INSERT INTO bridge (id, folder) VALUES (1, ?1)
+                 ON CONFLICT (id) DO UPDATE SET folder = excluded.folder",
+                [f],
+            )?,
+            None => tx.execute("DELETE FROM bridge", [])?,
+        };
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn bridge_files(&self) -> Result<Vec<BridgeFile>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT page, path, version, hash, meta, mtime, size FROM bridge_files")?;
+        let rows = stmt.query_map([], |r| {
+            Ok(BridgeFile {
+                page: r.get(0)?,
+                path: r.get(1)?,
+                version: r.get(2)?,
+                hash: r.get(3)?,
+                meta: r.get(4)?,
+                mtime: r.get(5)?,
+                size: r.get(6)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<_, _>>()?)
+    }
+
+    pub fn put_bridge_file(&mut self, f: &BridgeFile) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        // A path belongs to one page: another that had it has moved on.
+        tx.execute(
+            "DELETE FROM bridge_files WHERE path = ?1 AND page <> ?2",
+            params![f.path, f.page],
+        )?;
+        tx.execute(
+            "INSERT INTO bridge_files (page, path, version, hash, meta, mtime, size)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT (page) DO UPDATE SET path = excluded.path, version = excluded.version,
+                 hash = excluded.hash, meta = excluded.meta, mtime = excluded.mtime,
+                 size = excluded.size",
+            params![f.page, f.path, f.version, f.hash, f.meta, f.mtime, f.size],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn delete_bridge_file(&mut self, page: &str) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM bridge_files WHERE page = ?1", [page])?;
+        Ok(())
+    }
+
+    /// The attachment whose ID starts with `prefix`, if exactly one does.
+    pub fn blob_by_prefix(&self, prefix: &str) -> Result<Option<String>> {
+        if prefix.is_empty() || !prefix.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Ok(None);
+        }
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id FROM blobs WHERE id LIKE ?1 || '%' LIMIT 2")?;
+        let ids: Vec<String> = stmt
+            .query_map([prefix], |r| r.get(0))?
+            .collect::<std::result::Result<_, _>>()?;
+        Ok(match ids.as_slice() {
+            [one] => Some(one.clone()),
+            _ => None,
+        })
     }
 
     // ---- Drusite documents on top of the raw log ----

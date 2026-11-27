@@ -4,6 +4,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { open } from "@tauri-apps/plugin-dialog";
 
 import type { Transport } from "./client";
 import type { Command, Event, Response } from "./types";
@@ -14,6 +15,11 @@ const EVENT = "drusite://event";
 export const tauriTransport: Transport = {
   call(command: Command): Promise<Response> {
     return invoke<Response>("core", { command });
+  },
+
+  async pickFolder(): Promise<string | null> {
+    const folder = await open({ directory: true, title: "Choose the folder for your pages" });
+    return typeof folder === "string" ? folder : null;
   },
 
   subscribe(handler: (event: Event) => void): () => void {

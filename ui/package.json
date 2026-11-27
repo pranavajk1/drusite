@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@tauri-apps/api": "2.12.5",
+    "@tauri-apps/plugin-dialog": "2.8.4",
     "prosemirror-commands": "1.7.2",
     "prosemirror-history": "1.5.2",
     "prosemirror-inputrules": "1.7.0",

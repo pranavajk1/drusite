@@ -14,6 +14,8 @@ default = ["sqlite"]
 # The encrypted SQLite store and the in-memory search index. Off for the browser build, which
 # stores documents in OPFS.
 sqlite = ["dep:rusqlite", "dep:tantivy"]
+# The Markdown bridge's folder watcher, for desktops.
+watch = ["sqlite", "dep:notify", "dep:notify-debouncer-full"]
 # The WebSocket sync driver, for native apps and tests.
 net = ["sqlite", "drusite-proto/zstd", "dep:tokio", "dep:tokio-tungstenite", "dep:futures-util", "dep:http", "dep:ureq", "dep:rustls"]
 
@@ -25,6 +27,8 @@ sha2.workspace = true
 url.workspace = true
 drusite-crdt.workspace = true
 drusite-model.workspace = true
+drusite-markdown.workspace = true
+similar.workspace = true
 # Compressed frames only where there is a network driver: zstd is C, and the browser build
 # reads and writes plain frames.
 drusite-proto = { workspace = true, default-features = false }
@@ -37,6 +41,8 @@ tokio-tungstenite = { workspace = true, optional = true, features = ["connect", 
 ureq = { workspace = true, optional = true, features = ["rustls", "json"] }
 rustls = { workspace = true, optional = true, features = ["ring", "std"] }
 tantivy = { workspace = true, optional = true }
+notify = { workspace = true, optional = true }
+notify-debouncer-full = { workspace = true, optional = true }
 uuid.workspace = true
 getrandom.workspace = true
 serde.workspace = true

@@ -74,6 +74,15 @@ pub enum Command {
     ReadAttachment {
         blob: String,
     },
+    /// The Markdown bridge: its folder and how its last round went. Answered with
+    /// [`Response::Bridge`]; [`ErrorCode::Unsupported`] where there is no bridge (phones, the
+    /// browser).
+    BridgeStatus,
+    /// Turns the Markdown bridge on with `folder` (a full path) or off. Answered with
+    /// [`Response::Bridge`] once the first round has run.
+    SetBridgeFolder {
+        folder: Option<String>,
+    },
     /// Loads a page for editing. Answered with [`Response::Opened`]. Each open is matched by a
     /// [`Command::ClosePage`]; the page stays open until every view that opened it has closed it.
     OpenPage {
@@ -139,6 +148,34 @@ pub struct SearchHit {
     pub title: String,
     pub block: Option<BlockId>,
     pub snippet: Vec<SnippetPart>,
+}
+
+/// The Markdown bridge on this device.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct BridgeStatus {
+    /// The folder pages are written to; none while the bridge is off.
+    pub folder: Option<String>,
+    /// How the last round went, if one has run since the app started.
+    pub last: Option<BridgeRound>,
+}
+
+/// What one round of the Markdown bridge did.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct BridgeRound {
+    /// Files whose edits came back into their pages.
+    pub merged: u32,
+    /// Pages made for new files.
+    pub created: u32,
+    /// Pages moved to the trash because their files were deleted.
+    pub trashed: u32,
+    /// Files written.
+    pub written: u32,
+    /// Files it couldn't read or write.
+    pub problems: Vec<String>,
+    /// Why the round failed, if it did.
+    pub error: Option<String>,
 }
 
 /// A page in the trash.
@@ -295,6 +332,9 @@ pub enum Response {
     AttachmentData {
         data: String,
     },
+    Bridge {
+        status: BridgeStatus,
+    },
     Done,
 }
 
@@ -313,6 +353,8 @@ pub enum Event {
     TrashChanged { pages: Vec<TrashItem> },
     /// A file this device was waiting for has come from the server.
     AttachmentArrived { blob: String },
+    /// The Markdown bridge ran a round that did something, or failed.
+    BridgeChanged { status: BridgeStatus },
     /// An open page changed other than through the edits just answered (another device, or the
     /// part of a batch that was applied before one edit failed).
     PageChanged { page: PageId, patch: PagePatch },

@@ -28,6 +28,11 @@ tauri-plugin-drusite.workspace = true
 tokio = { workspace = true, features = ["sync"] }
 url.workspace = true
 
+# The Markdown bridge, with its folder watcher and folder picker, is for desktops.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+drusite-core = { workspace = true, features = ["net", "watch"] }
+tauri-plugin-dialog.workspace = true
+
 [build-dependencies]
 tauri-build.workspace = true
 

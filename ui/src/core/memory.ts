@@ -353,6 +353,9 @@ export class MemoryCore {
         if (data === undefined) fail("notHere", "the file is on its way from the server");
         return { type: "attachmentData", data };
       }
+      case "bridgeStatus":
+      case "setBridgeFolder":
+        fail("unsupported", "the Markdown folder is in the desktop app");
       case "emptyTrash":
         this.deleteForever(this.trash().map((t) => t.id));
         return { type: "done" };

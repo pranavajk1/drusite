@@ -64,6 +64,30 @@ mime: string;
 /**  Its size in bytes. */
 size: number };
 
+/**  What one round of the Markdown bridge did. */
+export type BridgeRound = {
+	/**  Files whose edits came back into their pages. */
+	merged: number,
+	/**  Pages made for new files. */
+	created: number,
+	/**  Pages moved to the trash because their files were deleted. */
+	trashed: number,
+	/**  Files written. */
+	written: number,
+	/**  Files it couldn't read or write. */
+	problems: string[],
+	/**  Why the round failed, if it did. */
+	error: string | null,
+};
+
+/**  The Markdown bridge on this device. */
+export type BridgeStatus = {
+	/**  The folder pages are written to; none while the bridge is off. */
+	folder: string | null,
+	/**  How the last round went, if one has run since the app started. */
+	last: BridgeRound | null,
+};
+
 /**  Something the UI asks the core to do. */
 export type Command = 
 /**  The page tree. Answered with [`Response::Pages`]. */
@@ -100,6 +124,17 @@ export type Command =
  *  [`Event::AttachmentArrived`] says when it's here.
  */
 { type: "readAttachment"; blob: string } | 
+/**
+ *  The Markdown bridge: its folder and how its last round went. Answered with
+ *  [`Response::Bridge`]; [`ErrorCode::Unsupported`] where there is no bridge (phones, the
+ *  browser).
+ */
+{ type: "bridgeStatus" } | 
+/**
+ *  Turns the Markdown bridge on with `folder` (a full path) or off. Answered with
+ *  [`Response::Bridge`] once the first round has run.
+ */
+{ type: "setBridgeFolder"; folder: string | null } | 
 /**
  *  Loads a page for editing. Answered with [`Response::Opened`]. Each open is matched by a
  *  [`Command::ClosePage`]; the page stays open until every view that opened it has closed it.
@@ -207,6 +242,8 @@ export type Event =
 { type: "trashChanged"; pages: TrashItem[] } | 
 /**  A file this device was waiting for has come from the server. */
 { type: "attachmentArrived"; blob: string } | 
+/**  The Markdown bridge ran a round that did something, or failed. */
+{ type: "bridgeChanged"; status: BridgeStatus } | 
 /**
  *  An open page changed other than through the edits just answered (another device, or the
  *  part of a batch that was applied before one edit failed).
@@ -310,7 +347,7 @@ export type Response = { type: "pages"; pages: PageInfo[] } | { type: "pageCreat
 /**  The journal entry for a day; `created` when it was made just now. */
 { type: "journalDay"; page: PageInfo; created: boolean } | { type: "settings"; settings: Settings } | { type: "searchResults"; hits: SearchHit[] } | { type: "trash"; pages: TrashItem[] } | { type: "attachment"; kind: BlockKind } | 
 /**  A file, in base64. */
-{ type: "attachmentData"; data: string } | { type: "done" };
+{ type: "attachmentData"; data: string } | { type: "bridge"; status: BridgeStatus } | { type: "done" };
 
 /**  A page that matched a search, at the block that matched best (none when only the title did). */
 export type SearchHit = {

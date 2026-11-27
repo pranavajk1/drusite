@@ -1,7 +1,9 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
+  import { onMount } from "svelte";
+
   import type { CoreClient } from "../core/client";
-  import type { PageId, PageInfo, Setting, Settings } from "../core/types";
+  import type { BridgeRound, BridgeStatus, PageId, PageInfo, Setting, Settings } from "../core/types";
   import { WEEKDAYS } from "../journal/dates";
 
   let {
@@ -29,6 +31,44 @@
   }
 
   const page = (v: string): PageId | null => (v === "" ? null : (v as PageId));
+
+  // The Markdown folder: desktops only, and only on this device.
+  let bridge = $state<BridgeStatus | null>(null);
+  let busy = $state(false);
+  onMount(() => {
+    const stop = client.subscribe((event) => {
+      if (event.type === "bridgeChanged") bridge = event.status;
+    });
+    client.bridgeStatus().then((s) => (bridge = s), onerror);
+    return stop;
+  });
+
+  async function setFolder(folder: string | null) {
+    busy = true;
+    try {
+      bridge = await client.setBridgeFolder(folder);
+    } catch (e) {
+      onerror(e);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function chooseFolder() {
+    const folder = await client.pickFolder();
+    if (folder) await setFolder(folder);
+  }
+
+  function summary(r: BridgeRound): string {
+    if (r.error) return r.error;
+    const parts: string[] = [];
+    if (r.merged) parts.push(`${r.merged} edited ${r.merged === 1 ? "file" : "files"} read`);
+    if (r.created) parts.push(`${r.created} new ${r.created === 1 ? "page" : "pages"}`);
+    if (r.trashed) parts.push(`${r.trashed} moved to the trash`);
+    if (r.written) parts.push(`${r.written} ${r.written === 1 ? "file" : "files"} written`);
+    if (r.problems.length) parts.push(`${r.problems.length} couldn't be read: ${r.problems.join("; ")}`);
+    return parts.length ? `Last change: ${parts.join(", ")}.` : "Up to date.";
+  }
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -57,5 +97,22 @@
     <select id="week-start" value={settings.weekStart} onchange={(e) => set({ type: "weekStart", value: Number(e.currentTarget.value) })}>
       {#each WEEKDAYS as d, i (d)}<option value={i}>{d}</option>{/each}
     </select>
+
+    {#if bridge}
+      <h3 class="settings-section">Markdown folder</h3>
+      <p class="hint">
+        Every page as a Markdown file in a folder on this computer, kept in step both ways: edit the files in any
+        editor, or let an agent work on them, and the changes come back. Deleting a file moves its page to the trash.
+        The files are plain text, outside Drusite's encryption, and only on this computer.
+      </p>
+      {#if bridge.folder}
+        <p class="bridge-folder"><code>{bridge.folder}</code></p>
+        {#if bridge.last}<p class="hint" class:bridge-error={!!bridge.last.error}>{summary(bridge.last)}</p>{/if}
+        <button disabled={busy} onclick={chooseFolder}>Change folder…</button>
+        <button disabled={busy} onclick={() => setFolder(null)}>Turn off</button>
+      {:else}
+        <button disabled={busy} onclick={chooseFolder}>Choose a folder…</button>
+      {/if}
+    {/if}
   </div>
 </div>

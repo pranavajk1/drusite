@@ -37,6 +37,12 @@ pub struct Core {
     pub(crate) search: crate::search::Search,
     /// Attachments the UI asked for that aren't here: the sync driver fetches them.
     pub(crate) wanted_blobs: HashSet<String>,
+    /// Pages changed since the Markdown bridge last looked.
+    pub(crate) bridge_dirty: HashSet<PageId>,
+    /// Called when a page changes, so the bridge's watcher knows to run.
+    pub(crate) on_bridge_change: Option<Box<dyn Fn() + Send>>,
+    /// How the bridge's last round went.
+    pub(crate) bridge_last: Option<crate::api::BridgeRound>,
 }
 
 pub(crate) struct OpenPage {
@@ -81,6 +87,9 @@ impl Core {
             on_change: None,
             search: crate::search::Search::default(),
             wanted_blobs: HashSet::new(),
+            bridge_dirty: HashSet::new(),
+            on_bridge_change: None,
+            bridge_last: None,
         };
         core.purge_trash(crate::trash::now_ms())
             .map_err(|e| Error::Corrupt(format!("emptying old trash: {}", e.message)))?;
@@ -102,6 +111,10 @@ impl Core {
             self.search.workspace_changed();
         } else {
             self.search.page_changed(PageId::from_uuid(doc));
+            self.bridge_dirty.insert(PageId::from_uuid(doc));
+        }
+        if let Some(notify) = &self.on_bridge_change {
+            notify();
         }
     }
 
@@ -165,6 +178,17 @@ impl Core {
             Command::ReadAttachment { blob } => Ok(Response::AttachmentData {
                 data: self.read_attachment(&blob)?,
             }),
+            Command::BridgeStatus => Ok(Response::Bridge {
+                status: self.bridge_status()?,
+            }),
+            Command::SetBridgeFolder { folder } => {
+                let result = self.set_bridge_folder(folder.as_deref().map(Path::new));
+                self.bridge_record(result.clone());
+                result?;
+                Ok(Response::Bridge {
+                    status: self.bridge_status()?,
+                })
+            }
             Command::EmptyTrash => {
                 let all: Vec<PageId> = self.workspace.trash()?.iter().map(|t| t.id).collect();
                 self.delete_forever(&all)?;

@@ -35,6 +35,9 @@ const EVENT: &str = "drusite://event";
 struct Ready {
     core: Arc<Mutex<Core>>,
     supervisor: Supervisor,
+    /// The Markdown bridge, while it's on.
+    #[cfg(desktop)]
+    bridge: Mutex<Option<drusite_core::bridge::watch::Watch>>,
     /// The sign-in waiting in the browser, if any.
     sign_in: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
 }
@@ -109,11 +112,16 @@ async fn open(handle: AppHandle) -> Result<Ready, ApiError> {
             );
         },
     );
-    Ok(Ready {
+    let ready = Ready {
         core,
         supervisor,
+        #[cfg(desktop)]
+        bridge: Mutex::new(None),
         sign_in: Mutex::new(None),
-    })
+    };
+    #[cfg(desktop)]
+    ready.start_bridge();
+    Ok(ready)
 }
 
 impl AppState {
@@ -137,6 +145,37 @@ fn account_error(e: impl std::fmt::Display) -> ApiError {
 }
 
 impl Ready {
+    /// Runs the Markdown bridge if it has a folder.
+    #[cfg(desktop)]
+    fn start_bridge(&self) {
+        let on = self
+            .core
+            .lock()
+            .ok()
+            .and_then(|c| c.bridge_folder().ok().flatten())
+            .is_some();
+        let watch = if on {
+            match drusite_core::bridge::watch::watch(Arc::clone(&self.core), |_| {}) {
+                Ok(w) => Some(w),
+                Err(e) => {
+                    eprintln!("drusite: can't watch the Markdown folder: {}", e.message);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        if let Ok(mut current) = self.bridge.lock() {
+            *current = watch;
+        }
+    }
+
+    #[cfg(desktop)]
+    fn stop_bridge(&self) {
+        let old = self.bridge.lock().ok().and_then(|mut b| b.take());
+        drop(old);
+    }
+
     fn replace_sign_in(&self, task: Option<tauri::async_runtime::JoinHandle<()>>) {
         if let Ok(mut current) = self.sign_in.lock()
             && let Some(old) = std::mem::replace(&mut *current, task)
@@ -193,6 +232,26 @@ async fn core(state: tauri::State<'_, AppState>, command: Command) -> Result<Res
             ready.supervisor.sign_out().await.map_err(account_error)?;
             Ok(Response::Done)
         }
+        #[cfg(mobile)]
+        Command::BridgeStatus | Command::SetBridgeFolder { .. } => Err(ApiError::new(
+            ErrorCode::Unsupported,
+            "the Markdown folder is on desktops only",
+        )),
+        #[cfg(desktop)]
+        Command::SetBridgeFolder { folder } => {
+            ready.stop_bridge();
+            let core = Arc::clone(&ready.core);
+            // The first round reads and writes every file: off the async threads.
+            let response = tauri::async_runtime::spawn_blocking(move || {
+                core.lock()
+                    .map_err(|_| internal("the core crashed earlier; restart Drusite"))?
+                    .handle(Command::SetBridgeFolder { folder })
+            })
+            .await
+            .map_err(internal)?;
+            ready.start_bridge();
+            response
+        }
         command => {
             let is_ready = matches!(command, Command::Ready);
             let response = ready
@@ -208,10 +267,22 @@ async fn core(state: tauri::State<'_, AppState>, command: Command) -> Result<Res
     }
 }
 
+/// The folder picker, on desktops; nothing on phones.
+#[cfg(desktop)]
+fn dialog() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri_plugin_dialog::init()
+}
+
+#[cfg(mobile)]
+fn dialog() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri::plugin::Builder::new("no-dialog").build()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_drusite::init())
+        .plugin(dialog())
         .invoke_handler(tauri::generate_handler![core])
         .setup(|app| {
             let handle = app.handle().clone();

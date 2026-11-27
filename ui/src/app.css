@@ -1237,3 +1237,16 @@ button {
 .file-picker {
   display: none;
 }
+
+.settings-section {
+  margin: 20px 0 4px;
+  font-size: 16px;
+}
+
+.bridge-folder code {
+  word-break: break-all;
+}
+
+.bridge-error {
+  color: var(--danger);
+}

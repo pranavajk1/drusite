@@ -7,11 +7,9 @@ import { expect, test } from "@playwright/test";
 
 import { openApp } from "./helpers";
 
-// A 1×1 PNG.
-const PNG = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==",
-  "base64",
-);
+// A 1×1 PNG (also e2e/fixtures/beach.png).
+const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==";
+const fixture = (name: string) => new URL(`fixtures/${name}`, import.meta.url).pathname;
 
 test("/file attaches an image and a document, each with a caption", async ({ page }) => {
   await openApp(page);
@@ -19,10 +17,7 @@ test("/file attaches an image and a document, each with a caption", async ({ pag
   await page.keyboard.press("Enter");
   const chooser = page.waitForEvent("filechooser");
   await page.keyboard.type("/file ");
-  await (await chooser).setFiles([
-    { name: "beach.png", mimeType: "image/png", buffer: PNG },
-    { name: "tickets.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.7 tickets") },
-  ]);
+  await (await chooser).setFiles([fixture("beach.png"), fixture("tickets.pdf")]);
 
   const image = page.locator(".editor .attachment-image");
   await expect(image).toHaveAttribute("alt", "beach.png");
@@ -49,6 +44,6 @@ test("pasting an image attaches it", async ({ page }) => {
     data.items.add(new File([bytes], "pasted.png", { type: "image/png" }));
     const editor = document.querySelector(".editor")!;
     editor.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
-  }, PNG.toString("base64"));
+  }, PNG);
   await expect(page.locator(".editor .attachment-image")).toHaveAttribute("alt", "pasted.png");
 });
