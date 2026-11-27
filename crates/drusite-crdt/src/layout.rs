@@ -5,6 +5,8 @@
 //! The layout is a pure function of the document's state, so every device that has the same
 //! changes shows the same page, whatever order the changes arrived in.
 
+mod seq;
+
 use std::collections::{HashMap, HashSet};
 
 use drusite_model::BlockId;
@@ -12,25 +14,57 @@ use loro::{LoroDoc, LoroValue, TextDelta};
 
 use crate::MARKER;
 use crate::attrs::{self, BLOCK_STYLE};
+use seq::{Item, Seq};
+
+/// A block's marker in the body, and how far the block reaches: the marker itself and the
+/// block's text up to the next marker. Storing the span rather than the marker's position means
+/// typing changes one block, not the position of every block after it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Marker {
+    id: BlockId,
+    span: usize,
+}
+
+impl Item for Marker {
+    fn id(&self) -> BlockId {
+        self.id
+    }
+    fn weight(&self) -> usize {
+        self.span
+    }
+}
+
+/// A block on screen and the indent it is shown at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Shown {
+    id: BlockId,
+    indent: u8,
+}
+
+impl Item for Shown {
+    fn id(&self) -> BlockId {
+        self.id
+    }
+    fn weight(&self) -> usize {
+        0
+    }
+}
 
 /// Where every block is, in the body and on screen.
+///
+/// Both lists are [`Seq`]s, so Enter and Backspace cost about the square root of the page's
+/// length rather than the length.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct Layout {
     /// Blocks in `body` order.
-    pub(crate) body: Vec<BlockId>,
-    /// The position (in Unicode scalar values) of each block's marker, parallel to `body`.
-    pub(crate) marker_pos: Vec<usize>,
-    pub(crate) body_index: PosIndex,
-    /// The length of `body` in Unicode scalar values.
-    pub(crate) body_len: usize,
+    body: Seq<Marker>,
+    /// Characters before the first marker (normally none).
+    lead: usize,
     /// Blocks listed in `order`, in display order.
     pub(crate) anchors: Vec<BlockId>,
     pub(crate) anchored: HashSet<BlockId>,
     /// Blocks in display order, hidden ones left out.
-    pub(crate) display: Vec<BlockId>,
-    pub(crate) display_index: PosIndex,
-    /// The indent each displayed block is shown at, parallel to `display`.
-    pub(crate) indent: Vec<u8>,
+    display: Seq<Shown>,
 }
 
 impl Layout {
@@ -39,6 +73,9 @@ impl Layout {
 
         // Markers, in body order. A marker whose ID is missing, unreadable or a repeat is left
         // as an invisible character inside the block before it; nothing is dropped.
+        let mut body: Vec<BlockId> = Vec::new();
+        let mut marker_pos: Vec<usize> = Vec::new();
+        let mut seen: HashSet<BlockId> = HashSet::new();
         let mut pos = 0;
         for segment in doc.get_text("body").to_delta() {
             let TextDelta::Insert { insert, attributes } = segment else {
@@ -54,29 +91,38 @@ impl Layout {
             for ch in insert.chars() {
                 if ch == MARKER
                     && let Some(id) = id
-                    && !layout.body_index.contains(&id)
+                    && seen.insert(id)
                 {
-                    layout.body_index.insert_exact(id, layout.body.len());
-                    layout.body.push(id);
-                    layout.marker_pos.push(pos);
+                    body.push(id);
+                    marker_pos.push(pos);
                 }
                 pos += 1;
             }
         }
-        layout.body_len = pos;
+        let body_len = pos;
+        layout.lead = marker_pos.first().copied().unwrap_or(body_len);
+        let markers = body
+            .iter()
+            .enumerate()
+            .map(|(i, &id)| Marker {
+                id,
+                span: marker_pos.get(i + 1).copied().unwrap_or(body_len) - marker_pos[i],
+            })
+            .collect();
+        layout.body = Seq::from_vec(markers);
 
         // Anchors: the `order` list, first occurrence of each live block.
         for value in doc.get_movable_list("order").to_vec() {
             if let LoroValue::String(s) = value
                 && let Ok(id) = s.parse::<BlockId>()
-                && layout.body_index.contains(&id)
+                && seen.contains(&id)
                 && layout.anchored.insert(id)
             {
                 layout.anchors.push(id);
             }
         }
         // The first block in the body always heads a group, so every block has one.
-        if let Some(&first) = layout.body.first()
+        if let Some(&first) = body.first()
             && layout.anchored.insert(first)
         {
             layout.anchors.insert(0, first);
@@ -85,14 +131,14 @@ impl Layout {
         // Each unanchored block follows the nearest anchored block before it in the body.
         let mut members: HashMap<BlockId, Vec<BlockId>> = HashMap::new();
         let mut head = None;
-        for &id in &layout.body {
+        for &id in &body {
             if layout.anchored.contains(&id) {
                 head = Some(id);
             } else if let Some(h) = head {
                 members.entry(h).or_default().push(id);
             }
         }
-        let mut order = Vec::with_capacity(layout.body.len());
+        let mut order = Vec::with_capacity(body.len());
         for &anchor in &layout.anchors {
             order.push(anchor);
             if let Some(m) = members.get(&anchor) {
@@ -119,31 +165,72 @@ impl Layout {
 
         // Indents can't skip a level: each block is at most one deeper than the one before.
         let mut prev: Option<u8> = None;
-        for &id in &order {
+        let mut shown = Vec::with_capacity(order.len());
+        for id in order {
             let stored = attrs::read_indent(attr(id).as_ref());
-            let shown = prev.map_or(0, |p| stored.min(p.saturating_add(1)));
-            layout.indent.push(shown);
-            prev = Some(shown);
+            let indent = prev.map_or(0, |p| stored.min(p.saturating_add(1)));
+            shown.push(Shown { id, indent });
+            prev = Some(indent);
         }
-        layout.display_index = PosIndex::build(&order);
-        layout.display = order;
+        layout.display = Seq::from_vec(shown);
         layout
     }
 
+    /// Whether `other` lays the page out exactly as this does.
+    pub(crate) fn same_as(&self, other: &Self) -> bool {
+        self.lead == other.lead
+            && self.body.iter().eq(other.body.iter())
+            && self.display.iter().eq(other.display.iter())
+            && self.anchors == other.anchors
+    }
+
+    /// The length of `body` in Unicode scalar values.
+    pub(crate) fn body_len(&self) -> usize {
+        self.lead + self.body.weight()
+    }
+
+    /// The last block in the body.
+    pub(crate) fn body_last(&self) -> Option<BlockId> {
+        self.body.last().map(|m| m.id)
+    }
+
+    /// Where block `id`'s marker is in the body.
+    pub(crate) fn marker_pos(&self, id: BlockId) -> Option<usize> {
+        self.body.find(id).map(|(_, before, _)| self.lead + before)
+    }
+
+    /// The blocks in display order.
+    pub(crate) fn display_ids(&self) -> Vec<BlockId> {
+        self.display_iter().collect()
+    }
+
+    pub(crate) fn display_iter(&self) -> impl Iterator<Item = BlockId> + '_ {
+        self.display.iter().map(|s| s.id)
+    }
+
+    /// Every displayed block with the indent it is shown at, in display order.
+    pub(crate) fn shown(&self) -> impl Iterator<Item = (BlockId, u8)> + '_ {
+        self.display.iter().map(|s| (s.id, s.indent))
+    }
+
+    /// The indent block `id` is shown at, if it is shown.
+    pub(crate) fn indent_of(&self, id: BlockId) -> Option<u8> {
+        self.display.find(id).map(|(_, _, s)| s.indent)
+    }
+
     pub(crate) fn body_at(&self, id: BlockId) -> Option<usize> {
-        self.body_index.find(id, &self.body)
+        self.body.index_of(id)
     }
 
     pub(crate) fn display_at(&self, id: BlockId) -> Option<usize> {
-        self.display_index.find(id, &self.display)
+        self.display.index_of(id)
     }
 
     /// The body range of a block's text (after its marker, up to the next marker).
     pub(crate) fn text_range(&self, id: BlockId) -> Option<(usize, usize)> {
-        let i = self.body_at(id)?;
-        let start = self.marker_pos[i] + 1;
-        let end = self.marker_pos.get(i + 1).copied().unwrap_or(self.body_len);
-        Some((start, end))
+        let (_, before, m) = self.body.find(id)?;
+        let at = self.lead + before;
+        Some((at + 1, at + m.span))
     }
 
     pub(crate) fn text_len(&self, id: BlockId) -> usize {
@@ -154,38 +241,33 @@ impl Layout {
     /// so a keystroke doesn't need a full recompute.
     pub(crate) fn shift_after(&mut self, id: BlockId, delta: isize) {
         let Some(i) = self.body_at(id) else { return };
-        for pos in &mut self.marker_pos[i + 1..] {
-            *pos = pos.saturating_add_signed(delta);
-        }
-        self.body_len = self.body_len.saturating_add_signed(delta);
+        self.body
+            .update(i, |m| m.span = m.span.saturating_add_signed(delta));
     }
 
     /// The block after `id` in the body, if any.
     pub(crate) fn body_next(&self, id: BlockId) -> Option<BlockId> {
         let i = self.body_at(id)?;
-        self.body.get(i + 1).copied()
+        self.body.get(i + 1).map(|m| m.id)
     }
 
     pub(crate) fn body_prev(&self, id: BlockId) -> Option<BlockId> {
         let i = self.body_at(id)?;
-        i.checked_sub(1).map(|p| self.body[p])
+        self.body.get(i.checked_sub(1)?).map(|m| m.id)
     }
 
     pub(crate) fn display_prev(&self, id: BlockId) -> Option<BlockId> {
         let i = self.display_at(id)?;
-        i.checked_sub(1).map(|p| self.display[p])
+        self.display.get(i.checked_sub(1)?).map(|s| s.id)
     }
 
     /// The anchored block whose group `id` belongs to (itself, if it is anchored).
     pub(crate) fn head(&self, id: BlockId) -> Option<BlockId> {
-        let mut i = self.body_at(id)?;
-        loop {
-            let b = self.body[i];
-            if self.anchored.contains(&b) {
-                return Some(b);
-            }
-            i = i.checked_sub(1)?;
-        }
+        let i = self.body_at(id)?;
+        self.body
+            .iter_back_from(i)
+            .map(|m| m.id)
+            .find(|b| self.anchored.contains(b))
     }
 }
 
@@ -196,23 +278,30 @@ impl Layout {
     /// A new, unanchored block `new` whose marker was just inserted at body position `at`, inside
     /// block `owner`'s text, shown at `indent` (the owner's own shown indent).
     pub(crate) fn insert_after(&mut self, owner: BlockId, new: BlockId, at: usize, indent: u8) {
-        let Some(i) = self.body_at(owner).map(|i| i + 1) else {
+        let Some((i, before, m)) = self.body.find(owner) else {
             return;
         };
-        for pos in &mut self.marker_pos[i..] {
-            *pos += 1;
-        }
-        self.body.insert(i, new);
-        self.marker_pos.insert(i, at);
-        self.body_len += 1;
-        self.body_index.inserted(new, i, &self.body);
+        // The owner's text is cut at `at`: what is before stays the owner's, the rest and the
+        // new marker are the new block's.
+        let owner_at = self.lead + before;
+        debug_assert!(
+            owner_at < at && at <= owner_at + m.span,
+            "marker outside its owner"
+        );
+        let kept = at.saturating_sub(owner_at);
+        self.body.update(i, |o| o.span = kept);
+        self.body.insert(
+            i + 1,
+            Marker {
+                id: new,
+                span: m.span + 1 - kept,
+            },
+        );
         // Unanchored and right after its owner in the body: in the owner's group, right after it.
-        let Some(d) = self.display_at(owner).map(|d| d + 1) else {
+        let Some(d) = self.display_at(owner) else {
             return;
         };
-        self.display.insert(d, new);
-        self.indent.insert(d, indent);
-        self.display_index.inserted(new, d, &self.display);
+        self.display.insert(d + 1, Shown { id: new, indent });
     }
 
     /// Block `id`'s marker was just deleted, joining its text onto the block before it in the
@@ -228,100 +317,34 @@ impl Layout {
         let Some(i) = self.body_at(id) else {
             return reindented;
         };
-        self.body.remove(i);
-        self.marker_pos.remove(i);
-        for pos in &mut self.marker_pos[i..] {
-            *pos -= 1;
+        // Its text, less the deleted marker, now belongs to the block before it.
+        let gone = self.body.remove(i);
+        let text = gone.span - 1;
+        match i.checked_sub(1) {
+            Some(p) => self.body.update(p, |m| m.span += text),
+            None => self.lead += text,
         }
-        self.body_len -= 1;
-        self.body_index.removed(id, &self.body);
         if self.anchored.remove(&id) {
             self.anchors.retain(|&a| a != id);
         }
         if let Some(d) = self.display_at(id) {
             self.display.remove(d);
-            self.indent.remove(d);
-            self.display_index.removed(id, &self.display);
             // The blocks after it now follow a different block; re-check their indents.
-            for j in d..self.display.len() {
-                let prev = j.checked_sub(1).map(|p| self.indent[p]);
-                let shown = prev.map_or(0, |p| {
-                    stored_indent(self.display[j]).min(p.saturating_add(1))
-                });
-                if shown == self.indent[j] {
-                    break;
+            let mut prev = d
+                .checked_sub(1)
+                .and_then(|p| self.display.get(p))
+                .map(|s| s.indent);
+            self.display.update_from(d, |s| {
+                let shown = prev.map_or(0, |p| stored_indent(s.id).min(p.saturating_add(1)));
+                if shown == s.indent {
+                    return false;
                 }
-                self.indent[j] = shown;
-                reindented.push(self.display[j]);
-            }
+                s.indent = shown;
+                reindented.push(s.id);
+                prev = Some(shown);
+                true
+            });
         }
         reindented
-    }
-}
-
-/// Where each block is in a list, kept cheaply while blocks are inserted and removed.
-///
-/// Rebuilding a map of positions after every Enter costs time in proportion to the page. Instead
-/// the map is allowed to go stale by a bounded amount: after `drift` inserts or removals, every
-/// stored position is off by at most `drift`, so a lookup checks that many places either side.
-/// Past [`MAX_DRIFT`] the map is rebuilt, which keeps both costs small.
-#[derive(Debug, Default, Clone)]
-pub(crate) struct PosIndex {
-    map: HashMap<BlockId, usize>,
-    drift: usize,
-}
-
-const MAX_DRIFT: usize = 48;
-
-impl PosIndex {
-    pub(crate) fn build(list: &[BlockId]) -> Self {
-        Self {
-            map: list.iter().enumerate().map(|(i, &id)| (id, i)).collect(),
-            drift: 0,
-        }
-    }
-
-    pub(crate) fn insert_exact(&mut self, id: BlockId, at: usize) {
-        self.map.insert(id, at);
-    }
-
-    pub(crate) fn contains(&self, id: &BlockId) -> bool {
-        self.map.contains_key(id)
-    }
-
-    pub(crate) fn find(&self, id: BlockId, list: &[BlockId]) -> Option<usize> {
-        let guess = *self.map.get(&id)?;
-        for d in 0..=self.drift {
-            if let Some(i) = guess.checked_add(d)
-                && list.get(i) == Some(&id)
-            {
-                return Some(i);
-            }
-            if let Some(i) = guess.checked_sub(d)
-                && list.get(i) == Some(&id)
-            {
-                return Some(i);
-            }
-        }
-        None
-    }
-
-    /// `id` was just inserted into `list` at `at`.
-    pub(crate) fn inserted(&mut self, id: BlockId, at: usize, list: &[BlockId]) {
-        self.map.insert(id, at);
-        self.shifted(list);
-    }
-
-    /// `id` was just removed from `list`.
-    pub(crate) fn removed(&mut self, id: BlockId, list: &[BlockId]) {
-        self.map.remove(&id);
-        self.shifted(list);
-    }
-
-    fn shifted(&mut self, list: &[BlockId]) {
-        self.drift += 1;
-        if self.drift > MAX_DRIFT {
-            *self = Self::build(list);
-        }
     }
 }
