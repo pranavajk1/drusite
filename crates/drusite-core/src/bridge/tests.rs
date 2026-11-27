@@ -441,3 +441,125 @@ fn the_watcher_keeps_both_sides_in_step() {
     });
     drop(watch);
 }
+
+#[test]
+fn a_database_is_a_folder_of_rows_whose_values_are_their_frontmatter() {
+    use drusite_model::database::Value;
+    let mut f = fixture();
+    let Response::DatabaseCreated { page, schema } = f
+        .core
+        .handle(Command::CreateDatabase {
+            parent: None,
+            title: "Tasks".into(),
+            inline: false,
+            template: crate::database::Template::Tasks,
+        })
+        .unwrap()
+    else {
+        panic!()
+    };
+    let db = page.id;
+    let status = schema.property_named("Status").unwrap().clone();
+    let done = status
+        .options
+        .iter()
+        .find(|o| o.name == "Done")
+        .unwrap()
+        .id
+        .clone();
+    let due = schema.property_named("Due").unwrap().id.clone();
+    let Response::PageCreated { page: row } = f
+        .core
+        .handle(Command::CreateRow {
+            database: db,
+            title: "Water the seedlings".into(),
+            values: vec![crate::api::CellValue {
+                property: due.clone(),
+                value: Value::Date(drusite_model::database::DateValue {
+                    start: drusite_model::database::DateTime::parse("2026-11-28").unwrap(),
+                    end: None,
+                }),
+            }],
+            after: None,
+        })
+        .unwrap()
+    else {
+        panic!()
+    };
+    let root = f.root().to_path_buf();
+    f.core.set_bridge_folder(Some(&root)).unwrap();
+    let file = f.read("Tasks/Water the seedlings.md");
+    assert!(file.contains("Status: Not started"), "{file}");
+    assert!(file.contains("Due: 2026-11-28"), "{file}");
+    let schema_file = f.read("Tasks.md");
+    assert!(
+        schema_file.contains("drusite-kind: database"),
+        "{schema_file}"
+    );
+    assert!(schema_file.contains("drusite-schema:"), "{schema_file}");
+    assert!(
+        schema_file.contains("name: \"Status\"\n      type: status"),
+        "{schema_file}"
+    );
+
+    // An edit in the file is a new value in the database.
+    f.write(
+        "Tasks/Water the seedlings.md",
+        &file.replace("Status: Not started", "Status: Done"),
+    );
+    f.sync();
+    let Response::RowCells {
+        row: Some(cells), ..
+    } = f
+        .core
+        .handle(Command::RowCells {
+            row: row.id,
+            clock: crate::database::Clock::utc(),
+        })
+        .unwrap()
+    else {
+        panic!()
+    };
+    let cell = cells
+        .cells
+        .iter()
+        .find(|c| c.property == status.id)
+        .unwrap();
+    assert_eq!(cell.value, Some(Value::Status(done)));
+    // ...and the schema didn't become a page property.
+    let Response::Pages { pages } = f.core.handle(Command::ListPages).unwrap() else {
+        panic!()
+    };
+    assert!(pages.iter().all(|p| p.properties.is_empty()), "{pages:?}");
+
+    // A new file in the folder is a new row.
+    f.write(
+        "Tasks/Buy compost.md",
+        "---\nStatus: In progress\n---\nTen bags.\n",
+    );
+    f.sync();
+    let Response::View { result } = f
+        .core
+        .handle(Command::QueryView {
+            database: db,
+            view: None,
+            clock: crate::database::Clock::utc(),
+        })
+        .unwrap()
+    else {
+        panic!()
+    };
+    let in_progress = result
+        .groups
+        .iter()
+        .find(|g| g.label == "In progress")
+        .unwrap();
+    assert_eq!(
+        in_progress
+            .rows
+            .iter()
+            .map(|r| r.title.as_str())
+            .collect::<Vec<_>>(),
+        ["Buy compost"]
+    );
+}

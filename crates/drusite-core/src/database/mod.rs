@@ -4,6 +4,7 @@
 //! schemas and views, setting cells, and showing views ([`compute`]).
 
 pub mod compute;
+pub mod markdown;
 pub mod notion;
 #[cfg(feature = "net")]
 pub mod notion_api;
@@ -556,5 +557,55 @@ impl Core {
                 let _ = self.save_workspace();
             }
         }
+    }
+}
+
+impl Core {
+    /// A database row's frontmatter (its values), or a database's schema block, for its file.
+    pub(crate) fn database_front(
+        &self,
+        page: PageId,
+        db: &compute::Db<'_>,
+    ) -> (Vec<drusite_model::Property>, String) {
+        if self.workspace.is_database(page) {
+            return match self.workspace.schema(page) {
+                Ok(s) => (Vec::new(), markdown::schema_yaml(&s)),
+                Err(_) => (Vec::new(), String::new()),
+            };
+        }
+        match db.row(page) {
+            Some((schema, row)) => (markdown::row_properties(&schema, &row), String::new()),
+            None => (Vec::new(), String::new()),
+        }
+    }
+
+    /// A property read from a row's file: its value when the database has a property of that
+    /// name (true when it was taken as one), else nothing (it's the page's own property).
+    pub(crate) fn row_property_from_file(
+        &mut self,
+        row: PageId,
+        name: &str,
+        value: Option<&drusite_model::PropertyValue>,
+    ) -> Result<bool, ApiError> {
+        let Some(db) = self.workspace.database_of(row) else {
+            return Ok(false);
+        };
+        let schema = self.workspace.schema(db)?;
+        let Some(def) = schema.property_named(name).cloned() else {
+            return Ok(false);
+        };
+        if !def.kind.is_stored() || def.id == TITLE {
+            // Computed values in the file are for reading; the title is the file's name.
+            return Ok(true);
+        }
+        let parsed = match value {
+            None => Some(None),
+            Some(v) => markdown::value_from_property(&def, v, &self.workspace),
+        };
+        // A value that can't be read (an option that doesn't exist) is left as it was.
+        if let Some(v) = parsed {
+            self.workspace.set_value(row, &def.id, v.as_ref())?;
+        }
+        Ok(true)
     }
 }

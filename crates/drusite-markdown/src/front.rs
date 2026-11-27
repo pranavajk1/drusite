@@ -17,6 +17,9 @@ pub struct Frontmatter {
     /// Everything else, by name. Lists (Obsidian's `tags`, `aliases`) read as text joined with
     /// `, `, since a property has no list type yet.
     pub properties: Vec<Property>,
+    /// YAML written after the rest, for reading only (a database's `drusite-schema`); reading a
+    /// file leaves it empty.
+    pub extra: String,
 }
 
 const ID: &str = "drusite-id";
@@ -67,6 +70,8 @@ impl Frontmatter {
                         scalar_text(&value).map_or(PageKind::Page, |k| PageKind::from_name(&k));
                 }
                 TITLE => out.title = scalar_text(&value),
+                // Written for reading only (see `extra`).
+                k if k.starts_with("drusite-") => {}
                 _ => {
                     if let Some(value) = property_value(&value) {
                         out.properties.push(Property { name: key, value });
@@ -105,6 +110,7 @@ impl Frontmatter {
             };
             out.push_str(&format!("{}: {value}\n", quote_key(&p.name)));
         }
+        out.push_str(&self.extra);
         out
     }
 }
@@ -253,6 +259,7 @@ mod tests {
                     value: PropertyValue::Text(String::new()),
                 },
             ],
+            extra: String::new(),
         };
         let back = Frontmatter::parse(&f.to_yaml());
         let mut want = f.clone();
