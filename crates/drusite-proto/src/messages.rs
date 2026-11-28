@@ -64,7 +64,7 @@ pub mod server_message {
 pub struct Welcome {
     #[prost(uint32, tag = "1")]
     pub protocol_version: u32,
-    /// The server's version, for logs.
+    /// The server's version, for logs and the apps' About section.
     #[prost(string, tag = "2")]
     pub server_version: String,
     #[prost(uint32, tag = "3")]

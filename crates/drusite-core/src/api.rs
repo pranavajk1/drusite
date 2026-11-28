@@ -1051,6 +1051,9 @@ pub struct AccountStatus {
     pub phase: SyncPhase,
     /// What went wrong, in words for the person, when something did.
     pub message: Option<String>,
+    /// The server's version, as it said when sync last connected. `None` until then, and from
+    /// a server that doesn't say.
+    pub server_version: Option<String>,
 }
 
 impl AccountStatus {
@@ -1060,6 +1063,7 @@ impl AccountStatus {
             email: None,
             phase: SyncPhase::SignedOut,
             message,
+            server_version: None,
         }
     }
 }

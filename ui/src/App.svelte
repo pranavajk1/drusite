@@ -26,7 +26,7 @@
   let current = $state<PageId | null>(null);
   let error = $state<string | null>(null);
   let readySent = false;
-  let account = $state<AccountStatus>({ server: null, email: null, phase: "signedOut", message: null });
+  let account = $state<AccountStatus>({ server: null, email: null, phase: "signedOut", message: null, serverVersion: null });
   /** The open Settings section, or null when Settings is closed. */
   let settingsAt = $state<Opening | null>(null);
   let showSearch = $state(false);

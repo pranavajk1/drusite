@@ -81,19 +81,23 @@ pub async fn run(
     join: Option<WorkspaceId>,
     now: i64,
 ) -> Result<(), NetError> {
-    run_observed(core, server, access_token, key, join, now, || {}).await
+    let token = access_token.to_owned();
+    run_observed(core, server, move || token.clone(), key, join, now, |_| {}).await
 }
 
-/// [`run`], calling `on_open` once the server has welcomed the connection.
+/// [`run`], calling `on_open` with the server's version once it has welcomed the connection. `access` gives the
+/// access token to use now: the caller may refresh it while the connection stays open, and
+/// attachments started later take the new one.
 pub async fn run_observed(
     core: Arc<Mutex<Core>>,
     server: &Url,
-    access_token: &str,
+    access: impl Fn() -> String,
     key: &(impl DeviceKey + ?Sized),
     join: Option<WorkspaceId>,
     now: i64,
-    on_open: impl FnOnce(),
+    on_open: impl FnOnce(&str),
 ) -> Result<(), NetError> {
+    let access_token = &access();
     let (http, ws_url) = endpoints(server)?;
     let mut request = ws_url
         .as_str()
@@ -120,17 +124,18 @@ pub async fn run_observed(
     };
 
     // The server speaks first.
-    match socket.next().await {
+    let version = match socket.next().await {
         Some(Ok(Message::Binary(frame))) => {
             let welcome: ServerMessage =
                 drusite_proto::decode(&frame).map_err(|e| NetError::Protocol(e.to_string()))?;
-            if !matches!(welcome.body, Some(server_message::Body::Welcome(_))) {
-                return Err(NetError::Protocol("no welcome".to_owned()));
+            match welcome.body {
+                Some(server_message::Body::Welcome(w)) => w.server_version,
+                _ => return Err(NetError::Protocol("no welcome".to_owned())),
             }
         }
         other => return Err(NetError::Protocol(format!("no welcome: {other:?}"))),
-    }
-    on_open();
+    };
+    on_open(&version);
 
     let changed = Arc::new(Notify::new());
     let first = {
@@ -168,7 +173,7 @@ pub async fn run_observed(
     let mut files = super::files::Files::default();
     let result = async {
         queue_all(first);
-        files.start(&core, server, access_token, key, &files_done);
+        files.start(&core, server, &access(), key, &files_done);
         let mut ping = tokio::time::interval(PING_EVERY);
         ping.tick().await;
         let mut nonce = 0;
@@ -195,11 +200,11 @@ pub async fn run_observed(
                 }
                 () = changed.notified() => {
                     queue_all(lock(&core)?.sync_outgoing().map_err(SyncError::from)?);
-                    files.start(&core, server, access_token, key, &files_done);
+                    files.start(&core, server, &access(), key, &files_done);
                 }
                 Some(done) = files_end.recv() => {
                     files.finish(&core, done);
-                    files.start(&core, server, access_token, key, &files_done);
+                    files.start(&core, server, &access(), key, &files_done);
                 }
                 _ = ping.tick() => {
                     if heard.elapsed() > SILENT_FOR {
@@ -208,7 +213,7 @@ pub async fn run_observed(
                     nonce += 1;
                     queue_all(vec![ClientMessage::new(client_message::Body::Ping(Ping { nonce }))]);
                     queue_all(lock(&core)?.sync_retry().map_err(SyncError::from)?);
-                    files.start(&core, server, access_token, key, &files_done);
+                    files.start(&core, server, &access(), key, &files_done);
                 }
                 ended = &mut writer => {
                     return match ended {
