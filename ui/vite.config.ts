@@ -49,6 +49,11 @@ export default defineConfig(({ mode }) => ({
   define: { __APP_VERSION__: JSON.stringify(appVersion()) },
   clearScreen: false,
   server: { port: 5173, strictPort: true },
+  // The web build's tests measure the tab's memory, which browsers allow only to cross-origin
+  // isolated pages (e2e/web/memory.spec.ts).
+  preview: {
+    headers: { "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Embedder-Policy": "require-corp" },
+  },
   // The web build is served by drusite-server at `/`, its files under `/app/` (see
   // crates/drusite-server/src/web.rs); the app's build goes inside the Tauri bundle.
   base: mode === "web" ? "/" : undefined,

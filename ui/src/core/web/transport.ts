@@ -8,13 +8,14 @@ import type { ApiError, Command, Event, Response } from "../types";
 
 /** From a tab to its worker. The command goes as JSON: the UI builds some from Svelte's
  *  reactive state, whose proxies can't be cloned into a message. */
-export type FromTab = { kind: "call"; id: number; command: string } | { kind: "wake" };
+export type FromTab = { kind: "call"; id: number; command: string } | { kind: "wake" } | { kind: "memory"; id: number };
 
 /** From a worker to its tab. */
 export type ToTab =
   | { kind: "reply"; id: number; result: { ok: Response } | { err: ApiError } }
   | { kind: "event"; event: Event }
   | { kind: "navigate"; url: string }
+  | { kind: "memory"; id: number; bytes: number }
   | { kind: "ready"; persistent: boolean }
   | { kind: "failed"; message: string };
 
@@ -22,11 +23,14 @@ export interface WebCore {
   transport: Transport;
   /** Settles once the store is open here or in another tab; false if notes are kept in memory only. */
   ready: Promise<boolean>;
+  /** The size of the core's WebAssembly memory when this tab holds the store, else 0 (tests). */
+  wasmMemory(): Promise<number>;
 }
 
 export function webCore(): WebCore {
   const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module", name: "drusite-core" });
   const waiting = new Map<number, { resolve: (r: Response) => void; reject: (e: unknown) => void }>();
+  const measuring = new Map<number, (bytes: number) => void>();
   const handlers = new Set<(e: Event) => void>();
   let nextId = 1;
   let settle: (persistent: boolean) => void = () => {};
@@ -49,6 +53,10 @@ export function webCore(): WebCore {
       }
       case "event":
         for (const h of handlers) h(m.event);
+        break;
+      case "memory":
+        measuring.get(m.id)?.(m.bytes);
+        measuring.delete(m.id);
         break;
       case "navigate":
         location.assign(m.url);
@@ -83,5 +91,11 @@ export function webCore(): WebCore {
       return () => handlers.delete(handler);
     },
   };
-  return { transport, ready };
+  const wasmMemory = () =>
+    new Promise<number>((resolve) => {
+      const id = nextId++;
+      measuring.set(id, resolve);
+      post({ kind: "memory", id });
+    });
+  return { transport, ready, wasmMemory };
 }

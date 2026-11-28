@@ -142,6 +142,8 @@ scope.onmessage = (e: MessageEvent<FromTab>) => {
     });
   } else if (m.kind === "wake") {
     leader?.kick();
+  } else if (m.kind === "memory") {
+    toTab({ kind: "memory", id: m.id, bytes: leader?.memoryBytes ?? 0 });
   }
 };
 

@@ -28,7 +28,7 @@ async function transport(): Promise<Transport> {
     // The browser tests (`e2e/`) compare what the page shows with what the core holds.
     if (import.meta.env.VITE_DRUSITE_TEST) {
       const { testCore } = await import("./core/web/testing");
-      const t = testCore(core.transport);
+      const t = testCore(core.transport, core.wasmMemory);
       (window as { drusiteWebCore?: unknown }).drusiteWebCore = t.core;
       return t.transport;
     }

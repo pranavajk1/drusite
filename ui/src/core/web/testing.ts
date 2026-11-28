@@ -13,10 +13,12 @@ export interface TestCore {
   /** A page's blocks as the core holds them. */
   blocks(page: PageId): Promise<Block[]>;
   handle(command: Command): Promise<Response>;
+  /** The core's WebAssembly memory, in bytes, when this tab holds the store. */
+  wasmMemory(): Promise<number>;
 }
 
 /** Wraps `transport`, counting the pages the UI opens through it. */
-export function testCore(transport: Transport): { transport: Transport; core: TestCore } {
+export function testCore(transport: Transport, wasmMemory: () => Promise<number>): { transport: Transport; core: TestCore } {
   const open = new Map<PageId, number>();
   const counted: Transport = {
     ...transport,
@@ -40,6 +42,7 @@ export function testCore(transport: Transport): { transport: Transport; core: Te
       return r.type === "opened" ? r.view.blocks : [];
     },
     handle: (command) => transport.call(command),
+    wasmMemory,
   };
   return { transport: counted, core };
 }

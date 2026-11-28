@@ -46,11 +46,17 @@ export class Leader {
   private constructor(
     private core: WasmCore,
     private readonly host: Host,
+    private readonly memory: WebAssembly.Memory,
   ) {}
+
+  /** How big the core's WebAssembly memory is, in bytes. */
+  get memoryBytes(): number {
+    return this.memory.buffer.byteLength;
+  }
 
   /** Opens the store (OPFS where the browser has it) and starts the session with the server. */
   static async start(host: Host): Promise<Leader> {
-    await init();
+    const { memory } = await init();
     const { key, fresh } = await storeKey();
     // A tab that closed a moment ago may still hold OPFS's handles: try a few times.
     let core: WasmCore | null = null;
@@ -74,7 +80,7 @@ export class Leader {
         await new Promise((r) => setTimeout(r, 250));
       }
     }
-    const leader = new Leader(core, host);
+    const leader = new Leader(core, host, memory);
     void leader.run();
     return leader;
   }
