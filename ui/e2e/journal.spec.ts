@@ -44,7 +44,7 @@ test("the Journal page shows the calendar, and a day there opens its entry", asy
   await openApp(page);
   await page.getByRole("button", { name: "Today", exact: true }).click();
   await page.getByRole("radio", { name: "Okay" }).click();
-  await page.getByRole("complementary", { name: "Sidebar" }).getByRole("button", { name: "Journal", exact: true }).click();
+  await page.getByRole("complementary", { name: "Sidebar" }).getByRole("button", { name: "Journals", exact: true }).click();
   const views = page.getByRole("region", { name: "Journal" });
   await expect(views).toBeVisible();
   await expect(views.getByRole("button", { name: /has an entry, Okay/ })).toBeVisible();
@@ -97,6 +97,6 @@ test("settings: a template fills new entries, and weeks can start on Sunday", as
   await page.getByRole("button", { name: "Today", exact: true }).click();
   const weekday = dayTitle(today()).split(",")[0];
   await expect(page.locator(".editor")).toContainText(`How was ${weekday}?`);
-  await page.getByRole("complementary", { name: "Sidebar" }).getByRole("button", { name: "Journal", exact: true }).click();
+  await page.getByRole("complementary", { name: "Sidebar" }).getByRole("button", { name: "Journals", exact: true }).click();
   await expect(page.locator(".jv-calendar th").first()).toHaveText("Sun");
 });

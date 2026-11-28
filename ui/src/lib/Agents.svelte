@@ -158,11 +158,10 @@
     <div class="set-row">
       <div class="set-row-text">
         <label class="set-label" for="agents-local">Let agents on this computer connect</label>
-        {#if local.enabled}
-          <span class="set-desc">At <code>{local.url}</code>, while Drusite is open, with a token from here.</span>
-        {:else}
-          <span class="set-desc">Off. Agents can still connect through your server.</span>
-        {/if}
+        <span class="set-desc">
+          At <code>{local.url}</code>, while Drusite is open, with a token from here. Agents can also connect through
+          your server.
+        </span>
       </div>
       <Switch id="agents-local" checked={local.enabled} disabled={busy} onchange={setEnabled} />
     </div>

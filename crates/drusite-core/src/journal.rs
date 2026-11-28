@@ -36,7 +36,34 @@ impl Core {
                 _ => {}
             }
         }
+        // Chosen before this rule (the journal page itself, say): reads as none.
+        if let Some(t) = settings.journal_template
+            && !self.can_be_template(t, settings.journal_parent)?
+        {
+            settings.journal_template = None;
+        }
         Ok(settings)
+    }
+
+    /// Whether a page can be what new journal entries start from: an ordinary page, not the
+    /// page entries go under, an entry, a database or a database's row.
+    fn can_be_template(
+        &self,
+        id: PageId,
+        journal_parent: Option<PageId>,
+    ) -> Result<bool, ApiError> {
+        if Some(id) == journal_parent {
+            return Ok(false);
+        }
+        let pages = self.workspace.pages()?;
+        let kind = |id: PageId| pages.iter().find(|p| p.id == id).map(|p| p.kind);
+        let Some(page) = pages.iter().find(|p| p.id == id) else {
+            return Ok(false);
+        };
+        Ok(page.kind == PageKind::Page
+            && page
+                .parent
+                .is_none_or(|parent| kind(parent) != Some(PageKind::Database)))
     }
 
     pub(crate) fn set_setting(&mut self, setting: Setting) -> Result<(), ApiError> {
@@ -51,7 +78,18 @@ impl Core {
         };
         let (key, value) = match setting {
             Setting::JournalParent(id) => (JOURNAL_PARENT, page(id)?),
-            Setting::JournalTemplate(id) => (JOURNAL_TEMPLATE, page(id)?),
+            Setting::JournalTemplate(id) => {
+                let value = page(id)?;
+                if let Some(id) = id
+                    && !self.can_be_template(id, self.settings()?.journal_parent)?
+                {
+                    return Err(ApiError::new(
+                        ErrorCode::Invalid,
+                        "a journal template is an ordinary page: not the journal, an entry or a database",
+                    ));
+                }
+                (JOURNAL_TEMPLATE, value)
+            }
             Setting::WeekStart(day) if day <= 6 => {
                 (WEEK_START, Some(SettingValue::Int(i64::from(day))))
             }
@@ -433,6 +471,20 @@ mod tests {
                 })
                 .is_err()
         );
+        // The journal page, an entry or a database can't be the template.
+        let (entry, _) = open_day(&mut f.core, "2026-02-02");
+        let entry = entry.id;
+        let journal = settings(&mut f.core).journal_parent.unwrap();
+        for id in [journal, entry] {
+            assert!(
+                f.core
+                    .handle(Command::SetSetting {
+                        setting: Setting::JournalTemplate(Some(id))
+                    })
+                    .is_err(),
+                "{id}"
+            );
+        }
         // A template that is later deleted reads as none.
         let Response::PageCreated { page } = f
             .core

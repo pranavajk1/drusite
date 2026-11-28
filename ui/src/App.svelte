@@ -450,7 +450,7 @@
         </button>
         {#if settings.journalParent}
           <button class="nav-row" class:current={current === settings.journalParent} onclick={() => select(settings.journalParent!)}>
-            <Icon name="book-open" /><span class="nav-label">Journal</span>
+            <Icon name="notebook-tabs" /><span class="nav-label">Journals</span>
           </button>
         {/if}
       </div>

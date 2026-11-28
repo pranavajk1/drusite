@@ -317,13 +317,20 @@ export class MemoryCore {
     setTimeout(step, 30);
   }
 
+  /** As the core: an ordinary page, not the journal's own page, an entry, a database or a row. */
+  private canBeTemplate(id: PageId): boolean {
+    const p = this.page(id);
+    const parent = p.parent ? this.page(p.parent) : null;
+    return p.kind === "page" && id !== this.settings.journalParent && parent?.kind !== "database";
+  }
+
   private currentSettings(): Settings {
     const exists = (id: PageId | null) =>
       id !== null && this.pages.some((p) => p.id === id) && !this.trashed(id) ? id : null;
     return {
       ...this.settings,
       journalParent: exists(this.settings.journalParent),
-      journalTemplate: exists(this.settings.journalTemplate),
+      journalTemplate: ((id) => (id !== null && this.canBeTemplate(id) ? id : null))(exists(this.settings.journalTemplate)),
     };
   }
 
@@ -659,6 +666,8 @@ export class MemoryCore {
           const id = s.value ?? null;
           if (id !== null) this.page(id);
           if (s.type === "journalParent") this.settings.journalParent = id;
+          else if (id !== null && !this.canBeTemplate(id))
+            fail("invalid", "a journal template is an ordinary page: not the journal, an entry or a database");
           else this.settings.journalTemplate = id;
         }
         this.workspaceChanged();
