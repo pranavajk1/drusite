@@ -178,6 +178,33 @@ pub struct Readable {
     pub journal: bool,
     /// Database rows' values ("Status: Done · Priority: High"), by row.
     pub values: HashMap<Uuid, String>,
+    /// Every page's parent, for narrowing to one page and the pages inside it.
+    pub parents: HashMap<Uuid, Option<Uuid>>,
+}
+
+impl Readable {
+    /// Narrows what may be used to `page` and the pages inside it (a question asked from that
+    /// page). The rest is left out of the search itself, not only of the answer. Journal
+    /// entries stay out unless the workspace lets Ask read them, even when asked from one.
+    pub fn within(&mut self, page: Uuid) {
+        let inside = |mut at: Uuid| {
+            for _ in 0..=self.parents.len() {
+                if at == page {
+                    return true;
+                }
+                match self.parents.get(&at).copied().flatten() {
+                    Some(parent) => at = parent,
+                    None => return false,
+                }
+            }
+            false
+        };
+        let outside: Vec<Uuid> = self.pages.keys().copied().filter(|p| !inside(*p)).collect();
+        for p in outside {
+            self.pages.remove(&p);
+            self.excluded.push(p);
+        }
+    }
 }
 
 /// Opens the workspace document (as the asker) for its pages and settings.
@@ -199,7 +226,9 @@ pub async fn readable_pages(
         .any(|(k, v)| k == ASK_JOURNAL_SETTING && v == SettingValue::Bool(true));
     let mut pages = HashMap::new();
     let mut excluded = Vec::new();
+    let mut parents = HashMap::new();
     for p in workspace.pages()? {
+        parents.insert(*p.id.as_uuid(), p.parent.map(|q| *q.as_uuid()));
         if p.kind == PageKind::Journal && !journal {
             excluded.push(*p.id.as_uuid());
         } else {
@@ -215,6 +244,7 @@ pub async fn readable_pages(
         excluded,
         journal,
         values,
+        parents,
     }))
 }
 
@@ -241,6 +271,9 @@ struct Status {
     indexing: i64,
     /// Whether the workspace lets Ask read journal entries.
     journal: bool,
+    /// Whether a question can be kept to one page and the pages inside it (`page` on a
+    /// question). Older servers leave it out.
+    page_scope: bool,
 }
 
 /// `GET /api/v1/ask`: whether Ask works on this server, and with what.
@@ -300,6 +333,7 @@ async fn status(
         embedding_model: state.embedder().map(|e| e.model_id().to_owned()),
         indexing,
         journal,
+        page_scope: true,
     }))
 }
 

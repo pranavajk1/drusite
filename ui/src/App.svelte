@@ -9,7 +9,7 @@
   import { setQueryHost } from "./editor/query";
   import { today } from "./journal/dates";
   import { phaseLabel } from "./lib/Account.svelte";
-  import AskPanel from "./lib/Ask.svelte";
+  import AskPanel, { type AskMode } from "./lib/Ask.svelte";
   import { openLayer, pushPage, replacePage, startHistory } from "./lib/back";
   import PageEditor from "./lib/PageEditor.svelte";
   import PageTree from "./lib/PageTree.svelte";
@@ -19,6 +19,7 @@
   import TrashSheet from "./lib/Trash.svelte";
   import Icon from "./lib/ui/Icon.svelte";
   import Menu, { type MenuItem } from "./lib/ui/Menu.svelte";
+  import RightPanel from "./lib/ui/RightPanel.svelte";
 
   let { client }: { client: CoreClient } = $props();
 
@@ -31,19 +32,36 @@
   let settingsAt = $state<Opening | null>(null);
   let showSearch = $state(false);
   let showTrash = $state(false);
-  /** Ask your notes, beside the page (the whole screen on phones); kept open per device. */
+  /**
+   * Ask your notes: beside the open page when opened from it ("side", which asks about that page
+   * and stays open across launches), or over the page from the sidebar and ⌘J ("overlay", which
+   * can fill the page: "full"). Phones show either full screen.
+   */
   const phone = () => window.matchMedia?.("(max-width: 700px)").matches ?? false;
-  let showAsk = $state(!phone() && localStorage.getItem("drusite.ask") === "open");
-  function setAsk(open: boolean) {
-    showAsk = open;
+  const kept = localStorage.getItem("drusite.ask");
+  let askMode = $state<AskMode | null>(!phone() && (kept === "side" || kept === "open") ? "side" : null);
+  function setAsk(mode: AskMode | null) {
+    askMode = mode;
     drawer = false;
-    if (!phone()) localStorage.setItem("drusite.ask", open ? "open" : "closed");
+    if (!phone()) localStorage.setItem("drusite.ask", mode === "side" ? "side" : "closed");
   }
-  /** A citation: its page, at its block. On a phone the panel gives way to the page. */
+  /** ⌘J and the sidebar's Ask: over the page, or closed if it's already there. */
+  const toggleAsk = () => setAsk(askMode === "overlay" || askMode === "full" ? null : "overlay");
+  /** The page's own Ask button: beside the page. */
+  const toggleAskBeside = () => setAsk(askMode === "side" ? null : "side");
+  /** The panel beside the page, as wide as it was left. */
+  const PANEL = { min: 300, normal: 400, max: 720 };
+  let askWidth = $state(Number(localStorage.getItem("drusite.askWidth")) || PANEL.normal);
+  function setAskWidth(w: number) {
+    askWidth = w;
+    localStorage.setItem("drusite.askWidth", String(w));
+  }
+  /** A citation: its page, at its block. On a phone the panel gives way to the page; filling the page, it shrinks. */
   function openCited(page: PageId, block: BlockId | null) {
     select(page);
     reveal = block ? { block, seq: (reveal?.seq ?? 0) + 1 } : null;
-    if (phone()) showAsk = false;
+    if (phone()) askMode = null;
+    else if (askMode === "full") askMode = "overlay";
   }
   /** The page just moved to the trash, for the Undo toast. */
   let trashed = $state<{ id: PageId; title: string } | null>(null);
@@ -181,7 +199,7 @@
     if (drawer) return openLayer(() => (drawer = false));
   });
   $effect(() => {
-    if (showAsk && phone()) return openLayer(() => (showAsk = false));
+    if (askMode && phone()) return openLayer(() => (askMode = null));
   });
 
   async function createPage(parent: PageId | null, how: "push" | "replace" = "push") {
@@ -212,11 +230,11 @@
       toggleSidebar();
     } else if (mod && !e.shiftKey && e.key.toLowerCase() === "j") {
       e.preventDefault();
-      setAsk(!showAsk);
-    } else if (e.key === "Escape" && showAsk && !e.defaultPrevented && !settingsAt && !showSearch && !showTrash) {
+      toggleAsk();
+    } else if (e.key === "Escape" && askMode && !e.defaultPrevented && !settingsAt && !showSearch && !showTrash) {
       // Esc closes the panel when it has the focus, or when nothing does.
       const at = document.activeElement;
-      if (!at || at === document.body || at.closest(".ask")) setAsk(false);
+      if (!at || at === document.body || at.closest(".ask")) setAsk(null);
     }
   }
 
@@ -424,7 +442,7 @@
   class:collapsed
   class:writing
   class:resizing
-  class:ask-open={showAsk}
+  class:right-open={askMode === "side"}
   style:--sidebar-width="{sidebarWidth}px"
 >
   <aside class="sidebar" aria-label="Sidebar">
@@ -442,7 +460,7 @@
         <button class="nav-row" aria-keyshortcuts="Meta+K Control+K" onclick={() => ((drawer = false), (showSearch = true))}>
           <Icon name="search" /><span class="nav-label">Search</span><kbd>⌘K</kbd>
         </button>
-        <button class="nav-row" aria-keyshortcuts="Meta+J Control+J" aria-pressed={showAsk} onclick={() => setAsk(!showAsk)}>
+        <button class="nav-row" aria-keyshortcuts="Meta+J Control+J" aria-pressed={askMode === "overlay" || askMode === "full"} onclick={toggleAsk}>
           <Icon name="sparkles" /><span class="nav-label">Ask</span><kbd>⌘J</kbd>
         </button>
         <button class="nav-row" onclick={() => openDay(today())}>
@@ -536,11 +554,11 @@
       </button>
       <button
         class="icon-btn topbar-ask"
-        class:active={showAsk}
-        aria-label="Ask your notes"
-        title="Ask your notes (⌘J)"
-        aria-pressed={showAsk}
-        onclick={() => setAsk(!showAsk)}
+        class:active={askMode === "side"}
+        aria-label="Ask about this page"
+        title="Ask about this page"
+        aria-pressed={askMode === "side"}
+        onclick={toggleAskBeside}
       >
         <Icon name="sparkles" size={18} />
       </button>
@@ -583,16 +601,27 @@
     </main>
   </div>
 
-  {#if showAsk}
-    <div class="ask-host">
-      <AskPanel
-        {client}
-        {settings}
-        signedIn={account.server ?? ""}
-        onclose={() => setAsk(false)}
-        oncite={openCited}
-        onsettings={(s) => (settingsAt = s)}
-      />
+  {#snippet askPanel(mode: AskMode)}
+    <AskPanel
+      {client}
+      {settings}
+      signedIn={account.server ?? ""}
+      {mode}
+      page={mode === "side" ? current : null}
+      pageTitle={title}
+      onmode={setAsk}
+      onclose={() => setAsk(null)}
+      oncite={openCited}
+      onsettings={(s) => (settingsAt = s)}
+    />
+  {/snippet}
+  {#if askMode === "side"}
+    <RightPanel label="Ask panel" width={askWidth} min={PANEL.min} max={PANEL.max} onwidth={setAskWidth}>
+      {@render askPanel("side")}
+    </RightPanel>
+  {:else if askMode}
+    <div class="ask-float" class:full={askMode === "full"}>
+      {@render askPanel(askMode)}
     </div>
   {/if}
 
@@ -600,7 +629,7 @@
     <button class="tab" aria-label="Pages" onclick={() => (drawer = true)}><Icon name="house" size={22} /><span>Pages</span></button>
     <button class="tab" onclick={() => openDay(today())}><Icon name="calendar-days" size={22} /><span>Today</span></button>
     <button class="tab" onclick={() => (showSearch = true)}><Icon name="search" size={22} /><span>Search</span></button>
-    <button class="tab" onclick={() => setAsk(true)}><Icon name="sparkles" size={22} /><span>Ask</span></button>
+    <button class="tab" onclick={() => setAsk("overlay")}><Icon name="sparkles" size={22} /><span>Ask</span></button>
     <button class="tab" onclick={() => createPage(null)}><Icon name="square-pen" size={22} /><span>New page</span></button>
   </nav>
 </div>

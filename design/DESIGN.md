@@ -326,13 +326,24 @@ Moods use Lucide faces (angry, frown, meh, smile, laugh) in the mood colours.
 
 ### 7.9 Ask your notes (`Ask.svelte`, `ask.css`)
 
-- **Where**: a panel at the right of the page, as in Notion AI, 400 px, `--bg` with a hairline on its left,
-  the full height of the window. It opens from the top bar's `sparkles` button, the sidebar's "Ask" row,
-  or ⌘J, and stays open per device. Between 701 and 1100 px it lies over the page (`--bg-elevated`,
-  `--shadow-lg`) rather than squeezing it. On phones it's the whole screen, from the tab bar's "Ask"
-  tab; the top bar's button is hidden there.
+- **Where**: it depends on where it was opened, and desktops and the browser behave the same.
+  - From the page's own top-bar button (`sparkles`, "Ask about this page"), as in AFFiNE: a right
+    panel beside the page (`RightPanel.svelte`, the container for any later panel), 400 px to start,
+    `--bg` with a hairline on its left, the full height of the window. Its left edge drags (or takes
+    ←/→) to resize it, 300–720 px, never leaving the page under 360 px, and the width is kept. It
+    stays open per device, and asks about the open page.
+  - From the sidebar's "Ask" row or ⌘J: over the page at the right (`--bg-elevated`, `--shadow-lg`),
+    asking all the notes. Its `maximize-2` button fills the page beside the sidebar for long chats
+    (the chat keeps to 760 px), and `minimize-2` shrinks it back. A citation shrinks it so the page shows.
+  - On phones, both fill the screen, from the top bar's button or the tab bar's "Ask" tab, with no
+    resizing or expanding.
 - **Head**: 44 px: the chat's title (or "Ask your notes"), then Chats (`history`, pressed while the list
-  shows), New chat and Close. Esc closes the panel when it has the focus, or nothing does.
+  shows), New chat, expand or shrink (floating only) and Close. Esc closes the panel when it has the
+  focus, or nothing does.
+- **About this page**: opened beside a page, a chip in the question box names it (`file-text`, the
+  title, an × that asks all the notes instead; "Ask this page" puts it back). Questions then keep to
+  that page and the pages inside it; journal entries stay out unless Settings lets them in. Moving
+  to another page moves the chip with it. Servers too old for this show no chip.
 - **Messages**: questions are `--bg-subtle` bubbles at the right, radius 12. Answers are plain text at
   the left, line height 1.6, in a safe Markdown subset (paragraphs, lists, bold, italic, code): never
   HTML, images or live links, since an answer can quote any page. Until the first words, a spinning
@@ -341,11 +352,13 @@ Moods use Lucide faces (angry, frown, meh, smile, laugh) in the mood colours.
   finished answer, the cited sources are hairline chips: the number, a `file-text` icon and the page
   title. Either opens the page at that block, which flashes as a search hit does. On phones the panel
   gives way to the page. A source whose page is gone is grey and does nothing.
-- **Question box**: a raised card pinned at the bottom (`--bg-elevated`, `--shadow-sm`, radius 12) with
-  a growing textarea (16 px on phones) and a round accent send button, which becomes Stop while an
-  answer streams. Enter asks, Shift+Enter adds a line.
+- **Question box**: a raised card pinned at the bottom (`--bg-elevated`, `--shadow-sm`, radius 12): a
+  growing textarea (16 px on phones) on its own row, a line plus equal padding tall so the placeholder
+  sits centred; under it a bar with the page chip, the server's model as a small `--text-3` label
+  (from the server's `[ask.chat]`, never named in prose), and a round accent send button, which
+  becomes Stop while an answer streams. Enter asks, Shift+Enter adds a line.
 - **Empty and unavailable**: a 28 px `sparkles`, a 600-weight line and `--text-2` lines below: where
-  answers come from and which model writes them, whether journal entries are in ("Change" opens
+  answers come from ("Answers come from your pages."), whether journal entries are in ("Change" opens
   Settings › Journal), and whether the server searches only words. When Ask can't work (not signed
   in, no chat model on the server, search off) it says why and what to do.
 - **Saved chats**: rows like the sidebar's (`message-square-text`, title, a short time on the right,

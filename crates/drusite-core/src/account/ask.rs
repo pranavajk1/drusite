@@ -40,6 +40,9 @@ struct ServerStatus {
     #[serde(default)]
     embedding_model: Option<String>,
     indexing: i64,
+    /// Older servers leave it out.
+    #[serde(default)]
+    page_scope: bool,
 }
 
 #[derive(Deserialize)]
@@ -103,6 +106,7 @@ fn not_signed_in() -> AskStatus {
         semantic: false,
         embedding_model: None,
         indexing: 0,
+        page_scope: false,
     }
 }
 
@@ -251,6 +255,7 @@ impl Supervisor {
                 semantic: s.semantic,
                 embedding_model: s.embedding_model,
                 indexing: u32::try_from(s.indexing.max(0)).unwrap_or(u32::MAX),
+                page_scope: s.page_scope,
             },
             // A server from before Ask answers 404.
             Err(f) if matches!(f.code.as_deref(), Some("404" | "not_found")) => AskStatus {
@@ -264,6 +269,7 @@ impl Supervisor {
                 semantic: false,
                 embedding_model: None,
                 indexing: 0,
+                page_scope: false,
             },
             // The workspace hasn't reached the server yet (a moment after signing in).
             Err(f) if f.code.as_deref() == Some("forbidden") => AskStatus {
@@ -275,6 +281,7 @@ impl Supervisor {
                 semantic: false,
                 embedding_model: None,
                 indexing: 0,
+                page_scope: false,
             },
             Err(f) => AskStatus {
                 signed_in: true,
@@ -285,6 +292,7 @@ impl Supervisor {
                 semantic: false,
                 embedding_model: None,
                 indexing: 0,
+                page_scope: false,
             },
         }
     }
@@ -370,6 +378,7 @@ impl Supervisor {
         conversation: Option<String>,
         question: String,
         today: Option<String>,
+        page: Option<PageId>,
         on_update: impl Fn(&str, AskUpdate) + Send + 'static,
     ) -> Result<(), String> {
         let path = self.ws_path("ask")?;
@@ -377,6 +386,7 @@ impl Supervisor {
             "conversation": conversation,
             "question": question,
             "today": today,
+            "page": page,
         });
         let cancelled = Arc::new(AtomicBool::new(false));
         if let Ok(mut f) = following().lock() {

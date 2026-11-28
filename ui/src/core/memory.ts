@@ -241,7 +241,14 @@ export class MemoryCore {
   private conversationTimes = new Map<string, number>();
   private asking = new Set<string>();
 
-  private askAnswer(question: string): { sources: AskSource[]; text: string } {
+  /** Whether `id` is `page` or inside it. */
+  private within(id: PageId, page: PageId): boolean {
+    for (let at: PageId | null = id, n = 0; at !== null && n <= this.pages.length; at = this.page(at).parent, n++)
+      if (at === page) return true;
+    return false;
+  }
+
+  private askAnswer(question: string, page: PageId | null): { sources: AskSource[]; text: string } {
     const words = (t: string) =>
       t
         .normalize("NFD")
@@ -253,6 +260,7 @@ export class MemoryCore {
     const scored: { page: MemPage; block: MemBlock; score: number }[] = [];
     for (const p of this.pages) {
       if (this.trashed(p.id) || (p.kind === "journal" && !this.settings.askJournal)) continue;
+      if (page !== null && !this.within(p.id, page)) continue;
       for (const b of p.blocks) {
         const score = words(b.text).filter((w) => want.has(w)).length;
         if (score > 0) scored.push({ page: p, block: b, score });
@@ -271,7 +279,7 @@ export class MemoryCore {
     return { sources, text };
   }
 
-  private ask(request: string, conversationId: string | null, question: string): void {
+  private ask(request: string, conversationId: string | null, question: string, page: PageId | null): void {
     let conversation = conversationId ? this.conversations.find((c) => c.id === conversationId) : undefined;
     if (conversationId && !conversation) fail("account", "not found");
     if (!conversation) {
@@ -282,7 +290,7 @@ export class MemoryCore {
     const asked: AskMessage = { id: newId(), role: "user", text: question.trim(), sources: [], model: null, error: null, at: Date.now() };
     c.messages.push(asked);
     this.conversationTimes.set(c.id, Date.now());
-    const { sources, text } = this.askAnswer(question);
+    const { sources, text } = this.askAnswer(question, page);
     const send = (update: AskUpdate) => this.emit({ type: "ask", request, update });
     this.asking.add(request);
     const pieces = text.match(/.{1,12}/gsu) ?? [];
@@ -678,7 +686,7 @@ export class MemoryCore {
       case "askStatus":
         return {
           type: "askStatus",
-          status: { signedIn: true, available: true, message: null, reason: null, model: "Memory", semantic: false, embeddingModel: null, indexing: 0 },
+          status: { signedIn: true, available: true, message: null, reason: null, model: "Memory", semantic: false, embeddingModel: null, indexing: 0, pageScope: true },
         };
       case "conversations":
         return {
@@ -714,7 +722,7 @@ export class MemoryCore {
         this.conversations = this.conversations.filter((c) => c.id !== command.id);
         return { type: "done" };
       case "ask":
-        this.ask(command.request, command.conversation, command.question);
+        this.ask(command.request, command.conversation, command.question, command.page ?? null);
         return { type: "done" };
       case "cancelAsk":
         this.asking.delete(command.request);

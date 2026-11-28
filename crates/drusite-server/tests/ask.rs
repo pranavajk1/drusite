@@ -14,6 +14,7 @@
 
 mod common;
 
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
@@ -437,13 +438,24 @@ impl Device {
         conversation: Option<&str>,
         question: &str,
     ) -> Result<Answer, (u16, Value)> {
+        self.ask_within(server, conversation, question, None).await
+    }
+
+    /// [`Self::ask`], kept to `page` and the pages inside it.
+    async fn ask_within(
+        &self,
+        server: &Url,
+        conversation: Option<&str>,
+        question: &str,
+        page: Option<PageId>,
+    ) -> Result<Answer, (u16, Value)> {
         let ws = self.workspace();
         let r = self
             .request(
                 "POST",
                 server,
                 &format!("api/v1/workspaces/{ws}/ask"),
-                Some(json!({ "conversation": conversation, "question": question, "today": "2026-11-27" })),
+                Some(json!({ "conversation": conversation, "question": question, "today": "2026-11-27", "page": page })),
             )
             .await;
         let status = r.status().as_u16();
@@ -1144,4 +1156,79 @@ async fn a_self_hosted_model_answers_with_citations() {
         assert_ne!(dims, dims2);
     }
     assert_no_secrets_logged();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_question_from_a_page_keeps_to_it_and_the_pages_inside() {
+    logs();
+    let (base, _) = fake_providers().await;
+    let Some(server) = serve("openai-compatible", None, &base, &[]).await else {
+        return;
+    };
+    let user = account(&server.state, "scope@example.com").await;
+    let device = Device::new(&server.state, user).await;
+    let (house, _) = device.page("House", &["The spare key is under the flowerpot."]);
+    let Response::PageCreated { page: shed } = device.handle(Command::CreatePage {
+        parent: Some(house),
+        title: "Shed".into(),
+    }) else {
+        panic!()
+    };
+    device.fill(shed.id, &["The shed key hangs by the door."]);
+    let (office, _) = device.page("Office", &["The office key is in the top drawer."]);
+    device.connect(&server.url);
+    device.indexed(&server.url, "flowerpot").await;
+    device.indexed(&server.url, "drawer").await;
+    device.indexed(&server.url, "hangs").await;
+
+    let (_, status) = device
+        .json(
+            "GET",
+            &server.url,
+            &format!("api/v1/ask?workspace={}", device.workspace()),
+            None,
+        )
+        .await;
+    assert_eq!(status["pageScope"], true);
+
+    let pages_of = |a: &Answer| -> HashSet<String> {
+        a.one("sources")
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["page"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    // Everything, unscoped.
+    let all = device
+        .ask(&server.url, None, "Where is the key?")
+        .await
+        .unwrap();
+    assert!(
+        pages_of(&all).contains(&office.to_string()),
+        "{:?}",
+        all.events
+    );
+
+    // From the House page: the house and its shed, never the office.
+    let scoped = device
+        .ask_within(&server.url, None, "Where is the key?", Some(house))
+        .await
+        .unwrap();
+    let pages = pages_of(&scoped);
+    assert!(!pages.is_empty(), "{:?}", scoped.events);
+    assert!(
+        pages
+            .iter()
+            .all(|p| *p == house.to_string() || *p == shed.id.to_string()),
+        "{pages:?}"
+    );
+    assert!(!scoped.text().contains("drawer"), "{}", scoped.text());
+
+    // From the Office page alone.
+    let office_only = device
+        .ask_within(&server.url, None, "Where is the key?", Some(office))
+        .await
+        .unwrap();
+    assert_eq!(pages_of(&office_only), HashSet::from([office.to_string()]));
 }
