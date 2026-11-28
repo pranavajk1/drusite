@@ -14,7 +14,7 @@ use drusite_model::{BlockId, PageId};
 use serde::Deserialize;
 use url::Url;
 
-use super::{AccountError, HttpError, Supervisor, agent, auth, blocking, now, read};
+use super::{AccountError, HttpError, Supervisor, TokenError, agent, auth, blocking, now, read};
 use crate::api::{
     AskMessage, AskRole, AskSource, AskStatus, AskUpdate, Conversation, ConversationSummary,
 };
@@ -131,6 +131,17 @@ impl From<HttpError> for Failure {
     }
 }
 
+impl From<TokenError> for Failure {
+    fn from(e: TokenError) -> Self {
+        e.to_string().into()
+    }
+}
+
+/// The server refused the access token (or its proof): worth refreshing and trying once more.
+fn unauthorized(code: Option<&str>) -> bool {
+    matches!(code, Some("invalid_token" | "invalid_dpop_proof" | "401"))
+}
+
 impl From<String> for Failure {
     fn from(message: String) -> Self {
         Self {
@@ -150,17 +161,36 @@ impl Supervisor {
         self.call(method, path, body).await.map_err(|f| f.message)
     }
 
+    /// Sends one request with the access token in use. If the server refuses the token (it ran
+    /// out, or the server's clock is ahead), refreshes it and tries once more.
     pub(super) async fn call<T: serde::de::DeserializeOwned + Send + 'static>(
         &self,
         method: &'static str,
         path: &str,
         body: Option<serde_json::Value>,
     ) -> Result<T, Failure> {
-        let (server, token) = self.current()?;
+        let (server, token) = self.access(None).await?;
+        match self.send_once(method, &server, &token, path, body.clone()).await {
+            Err(f) if unauthorized(f.code.as_deref()) => {
+                let (server, fresh) = self.access(Some(&token)).await?;
+                self.send_once(method, &server, &fresh, path, body).await
+            }
+            other => other,
+        }
+    }
+
+    async fn send_once<T: serde::de::DeserializeOwned + Send + 'static>(
+        &self,
+        method: &'static str,
+        server: &Url,
+        token: &str,
+        path: &str,
+        body: Option<serde_json::Value>,
+    ) -> Result<T, Failure> {
         let url = server.join(path).map_err(|e| e.to_string())?;
         let mut htu = url.clone();
         htu.set_query(None);
-        let proof = auth::proof(&*self.inner.key, method, &htu, Some(&token), now())
+        let proof = auth::proof(&*self.inner.key, method, &htu, Some(token), now())
             .map_err(|e| e.to_string())?;
         let authorization = format!("DPoP {token}");
         let agent = agent();
@@ -189,14 +219,16 @@ impl Supervisor {
 
     /// Whether Ask works with this device's server.
     pub async fn ask_status(&self) -> AskStatus {
-        if self.current().is_err() {
-            let mut status = not_signed_in();
-            if self.status().server.is_some() {
+        match self.access(None).await {
+            Ok(_) => {}
+            Err(TokenError::SignedOut) => return not_signed_in(),
+            Err(TokenError::Network(_)) => {
+                let mut status = not_signed_in();
                 status.signed_in = true;
                 status.reason = Some("unreachable".to_owned());
                 status.message = Some("Not connected to the server right now.".to_owned());
+                return status;
             }
-            return status;
         }
         let path = match self.workspace() {
             Ok(ws) => format!("api/v1/ask?workspace={ws}"),
@@ -337,12 +369,7 @@ impl Supervisor {
         today: Option<String>,
         on_update: impl Fn(&str, AskUpdate) + Send + 'static,
     ) -> Result<(), String> {
-        let (server, token) = self.current()?;
-        let url = server
-            .join(&self.ws_path("ask")?)
-            .map_err(|e| e.to_string())?;
-        let proof = auth::proof(&*self.inner.key, "POST", &url, Some(&token), now())
-            .map_err(|e| e.to_string())?;
+        let path = self.ws_path("ask")?;
         let body = serde_json::json!({
             "conversation": conversation,
             "question": question,
@@ -352,31 +379,68 @@ impl Supervisor {
         if let Ok(mut f) = following().lock() {
             f.insert(request.clone(), Arc::clone(&cancelled));
         }
-        let authorization = format!("DPoP {token}");
-        tokio::task::spawn_blocking(move || {
-            let result = stream(&url, &authorization, &proof, &body, &cancelled, &|u| {
-                on_update(&request, u);
-            });
-            if let Err(message) = result {
-                on_update(&request, AskUpdate::Failed { message });
-            }
-            if let Ok(mut f) = following().lock() {
-                f.remove(&request);
-            }
+        let supervisor = self.clone();
+        tokio::spawn(async move {
+            let opened = supervisor.open_answer(&path, body).await;
+            // Reading the answer blocks: off the async threads.
+            let _ = tokio::task::spawn_blocking(move || {
+                let result = opened.and_then(|response| {
+                    read_answer(response, &cancelled, &|u| on_update(&request, u))
+                });
+                if let Err(message) = result {
+                    on_update(&request, AskUpdate::Failed { message });
+                }
+                if let Ok(mut f) = following().lock() {
+                    f.remove(&request);
+                }
+            })
+            .await;
         });
         Ok(())
     }
+
+    /// Posts the question and waits for the answer to start, refreshing the access token and
+    /// trying once more if the server refuses it.
+    async fn open_answer(
+        &self,
+        path: &str,
+        body: serde_json::Value,
+    ) -> Result<http::Response<ureq::Body>, String> {
+        let mut stale: Option<String> = None;
+        loop {
+            let (server, token) = self.access(stale.as_deref()).await?;
+            let url = server.join(path).map_err(|e| e.to_string())?;
+            let proof = auth::proof(&*self.inner.key, "POST", &url, Some(&token), now())
+                .map_err(|e| e.to_string())?;
+            let authorization = format!("DPoP {token}");
+            let body = body.clone();
+            let opened = tokio::task::spawn_blocking(move || {
+                open(&url, &authorization, &proof, &body)
+            })
+            .await
+            .map_err(|e| e.to_string())?;
+            match opened {
+                Ok(response) => return Ok(response),
+                Err(Opened::Unauthorized(_)) if stale.is_none() => stale = Some(token),
+                Err(Opened::Unauthorized(m) | Opened::Failed(m)) => return Err(m),
+            }
+        }
+    }
 }
 
-/// Reads the server-sent events of one answer, until it ends, fails or is cancelled.
-fn stream(
+/// Why an answer didn't start.
+enum Opened {
+    Unauthorized(String),
+    Failed(String),
+}
+
+/// Posts the question; the response, once the server has accepted it.
+fn open(
     url: &Url,
     authorization: &str,
     proof: &str,
     body: &serde_json::Value,
-    cancelled: &AtomicBool,
-    on_update: &dyn Fn(AskUpdate),
-) -> Result<(), String> {
+) -> Result<http::Response<ureq::Body>, Opened> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(ANSWER_TIMEOUT))
         .timeout_connect(Some(Duration::from_secs(15)))
@@ -390,18 +454,35 @@ fn stream(
         .header("DPoP", proof)
         .header("Accept", "text/event-stream")
         .send_json(body)
-        .map_err(|e| format!("can't reach the server: {e}"))?;
+        .map_err(|e| Opened::Failed(format!("can't reach the server: {e}")))?;
     let status = response.status();
-    if !status.is_success() {
-        #[derive(Deserialize)]
-        struct Refusal {
-            message: Option<String>,
-        }
-        let refusal: Option<Refusal> = response.body_mut().read_json().ok();
-        return Err(refusal
-            .and_then(|r| r.message)
-            .unwrap_or_else(|| format!("the server answered {status}")));
+    if status.is_success() {
+        return Ok(response);
     }
+    #[derive(Deserialize)]
+    struct Refusal {
+        error: Option<String>,
+        message: Option<String>,
+        error_description: Option<String>,
+    }
+    let refusal: Option<Refusal> = response.body_mut().read_json().ok();
+    let code = refusal.as_ref().and_then(|r| r.error.clone());
+    let message = refusal
+        .and_then(|r| r.message.or(r.error_description))
+        .unwrap_or_else(|| format!("the server answered {status}"));
+    if status == http::StatusCode::UNAUTHORIZED || unauthorized(code.as_deref()) {
+        Err(Opened::Unauthorized(message))
+    } else {
+        Err(Opened::Failed(message))
+    }
+}
+
+/// Reads the server-sent events of one answer, until it ends, fails or is cancelled.
+fn read_answer(
+    mut response: http::Response<ureq::Body>,
+    cancelled: &AtomicBool,
+    on_update: &dyn Fn(AskUpdate),
+) -> Result<(), String> {
     let reader = std::io::BufReader::new(response.body_mut().as_reader());
     let mut name = String::new();
     let mut data = String::new();

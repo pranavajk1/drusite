@@ -3,9 +3,13 @@
 //! Staying signed in to a server, and in sync with it: what the apps run.
 //!
 //! A [`Supervisor`] owns the device's connection. Signed in, it keeps one sync connection open
-//! ([`crate::sync::net::run`]), refreshing the access token when it runs out and reconnecting
+//! ([`crate::sync::net::run`]), refreshing the access token before it runs out and reconnecting
 //! with backoff when the network goes away. It reports how things stand as an
 //! [`AccountStatus`], which the app forwards to the UI.
+//!
+//! Every request to the server (sync, attachments, Ask, sharing) uses the one access token the
+//! supervisor holds. It's refreshed a minute before it runs out, even while the connection stays
+//! open, and a request the server refuses with `invalid_token` refreshes and tries once more.
 //!
 //! The refresh token is kept in the encrypted store, and rotates on every refresh: the new one
 //! is saved before the access token is used. The device key never leaves the platform's key
@@ -33,8 +37,11 @@ use crate::sync::net::{self, NetError};
 mod ask;
 mod share;
 
-/// Refresh the access token when it has less than this left.
+/// Refresh the access token when it has less than this left (or less than half its life, for
+/// tokens shorter than two minutes).
 const REFRESH_BEFORE: Duration = Duration::from_secs(60);
+/// How long to wait before trying again after refreshing ahead of time failed.
+const REFRESH_RETRY: Duration = Duration::from_secs(30);
 /// How long one HTTP request may take.
 const HTTP_TIMEOUT: Duration = Duration::from_secs(20);
 /// The shortest and longest wait before reconnecting.
@@ -199,12 +206,22 @@ struct Inner {
     pending: Mutex<Option<Authorization>>,
     /// Wakes the loop: drop the connection or the wait, and look again.
     wake: Notify,
-    /// The access token a sign-in just got, for the loop to use first.
-    fresh: Mutex<Option<Access>>,
     /// Set by [`Supervisor::stop`]: the loop ends when it next wakes.
     stopped: AtomicBool,
-    /// The server and the access token the loop is using, for other requests the app makes.
-    current: Mutex<Option<(Url, String)>>,
+    /// The server and the access token every request uses: the sync connection, attachments,
+    /// Ask, sharing. Only [`access`] changes it once signed in.
+    current: Mutex<Option<Session>>,
+    /// Held while refreshing, so the sync loop and a request never both spend the refresh token
+    /// (it rotates on every use).
+    refreshing: tokio::sync::Mutex<()>,
+    /// The server, and the version it gave when sync last connected to it.
+    server_version: Mutex<Option<(String, String)>>,
+}
+
+#[derive(Clone)]
+struct Session {
+    server: Url,
+    access: Access,
 }
 
 /// The device's connection to its server. Cheap to clone; every clone is the same supervisor.
@@ -249,6 +266,7 @@ impl Supervisor {
                 email: a.email,
                 phase: SyncPhase::Connecting,
                 message: None,
+                server_version: None,
             },
             _ => AccountStatus::signed_out(None),
         };
@@ -260,9 +278,10 @@ impl Supervisor {
             status: Mutex::new(initial),
             pending: Mutex::new(None),
             wake: Notify::new(),
-            fresh: Mutex::new(None),
             stopped: AtomicBool::new(false),
             current: Mutex::new(None),
+            refreshing: tokio::sync::Mutex::new(()),
+            server_version: Mutex::new(None),
         });
         runtime.spawn(run(Arc::clone(&inner)));
         Self { inner }
@@ -339,6 +358,7 @@ impl Supervisor {
             email: None,
             phase: SyncPhase::SigningIn,
             message: None,
+            server_version: None,
         });
         Ok(url)
     }
@@ -382,9 +402,9 @@ impl Supervisor {
         {
             lock(&self.inner.core)?.store.set_account_email(&me.email)?;
         }
-        *lock(&self.inner.fresh)? = Some(Access {
-            token: tokens.access_token,
-            expires: tokio::time::Instant::now() + Duration::from_secs(tokens.expires_in),
+        *lock(&self.inner.current)? = Some(Session {
+            server,
+            access: Access::new(tokens.access_token, tokens.expires_in),
         });
         Ok(())
     }
@@ -418,6 +438,7 @@ impl Supervisor {
             core.store.sign_out()?;
             account
         };
+        *lock(&self.inner.current)? = None;
         self.inner.wake.notify_one();
         if let Some(account) = account
             && let Some(token) = account.refresh_token
@@ -446,14 +467,11 @@ impl Supervisor {
         set_status(&self.inner, status);
     }
 
-    /// The server and access token, while signed in.
-    fn current(&self) -> Result<(Url, String), String> {
-        self.inner
-            .current
-            .lock()
-            .ok()
-            .and_then(|c| c.clone())
-            .ok_or_else(|| "not connected to the server".to_owned())
+    /// The server and an access token that isn't about to run out, refreshing it if it is.
+    /// `stale` is a token the server just refused: it's replaced even if it should still be
+    /// good (the server's clock, or a token revoked early).
+    async fn access(&self, stale: Option<&str>) -> Result<(Url, String), TokenError> {
+        access(&self.inner, stale).await
     }
 
     pub(crate) fn workspace(&self) -> Result<String, String> {
@@ -477,16 +495,11 @@ impl Supervisor {
             undone_at: Option<i64>,
             pages: Vec<drusite_model::PageId>,
         }
-        let (server, token) = self.current()?;
         let ws = self.workspace()?;
-        let items: Vec<Item> = get_json(
-            &server,
-            &format!("api/v1/workspaces/{ws}/agent-activity"),
-            &token,
-            &self.inner.key,
-        )
-        .await
-        .map_err(|e| AccountError::from(e).to_string())?;
+        let items: Vec<Item> = self
+            .call("GET", &format!("api/v1/workspaces/{ws}/agent-activity"), None)
+            .await
+            .map_err(|f| f.message)?;
         Ok(items
             .into_iter()
             .map(|i| crate::api::AgentCall {
@@ -504,31 +517,27 @@ impl Supervisor {
 
     /// Undoes an agent's call on the server; the change comes back here by sync.
     pub async fn undo_server_agent_call(&self, id: &str) -> Result<(), String> {
-        let (server, token) = self.current()?;
         let ws = self.workspace()?;
-        let url = server
-            .join(&format!("api/v1/workspaces/{ws}/agent-activity/{id}/undo"))
-            .map_err(|e| e.to_string())?;
-        let proof = auth::proof(&*self.inner.key, "POST", &url, Some(&token), now())
-            .map_err(|e| e.to_string())?;
-        let authorization = format!("DPoP {token}");
-        let agent = agent();
-        let _: serde_json::Value = blocking(move || {
-            read(
-                agent
-                    .post(url.as_str())
-                    .header("Authorization", &authorization)
-                    .header("DPoP", &proof)
-                    .send_empty(),
+        let _: serde_json::Value = self
+            .call(
+                "POST",
+                &format!("api/v1/workspaces/{ws}/agent-activity/{id}/undo"),
+                None,
             )
-        })
-        .await
-        .map_err(|e| AccountError::from(e).to_string())?;
+            .await
+            .map_err(|f| f.message)?;
         Ok(())
     }
 }
 
-fn set_status(inner: &Inner, status: AccountStatus) {
+fn set_status(inner: &Inner, mut status: AccountStatus) {
+    // The server's version stays known while it's the same server, offline or not.
+    if let Ok(known) = inner.server_version.lock() {
+        status.server_version = known
+            .as_ref()
+            .filter(|(server, _)| status.server.as_ref() == Some(server))
+            .map(|(_, version)| version.clone());
+    }
     let Ok(mut current) = inner.status.lock() else {
         return;
     };
@@ -575,17 +584,134 @@ enum Next {
     Idle,
 }
 
+#[derive(Clone)]
 struct Access {
     token: String,
     expires: tokio::time::Instant,
+    lifetime: Duration,
+}
+
+impl Access {
+    fn new(token: String, expires_in: u64) -> Self {
+        let lifetime = Duration::from_secs(expires_in);
+        Self {
+            token,
+            expires: tokio::time::Instant::now() + lifetime,
+            lifetime,
+        }
+    }
+
+    /// When to refresh it: a minute before it runs out, or halfway for a short one, so a
+    /// one-minute token isn't refreshed on every request.
+    fn refresh_at(&self) -> tokio::time::Instant {
+        self.expires
+            .checked_sub(REFRESH_BEFORE.min(self.lifetime / 2))
+            .unwrap_or(self.expires)
+    }
+
+    fn usable(&self) -> bool {
+        tokio::time::Instant::now() < self.refresh_at()
+    }
+}
+
+/// Why there's no access token to use.
+#[derive(Debug)]
+pub(crate) enum TokenError {
+    /// No account on this device, or the server just signed it out.
+    SignedOut,
+    /// The server can't be reached to refresh it.
+    Network(String),
+}
+
+impl std::fmt::Display for TokenError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SignedOut => f.write_str("not signed in to a server"),
+            Self::Network(m) => f.write_str(m),
+        }
+    }
+}
+
+impl From<TokenError> for String {
+    fn from(e: TokenError) -> Self {
+        e.to_string()
+    }
+}
+
+/// The token in use, refreshed first if it's about to run out or is `stale`. One refresh at a
+/// time: whoever waited behind another's refresh takes its result.
+async fn access(inner: &Inner, stale: Option<&str>) -> Result<(Url, String), TokenError> {
+    let _one = inner.refreshing.lock().await;
+    let account = inner
+        .core
+        .lock()
+        .map_err(|_| TokenError::Network("the core crashed".to_owned()))?
+        .store
+        .account()
+        .map_err(|e| TokenError::Network(format!("can't read the store: {e}")))?;
+    let Some((server, refresh_token)) =
+        account.and_then(|a| a.refresh_token.map(|t| (a.server, t)))
+    else {
+        if let Ok(mut current) = inner.current.lock() {
+            *current = None;
+        }
+        return Err(TokenError::SignedOut);
+    };
+    let server = server_url(&server).map_err(|e| TokenError::Network(e.to_string()))?;
+    let held = inner.current.lock().ok().and_then(|c| c.clone());
+    if let Some(s) = held
+        && s.server == server
+        && s.access.usable()
+        && stale != Some(s.access.token.as_str())
+    {
+        return Ok((s.server, s.access.token));
+    }
+    match refresh(inner, &server, &refresh_token).await {
+        Ok(a) => {
+            let token = a.token.clone();
+            if let Ok(mut current) = inner.current.lock() {
+                *current = Some(Session {
+                    server: server.clone(),
+                    access: a,
+                });
+            }
+            Ok((server, token))
+        }
+        Err(HttpError::Refused { code, description }) => {
+            if let Ok(mut core) = inner.core.lock() {
+                let _ = core.store.sign_out();
+            }
+            if let Ok(mut current) = inner.current.lock() {
+                *current = None;
+            }
+            set_status(
+                inner,
+                AccountStatus::signed_out(Some(format!(
+                    "The server signed this device out ({code}: {description}). Sign in again to keep syncing."
+                ))),
+            );
+            inner.wake.notify_one();
+            Err(TokenError::SignedOut)
+        }
+        Err(HttpError::Network(m)) => Err(TokenError::Network(m)),
+    }
+}
+
+/// When the token in use should be refreshed.
+fn refresh_due(inner: &Inner) -> tokio::time::Instant {
+    inner
+        .current
+        .lock()
+        .ok()
+        .and_then(|c| c.as_ref().map(|s| s.access.refresh_at()))
+        .unwrap_or_else(|| tokio::time::Instant::now() + REFRESH_BEFORE)
 }
 
 /// The supervisor's loop: one attempt at a time, until the app exits.
 async fn run(inner: Arc<Inner>) {
-    let mut access: Option<Access> = None;
     let mut backoff = BACKOFF_MIN;
     while !inner.stopped.load(Ordering::SeqCst) {
-        let next = attempt(&inner, &mut access, &mut backoff).await;
+        let next = attempt(&inner, &mut backoff).await;
         if inner.stopped.load(Ordering::SeqCst) {
             break;
         }
@@ -612,7 +738,7 @@ fn grow(backoff: &mut Duration) -> Duration {
     current + current.mul_f64(f64::from(byte[0]) / 1024.0)
 }
 
-async fn attempt(inner: &Arc<Inner>, access: &mut Option<Access>, backoff: &mut Duration) -> Next {
+async fn attempt(inner: &Arc<Inner>, backoff: &mut Duration) -> Next {
     let account = match inner.core.lock().map(|c| c.store.account()) {
         Ok(Ok(a)) => a,
         Ok(Err(e)) => return failed(inner, None, None, &format!("can't read the store: {e}")),
@@ -620,7 +746,9 @@ async fn attempt(inner: &Arc<Inner>, access: &mut Option<Access>, backoff: &mut 
     };
     let signing_in = inner.pending.lock().is_ok_and(|p| p.is_some());
     let Some(account) = account.filter(|a| a.refresh_token.is_some()) else {
-        *access = None;
+        if let Ok(mut current) = inner.current.lock() {
+            *current = None;
+        }
         if !signing_in {
             let message = inner.status.lock().ok().and_then(|s| {
                 (s.phase == SyncPhase::SignedOut)
@@ -631,58 +759,30 @@ async fn attempt(inner: &Arc<Inner>, access: &mut Option<Access>, backoff: &mut 
         }
         return Next::Idle;
     };
-    if let Some(fresh) = inner.fresh.lock().ok().and_then(|mut f| f.take()) {
-        *access = Some(fresh);
-    }
-    let server = match server_url(&account.server) {
-        Ok(s) => s,
-        Err(e) => return failed(inner, Some(&account.server), None, &e.to_string()),
-    };
     let status = |phase, message: Option<String>| AccountStatus {
         server: Some(account.server.clone()),
         email: account.email.clone(),
         phase,
         message,
+        server_version: None,
     };
 
-    if access.as_ref().is_none_or(|a| {
-        a.expires
-            .saturating_duration_since(tokio::time::Instant::now())
-            < REFRESH_BEFORE
-    }) {
+    let usable = inner
+        .current
+        .lock()
+        .is_ok_and(|c| c.as_ref().is_some_and(|s| s.access.usable()));
+    if !usable {
         set_status(inner, status(SyncPhase::Connecting, None));
-        match refresh(
-            inner,
-            &server,
-            account.refresh_token.as_deref().unwrap_or_default(),
-        )
-        .await
-        {
-            Ok(a) => *access = Some(a),
-            Err(HttpError::Refused { code, description }) => {
-                if let Ok(mut core) = inner.core.lock() {
-                    let _ = core.store.sign_out();
-                }
-                set_status(
-                    inner,
-                    AccountStatus::signed_out(Some(format!(
-                        "The server signed this device out ({code}: {description}). Sign in again to keep syncing."
-                    ))),
-                );
-                return Next::Idle;
-            }
-            Err(HttpError::Network(m)) => {
-                set_status(inner, status(SyncPhase::Offline, Some(m)));
-                return Next::Wait(grow(backoff));
-            }
+    }
+    let (server, token) = match access(inner, None).await {
+        Ok(ok) => ok,
+        // The status already says so.
+        Err(TokenError::SignedOut) => return Next::Idle,
+        Err(TokenError::Network(m)) => {
+            set_status(inner, status(SyncPhase::Offline, Some(m)));
+            return Next::Wait(grow(backoff));
         }
-    }
-    let Some(token) = access.as_ref().map(|a| a.token.clone()) else {
-        return Next::Now;
     };
-    if let Ok(mut current) = inner.current.lock() {
-        *current = Some((server.clone(), token.clone()));
-    }
 
     let join = match workspace_to_join(inner, &server, &token).await {
         Ok(join) => join,
@@ -691,7 +791,7 @@ async fn attempt(inner: &Arc<Inner>, access: &mut Option<Access>, backoff: &mut 
             return Next::Wait(grow(backoff));
         }
         Err(JoinProblem::Unauthorized) => {
-            *access = None;
+            invalidate(inner, &token);
             return Next::Wait(grow(backoff));
         }
         Err(JoinProblem::Conflict) => {
@@ -715,20 +815,62 @@ async fn attempt(inner: &Arc<Inner>, access: &mut Option<Access>, backoff: &mut 
     let online = {
         let inner = Arc::clone(inner);
         let online = status(SyncPhase::Online, None);
-        move || set_status(&inner, online)
+        move |version: &str| {
+            if let Ok(mut known) = inner.server_version.lock() {
+                *known = online
+                    .server
+                    .clone()
+                    .zip(Some(version.trim().to_owned()).filter(|v| !v.is_empty()));
+            }
+            set_status(&inner, online);
+        }
+    };
+    // Attachments and requests take the token in use when they start, which is refreshed
+    // ahead of time below while the connection stays open.
+    let in_use = {
+        let inner = Arc::clone(inner);
+        let first = token.clone();
+        move || {
+            inner
+                .current
+                .lock()
+                .ok()
+                .and_then(|c| c.as_ref().map(|s| s.access.token.clone()))
+                .unwrap_or_else(|| first.clone())
+        }
     };
     let connected = net::run_observed(
         Arc::clone(&inner.core),
         &server,
-        &token,
+        in_use,
         &*inner.key,
         join,
         now(),
         online,
     );
-    let ended = tokio::select! {
-        ended = connected => Some(ended),
-        () = inner.wake.notified() => None,
+    tokio::pin!(connected);
+    let mut refreshing: Option<tokio::task::JoinHandle<bool>> = None;
+    let mut retry_at: Option<tokio::time::Instant> = None;
+    let ended = loop {
+        let due = retry_at.unwrap_or_else(|| refresh_due(inner));
+        tokio::select! {
+            ended = &mut connected => break Some(ended),
+            () = inner.wake.notified() => break None,
+            refreshed = async {
+                match refreshing.as_mut() {
+                    Some(h) => h.await.unwrap_or(false),
+                    None => false,
+                }
+            }, if refreshing.is_some() => {
+                refreshing = None;
+                retry_at = (!refreshed).then(|| tokio::time::Instant::now() + REFRESH_RETRY);
+            }
+            () = tokio::time::sleep_until(due), if refreshing.is_none() => {
+                // Off the loop, so the connection keeps going while the server answers.
+                let inner = Arc::clone(inner);
+                refreshing = Some(tokio::spawn(async move { access(&inner, None).await.is_ok() }));
+            }
+        }
     };
     let was_online = inner
         .status
@@ -752,14 +894,16 @@ async fn attempt(inner: &Arc<Inner>, access: &mut Option<Access>, backoff: &mut 
             Next::Wait(grow(backoff))
         }
         Err(NetError::Unauthorized) => {
-            *access = None;
+            invalidate(inner, &token);
             Next::Wait(grow(backoff))
         }
         Err(NetError::SignedOut) => {
             if let Ok(mut core) = inner.core.lock() {
                 let _ = core.store.sign_out();
             }
-            *access = None;
+            if let Ok(mut current) = inner.current.lock() {
+                *current = None;
+            }
             set_status(
                 inner,
                 AccountStatus::signed_out(Some(
@@ -789,6 +933,15 @@ async fn attempt(inner: &Arc<Inner>, access: &mut Option<Access>, backoff: &mut 
     }
 }
 
+/// The server refused `token`: refresh before using it again (unless that already happened).
+fn invalidate(inner: &Inner, token: &str) {
+    if let Ok(mut current) = inner.current.lock()
+        && current.as_ref().is_some_and(|s| s.access.token == token)
+    {
+        *current = None;
+    }
+}
+
 fn failed(inner: &Inner, server: Option<&str>, email: Option<String>, message: &str) -> Next {
     set_status(
         inner,
@@ -797,6 +950,7 @@ fn failed(inner: &Inner, server: Option<&str>, email: Option<String>, message: &
             email,
             phase: SyncPhase::Failed,
             message: Some(message.to_owned()),
+            server_version: None,
         },
     );
     Next::Wait(FAILED_RETRY)
@@ -826,10 +980,7 @@ async fn refresh(inner: &Inner, server: &Url, refresh_token: &str) -> Result<Acc
         .store
         .set_refresh_token(&tokens.refresh_token)
         .map_err(|e| HttpError::Network(format!("can't save the new token: {e}")))?;
-    Ok(Access {
-        token: tokens.access_token,
-        expires: tokio::time::Instant::now() + Duration::from_secs(tokens.expires_in),
-    })
+    Ok(Access::new(tokens.access_token, tokens.expires_in))
 }
 
 enum JoinProblem {

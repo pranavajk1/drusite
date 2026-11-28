@@ -218,6 +218,11 @@ async fn two_devices_sign_in_and_stay_in_sync() {
         Some(server.url.as_str()),
         "the server's own address, from its metadata"
     );
+    assert_eq!(
+        status.server_version.as_deref(),
+        Some(env!("CARGO_PKG_VERSION")),
+        "the version the server gave when sync connected"
+    );
 
     // A new phone takes the account's notes instead of starting its own, giving up the empty
     // page a new install opens on.
@@ -415,4 +420,63 @@ async fn a_server_whose_own_address_cant_be_reached_says_so() {
     let text = err.to_string();
     assert!(text.contains("can't reach http://127.0.0.1:1/"), "{text}");
     assert!(text.contains("public_url"), "{text}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn requests_refresh_a_token_the_server_no_longer_takes() {
+    let Some(server) = common::serve(&password_server()).await else {
+        return;
+    };
+    let mut phone = Device::new();
+    phone.sign_in(&server.url, "ada@example.com", true).await;
+    phone.wait_for(SyncPhase::Online).await;
+    let before = phone.refresh_token().unwrap();
+    let ok = phone.supervisor.ask_status().await;
+    assert!(ok.signed_in && ok.reason.as_deref() != Some("unreachable"), "{ok:?}");
+
+    // The access token runs out on the server while the sync connection stays open: the
+    // server's clock is ahead, or the device slept past it.
+    sqlx::query("UPDATE access_tokens SET expires_at = now() - interval '1 second'")
+        .execute(server.state.db().pool())
+        .await
+        .unwrap();
+
+    // Ask's calls refresh and try again rather than show the refusal.
+    let status = phone.supervisor.ask_status().await;
+    assert!(status.signed_in, "{status:?}");
+    assert_ne!(status.reason.as_deref(), Some("unreachable"), "{status:?}");
+    let after = phone.refresh_token().unwrap();
+    assert_ne!(after, before, "it refreshed once");
+    phone.supervisor.conversations().await.unwrap();
+    assert_eq!(phone.refresh_token().unwrap(), after, "and only once");
+    // Sync never noticed.
+    assert_eq!(phone.status.borrow().phase, SyncPhase::Online);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_short_lived_token_is_refreshed_before_it_runs_out() {
+    let mut settings = password_server();
+    settings.push(("DRUSITE__AUTH__ACCESS_TOKEN_MINUTES", "1"));
+    let Some(server) = common::serve(&settings).await else {
+        return;
+    };
+    let mut phone = Device::new();
+    phone.sign_in(&server.url, "ada@example.com", true).await;
+    phone.wait_for(SyncPhase::Online).await;
+    let first = phone.refresh_token().unwrap();
+
+    // A one-minute token is refreshed halfway, while the connection stays open.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(50);
+    while phone.refresh_token().unwrap() == first {
+        assert!(tokio::time::Instant::now() < deadline, "never refreshed");
+        assert_eq!(phone.status.borrow().phase, SyncPhase::Online);
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    assert_eq!(phone.status.borrow().phase, SyncPhase::Online);
+    // Past the first token's minute, requests still work without a refusal to retry.
+    tokio::time::sleep(Duration::from_secs(35)).await;
+    let status = phone.supervisor.ask_status().await;
+    assert_ne!(status.reason.as_deref(), Some("unreachable"), "{status:?}");
+    phone.create_page("Still syncing");
+    assert_eq!(phone.status.borrow().phase, SyncPhase::Online);
 }

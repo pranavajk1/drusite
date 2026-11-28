@@ -3,6 +3,7 @@
 <script lang="ts">
   import type { CoreClient } from "../core/client";
   import type { AccountStatus, SyncPhase } from "../core/types";
+  import { APP_VERSION } from "../version";
   import Icon from "./ui/Icon.svelte";
 
   let { client, status }: { client: CoreClient; status: AccountStatus } = $props();
@@ -115,6 +116,20 @@
 
   {#if message}
     <p class="field-error" role="status">{message}</p>
+  {/if}
+</div>
+
+<div class="set-group" role="group" aria-labelledby="about-title">
+  <h3 class="set-title" id="about-title">About</h3>
+  <div class="set-row">
+    <div class="set-row-text"><span class="set-label" id="app-version">App version</span></div>
+    <span class="set-value" aria-labelledby="app-version">{APP_VERSION}</span>
+  </div>
+  {#if status.phase !== "signedOut" && status.serverVersion}
+    <div class="set-row">
+      <div class="set-row-text"><span class="set-label" id="server-version">Server version</span></div>
+      <span class="set-value" aria-labelledby="server-version">{status.serverVersion}</span>
+    </div>
   {/if}
 </div>
 

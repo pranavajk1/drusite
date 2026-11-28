@@ -15,6 +15,7 @@ import type {
   AiKindInfo,
   AiProvider,
   ApiError,
+  AccountStatus,
   AskMessage,
   AskSource,
   AskUpdate,
@@ -394,6 +395,15 @@ export class MemoryCore {
     for (const l of this.listeners) l(event);
   }
 
+  /** How the account stands; always signed out, unless a test says otherwise. */
+  private account: AccountStatus = { server: null, email: null, phase: "signedOut", message: null, serverVersion: null };
+
+  /** For tests: the account as a signed-in app would report it, told to the UI as a change. */
+  setAccount(status: AccountStatus): void {
+    this.account = status;
+    this.emit({ type: "accountChanged", status });
+  }
+
   /** The blocks of a page as the core would show them. */
   blocks(page: PageId): Block[] {
     const p = this.page(page);
@@ -617,7 +627,7 @@ export class MemoryCore {
       case "accountStatus":
         return {
           type: "account",
-          status: { server: null, email: null, phase: "signedOut", message: null },
+          status: this.account,
         };
       case "signIn":
       case "cancelSignIn":
