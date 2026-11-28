@@ -497,7 +497,11 @@ impl Supervisor {
         }
         let ws = self.workspace()?;
         let items: Vec<Item> = self
-            .call("GET", &format!("api/v1/workspaces/{ws}/agent-activity"), None)
+            .call(
+                "GET",
+                &format!("api/v1/workspaces/{ws}/agent-activity"),
+                None,
+            )
             .await
             .map_err(|f| f.message)?;
         Ok(items

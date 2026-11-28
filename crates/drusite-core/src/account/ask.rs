@@ -170,7 +170,10 @@ impl Supervisor {
         body: Option<serde_json::Value>,
     ) -> Result<T, Failure> {
         let (server, token) = self.access(None).await?;
-        match self.send_once(method, &server, &token, path, body.clone()).await {
+        match self
+            .send_once(method, &server, &token, path, body.clone())
+            .await
+        {
             Err(f) if unauthorized(f.code.as_deref()) => {
                 let (server, fresh) = self.access(Some(&token)).await?;
                 self.send_once(method, &server, &fresh, path, body).await
@@ -414,11 +417,10 @@ impl Supervisor {
                 .map_err(|e| e.to_string())?;
             let authorization = format!("DPoP {token}");
             let body = body.clone();
-            let opened = tokio::task::spawn_blocking(move || {
-                open(&url, &authorization, &proof, &body)
-            })
-            .await
-            .map_err(|e| e.to_string())?;
+            let opened =
+                tokio::task::spawn_blocking(move || open(&url, &authorization, &proof, &body))
+                    .await
+                    .map_err(|e| e.to_string())?;
             match opened {
                 Ok(response) => return Ok(response),
                 Err(Opened::Unauthorized(_)) if stale.is_none() => stale = Some(token),

@@ -432,7 +432,10 @@ async fn requests_refresh_a_token_the_server_no_longer_takes() {
     phone.wait_for(SyncPhase::Online).await;
     let before = phone.refresh_token().unwrap();
     let ok = phone.supervisor.ask_status().await;
-    assert!(ok.signed_in && ok.reason.as_deref() != Some("unreachable"), "{ok:?}");
+    assert!(
+        ok.signed_in && ok.reason.as_deref() != Some("unreachable"),
+        "{ok:?}"
+    );
 
     // The access token runs out on the server while the sync connection stays open: the
     // server's clock is ahead, or the device slept past it.
