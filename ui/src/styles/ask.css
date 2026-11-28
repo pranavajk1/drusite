@@ -22,6 +22,12 @@
   /* As wide as it was left, but never squeezing the page under 360px. */
   width: max(280px, min(var(--right-width), calc(100vw - var(--sidebar-width) - 360px)));
   min-width: 0;
+}
+
+/* Set apart from the page as the left sidebar is: its tone, and a hairline on the edge. Both on
+   the panel's contents, which would paint over the container's. */
+.right-panel > .ask {
+  background: var(--bg-sidebar);
   box-shadow: inset 1px 0 0 var(--divider);
 }
 

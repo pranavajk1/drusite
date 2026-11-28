@@ -48,6 +48,22 @@ test("from a page, Ask opens beside it and asks about that page", async ({ page 
   expect(squeezed.x + squeezed.width).toBeLessThanOrEqual(side.x + 1);
   await expect(panel.getByRole("button", { name: "Expand to full page" })).toHaveCount(0);
 
+  // Set apart from the page as the left sidebar is: a visible hairline on its edge, and the
+  // sidebar's tone rather than the page's.
+  const look = await page.evaluate(() => {
+    const ask = getComputedStyle(document.querySelector(".right-panel > .ask")!);
+    return {
+      edge: ask.boxShadow,
+      panel: ask.backgroundColor,
+      page: getComputedStyle(document.body).backgroundColor,
+      sidebar: getComputedStyle(document.querySelector(".sidebar")!).backgroundColor,
+    };
+  });
+  expect(look.edge).toMatch(/inset/);
+  expect(look.edge).toMatch(/1px 0px 0px/);
+  expect(look.panel).toBe(look.sidebar);
+  expect(look.panel).not.toBe(look.page);
+
   // Kept to this page.
   await expect(panel.locator(".ask-scope")).toHaveText("Office");
   await expect(panel).toContainText("Answers come from this page and the pages inside it.");
