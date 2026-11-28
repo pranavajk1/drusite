@@ -7,6 +7,9 @@
 use prost::Message;
 
 use crate::MAX_FRAME_BYTES;
+// With both features on (a whole-workspace build), zstd reads compressed frames and ruzstd waits.
+#[cfg(all(feature = "zstd", feature = "unzstd"))]
+use ruzstd as _;
 
 const PLAIN: u8 = 0;
 const ZSTD: u8 = 1;
