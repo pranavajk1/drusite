@@ -8,7 +8,7 @@
 
 import type { AccountStatus, ApiError, AskStatus, AskUpdate, Command, Event, Response, ShareInfo, SyncPhase } from "../types";
 import init, { WasmCore, wipeStore } from "./wasm/drusite_wasm.js";
-import { forgetKey, storeKey } from "./keys";
+import { forgetKey, remember, remembered, storeKey } from "./keys";
 import * as server from "./server";
 
 const PING_EVERY = 30_000;
@@ -298,6 +298,12 @@ export class Leader {
       try {
         session = await server.session();
       } catch {
+        // Offline. A browser that was signed in still is, as far as it knows.
+        const last = this.signedIn ? null : await remembered().catch(() => null);
+        if (last) {
+          this.signedIn = true;
+          this.status = { ...this.status, server: last.server, email: last.email };
+        }
         this.setStatus(this.signedIn ? "offline" : "signedOut", this.signedIn ? "Not connected to the server right now." : null);
         await this.sleep(grow());
         continue;
@@ -315,6 +321,7 @@ export class Leader {
         return;
       }
       if (session === "none") {
+        await remember(null).catch(() => {});
         // A first visit (or just signed out): straight to signing in. A browser with notes of
         // its own (its sign-in ran out) keeps them and offers Sign in under Settings.
         if (this.core.isBlank()) {
@@ -329,6 +336,7 @@ export class Leader {
       }
       this.signedIn = true;
       this.status = { ...this.status, server: session.server, email: session.email };
+      await remember({ server: session.server, email: session.email }).catch(() => {});
       const ended = await this.connect();
       if (this.stopped) return;
       if (ended === "online") backoff = BACKOFF_MIN;

@@ -53,11 +53,38 @@ export async function storeKey(): Promise<{ key: Uint8Array; fresh: boolean }> {
   }
 }
 
-/** Forgets the key (signing out): the store it opened is unreadable from then on. */
+/** Who this browser was last signed in as, so a start with no network still says so. */
+export interface Remembered {
+  email: string | null;
+  server: string;
+}
+
+const SESSION = "session";
+
+export async function remember(session: Remembered | null): Promise<void> {
+  const db = await open();
+  try {
+    if (session) await run(db, "readwrite", (s) => s.put(session, SESSION));
+    else await run(db, "readwrite", (s) => s.delete(SESSION));
+  } finally {
+    db.close();
+  }
+}
+
+export async function remembered(): Promise<Remembered | null> {
+  const db = await open();
+  try {
+    return (await run<Remembered | undefined>(db, "readonly", (s) => s.get(SESSION))) ?? null;
+  } finally {
+    db.close();
+  }
+}
+
+/** Forgets the key and the session (signing out): the store it opened is unreadable from then on. */
 export async function forgetKey(): Promise<void> {
   const db = await open();
   try {
-    await run(db, "readwrite", (s) => s.delete(NAME));
+    await run(db, "readwrite", (s) => s.clear());
   } finally {
     db.close();
   }
