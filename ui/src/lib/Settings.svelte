@@ -74,6 +74,26 @@
     ...candidates.map((p) => ({ value: p.id as string, label: p.title || "Untitled" })),
   ];
 
+  /**
+   * What new journal entries can start from: an empty page, or any ordinary page (named with the
+   * pages it's inside, so two "Daily" pages can be told apart). Never the page entries go under,
+   * an entry, a database or a database's row; the core refuses those too.
+   */
+  const templateOptions = $derived.by(() => {
+    const byId = new Map(pages.map((p) => [p.id, p]));
+    const path = (p: PageInfo) => {
+      const names = [p.title || "Untitled"];
+      for (let at = p.parent ? byId.get(p.parent) : undefined, n = 0; at && n < 20; at = at.parent ? byId.get(at.parent) : undefined, n++)
+        names.unshift(at.title || "Untitled");
+      return names.join(" / ");
+    };
+    const usable = pages
+      .filter((p) => p.kind === "page" && p.id !== settings.journalParent && byId.get(p.parent!)?.kind !== "database")
+      .map((p) => ({ value: p.id as string, label: path(p) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+    return [{ value: "", label: "Empty page" }, ...usable];
+  });
+
   // The Markdown folder and import: desktops only, and only on this device.
   let bridge = $state<BridgeStatus | null>(null);
   let busy = $state(false);
@@ -247,13 +267,14 @@
             <div class="set-row-text">
               <label class="set-label" for="journal-template">New entries start from</label>
               <span class="set-desc">
-                A template's <code>{"{{date}}"}</code>, <code>{"{{title}}"}</code> and <code>{"{{weekday}}"}</code> are filled in.
+                A copy of a page you pick, with its <code>{"{{date}}"}</code>, <code>{"{{title}}"}</code> and
+                <code>{"{{weekday}}"}</code> filled in.
               </span>
             </div>
             <Select
               id="journal-template"
               value={settings.journalTemplate ?? ""}
-              options={pageOptions("An empty page")}
+              options={templateOptions}
               onchange={(v) => set({ type: "journalTemplate", value: page(v) })}
             />
           </div>
@@ -261,7 +282,7 @@
             <div class="set-row-text">
               <label class="set-label" for="ask-journal">Ask your notes reads the journal</label>
               <span class="set-desc">
-                Off, answers leave journal entries out. For this account, on every device.
+                Lets answers use journal entries. For this account, on every device.
               </span>
             </div>
             <Switch id="ask-journal" checked={settings.askJournal} onchange={(on) => set({ type: "askJournal", value: on })} />

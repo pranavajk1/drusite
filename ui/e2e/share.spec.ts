@@ -48,10 +48,9 @@ test("a page is published, its options set, its link renewed and taken down", as
   await pop.getByRole("switch", { name: "Link expires" }).click();
   const date = pop.getByLabel("Last day");
   await expect(date).toBeVisible();
-  await expect(pop).toContainText(/After .+ \d{4}\./);
   await pop.getByRole("switch", { name: "Link expires" }).click();
   await expect(date).toHaveCount(0);
-  await expect(pop).toContainText("It works until you unpublish it.");
+  await expect(pop).toContainText("The link stops working after a day you pick.");
 
   await pop.getByRole("switch", { name: "Password" }).click();
   const pw = pop.getByLabel("Password", { exact: true }).and(pop.locator("input"));
@@ -62,9 +61,8 @@ test("a page is published, its options set, its link renewed and taken down", as
   await pw.fill("open sesame");
   await pop.getByRole("button", { name: "Save" }).click();
   await expect(pop).toContainText("Password set");
-  await expect(pop).toContainText("Readers need the password.");
   await pop.getByRole("switch", { name: "Password" }).click();
-  await expect(pop).toContainText("Ask readers for a password first.");
+  await expect(pop).toContainText("Readers need a password to open it.");
 
   // A new link, confirmed: the old one is replaced.
   await pop.getByRole("button", { name: "New link" }).click();

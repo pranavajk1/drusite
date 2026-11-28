@@ -173,9 +173,6 @@
   }
 
   const can = $derived(!!share?.canPublish && !busy);
-  const expiresText = $derived(
-    share?.expiresAt ? new Date(share.expiresAt).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" }) : "",
-  );
 </script>
 
 {#snippet body()}
@@ -226,7 +223,7 @@
         <div class="share-row">
           <div class="share-row-text">
             <label class="share-label" for="{uid}-expiry">Link expires</label>
-            <span class="share-desc">{share.expiresAt ? `After ${expiresText}.` : "It works until you unpublish it."}</span>
+            <span class="share-desc">The link stops working after a day you pick.</span>
           </div>
           <Switch id="{uid}-expiry" checked={share.expiresAt !== null} disabled={!can} onchange={setExpiry} />
         </div>
@@ -247,7 +244,7 @@
         <div class="share-row">
           <div class="share-row-text">
             <label class="share-label" for="{uid}-pw">Password</label>
-            <span class="share-desc">{share.hasPassword ? "Readers need the password." : "Ask readers for a password first."}</span>
+            <span class="share-desc">Readers need a password to open it.</span>
           </div>
           <Switch id="{uid}-pw" checked={share.hasPassword || settingPassword} disabled={!can} onchange={setPasswordSwitch} />
         </div>
