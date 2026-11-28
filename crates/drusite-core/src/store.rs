@@ -193,10 +193,15 @@ impl Store {
         }
         conn.execute_batch(
             "PRAGMA cipher_memory_security = ON;
-             PRAGMA journal_mode = WAL;
              PRAGMA synchronous = FULL;
              PRAGMA foreign_keys = ON;",
         )?;
+        // Browsers' OPFS VFS has no shared memory, so no WAL: a rollback journal, and the one
+        // connection holds the lock (several tabs share it through one of them).
+        #[cfg(not(target_family = "wasm"))]
+        conn.execute_batch("PRAGMA journal_mode = WAL;")?;
+        #[cfg(target_family = "wasm")]
+        conn.execute_batch("PRAGMA locking_mode = EXCLUSIVE; PRAGMA journal_mode = DELETE;")?;
         let mut store = Self { conn };
         store.migrate()?;
         Ok(store)

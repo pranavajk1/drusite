@@ -5,3 +5,7 @@ The first account:
 
   kubectl exec -n {{ .Release.Namespace }} deploy/{{ include "drusite.fullname" . }} -- \
     /usr/local/bin/drusite-server account create you@example.com
+{{- if .Values.web.enabled }}
+
+The web app is at the server's public_url: sign in there from any browser.
+{{- end }}

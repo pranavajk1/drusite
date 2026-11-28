@@ -7,6 +7,9 @@
 use prost::Message;
 
 use crate::MAX_FRAME_BYTES;
+// With both features on (a whole-workspace build), zstd reads compressed frames and ruzstd waits.
+#[cfg(all(feature = "zstd", feature = "unzstd"))]
+use ruzstd as _;
 
 const PLAIN: u8 = 0;
 const ZSTD: u8 = 1;
@@ -65,7 +68,22 @@ pub fn decode<M: Message + Default>(frame: &[u8]) -> Result<M, FrameError> {
                     .map_err(|_| FrameError::Decompress)?;
                 M::decode(plain.as_slice())
             }
-            #[cfg(not(feature = "zstd"))]
+            #[cfg(all(not(feature = "zstd"), feature = "unzstd"))]
+            {
+                use std::io::Read as _;
+                let decoder = ruzstd::decoding::StreamingDecoder::new(body)
+                    .map_err(|_| FrameError::Decompress)?;
+                let mut plain = Vec::new();
+                decoder
+                    .take(MAX_FRAME_BYTES as u64 + 1)
+                    .read_to_end(&mut plain)
+                    .map_err(|_| FrameError::Decompress)?;
+                if plain.len() > MAX_FRAME_BYTES {
+                    return Err(FrameError::TooLarge);
+                }
+                M::decode(plain.as_slice())
+            }
+            #[cfg(not(any(feature = "zstd", feature = "unzstd")))]
             return Err(FrameError::NoZstd);
         }
         other => return Err(FrameError::Encoding(other)),
@@ -87,7 +105,23 @@ mod tests {
         }))
     }
 
+    /// The browser build: ruzstd reads what the server's zstd writes, and still refuses bombs.
     #[test]
+    #[cfg(all(feature = "unzstd", not(feature = "zstd")))]
+    fn ruzstd_reads_compressed_frames() {
+        let message = push(100_000);
+        let mut frame = vec![ZSTD];
+        frame.extend(zstd::bulk::compress(&message.encode_to_vec(), 3).unwrap());
+        assert_eq!(decode::<ClientMessage>(&frame).unwrap(), message);
+        // What this build writes is plain.
+        assert_eq!(encode(&message)[0], PLAIN);
+        let mut bomb = vec![ZSTD];
+        bomb.extend(zstd::bulk::compress(&vec![0u8; 32 * 1024 * 1024], 19).unwrap());
+        assert_eq!(decode::<ClientMessage>(&bomb), Err(FrameError::TooLarge));
+    }
+
+    #[test]
+    #[cfg(feature = "zstd")]
     fn small_frames_are_plain_and_big_ones_compressed() {
         let small = encode(&push(10));
         assert_eq!(small[0], PLAIN);
@@ -99,6 +133,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "zstd")]
     fn bad_frames_are_errors_not_panics() {
         assert_eq!(decode::<ClientMessage>(&[]), Err(FrameError::Empty));
         assert_eq!(

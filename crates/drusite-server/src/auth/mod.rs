@@ -29,6 +29,7 @@ pub mod session;
 pub mod tokens;
 pub mod totp;
 mod users;
+pub mod web;
 
 use axum::extract::{Path, State};
 use axum::routing::{get, post};
@@ -139,8 +140,15 @@ pub fn routes(state: &AppState) -> Router<AppState> {
         session::same_origin_only,
     ));
 
+    // The web app signs in here, when the server has one to serve.
+    let web = if state.config().web.served().is_some() {
+        web::routes()
+    } else {
+        Router::new()
+    };
     Router::new()
         .merge(api)
+        .merge(web)
         .merge(pages::routes())
         .route("/api/v1/me", get(account::app_me))
         .route(

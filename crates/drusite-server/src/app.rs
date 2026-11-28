@@ -194,6 +194,7 @@ pub fn router(state: AppState) -> Router {
         .merge(crate::mcp::routes(&state))
         .merge(crate::publish::routes())
         .merge(published_here(&state))
+        .merge(crate::web::routes(&state))
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
             timeout,

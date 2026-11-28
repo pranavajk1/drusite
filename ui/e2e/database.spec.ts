@@ -48,7 +48,7 @@ test("a task board: cards are added to columns and dragged between them", async 
   await expect(column(page, "Not started").locator(".card")).toHaveCount(0);
   // The core holds the new status.
   const statuses = await page.evaluate(async () => {
-    const core = window.drusiteMemoryCore!;
+    const core = (window.drusiteMemoryCore ?? window.drusiteWebCore)!;
     const pages = await core.handle({ type: "listPages" });
     if (pages.type !== "pages") return [];
     const db = pages.pages.find((p) => p.kind === "database")!;

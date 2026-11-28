@@ -7,7 +7,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
 
-  import type { CoreClient } from "../core/client";
+  import { CoreError, type CoreClient } from "../core/client";
   import type { NotionReport, PageId } from "../core/types";
   import Icon from "./ui/Icon.svelte";
 
@@ -18,10 +18,19 @@
   let report = $state<NotionReport | null>(null);
   let token = $state("");
   let saved = $state(false);
+  /** Whether this platform can reach Notion's API (the browser version can't: Notion refuses
+   *  browser origins). */
+  let apiAvailable = $state(true);
   let fileInput: HTMLInputElement;
 
   onMount(() => {
-    client.notionToken().then((s) => (saved = s), () => (saved = false));
+    client.notionToken().then(
+      (s) => (saved = s),
+      (e: unknown) => {
+        saved = false;
+        if (e instanceof CoreError && e.code === "unsupported") apiAvailable = false;
+      },
+    );
     return client.subscribe((e) => {
       if (e.type === "notionProgress" && busy) status = e.total ? `Reading from Notion: ${e.done} of ${e.total}${e.what ? ` (${e.what})` : ""}…` : `${e.what}…`;
     });
@@ -95,6 +104,7 @@
     <button class="btn" disabled={busy} onclick={importExport}><Icon name="file-archive" size={15} />Choose .zip…</button>
     <input bind:this={fileInput} class="file-picker" type="file" accept=".zip,application/zip" onchange={fileChosen} />
   </div>
+  {#if apiAvailable}
   <div class="set-row notion-api">
     <div class="set-row-text">
       <span class="set-label">Import from Notion's API</span>
@@ -117,6 +127,7 @@
       </div>
     </div>
   </div>
+  {/if}
   {#if status}<p class="set-desc" role="status">{status}</p>{/if}
   {#if report}
     {#if report.page}<button class="btn small" onclick={() => onopen(report!.page!)}>Open what came in</button>{/if}

@@ -200,10 +200,12 @@ async fn authorize_inner(
             )));
         }
     };
-    let Some(redirect_uri) = q
-        .redirect_uri
-        .filter(|r| clients::redirect_allowed(&client, r))
-    else {
+    let Some(redirect_uri) = q.redirect_uri.filter(|r| match client.kind {
+        clients::Kind::Web => {
+            state.config().web.served().is_some() && *r == super::web::callback_url(state)
+        }
+        _ => clients::redirect_allowed(&client, r),
+    }) else {
         return Ok(error_page(
             "The app gave a return address this server doesn't allow.",
         ));
@@ -502,6 +504,13 @@ async fn exchange_code(
     let client = clients::resolve(state, &client_id)
         .await
         .map_err(|e| OAuthError::new("invalid_client", e.to_string()))?;
+    // The web app's codes are redeemed by this server alone (`web::callback`).
+    if client.kind == clients::Kind::Web {
+        return Err(OAuthError::new(
+            "invalid_client",
+            "this client's codes can't be redeemed here",
+        ));
+    }
     // The app always proves its device key; an agent may.
     let jkt = if client.is_agent() && !headers.contains_key("dpop") {
         None
@@ -512,7 +521,91 @@ async fn exchange_code(
                 .jkt,
         )
     };
-    let hash = secret::hash(Kind::Code, &code).ok_or_else(OAuthError::invalid_grant)?;
+    let redeemed = Redeem {
+        code: &code,
+        redirect_uri: &redirect_uri,
+        verifier: &verifier,
+        client_id: &client_id,
+        jkt: jkt.as_deref(),
+        device_name: form.device_name.as_deref().unwrap_or_default(),
+        resource: form.resource.as_deref(),
+    };
+    Ok(redeem(state, &redeemed).await?.1)
+}
+
+/// A code being redeemed, and for what.
+struct Redeem<'a> {
+    code: &'a str,
+    redirect_uri: &'a str,
+    verifier: &'a str,
+    client_id: &'a str,
+    /// The device key the request proved, if any.
+    jkt: Option<&'a str>,
+    device_name: &'a str,
+    /// The resource the client asked for at the token endpoint (RFC 8707).
+    resource: Option<&'a str>,
+}
+
+/// The web app's code, redeemed by this server: a grant for the browser, with the browser's
+/// shorter limits and no tokens (the browser gets a cookie for the grant instead).
+pub(super) async fn redeem_web_code(
+    state: &AppState,
+    code: &str,
+    verifier: &str,
+    device_name: &str,
+) -> Result<tokens::GrantId, OAuthError> {
+    let callback = super::web::callback_url(state);
+    let (grant, _) = redeem(
+        state,
+        &Redeem {
+            code,
+            redirect_uri: &callback,
+            verifier,
+            client_id: clients::WEB,
+            jkt: None,
+            device_name,
+            resource: None,
+        },
+    )
+    .await?;
+    let auth = &state.config().auth;
+    let now = OffsetDateTime::now_utc();
+    let mut tx = state.db().pool().begin().await?;
+    // Nothing outside the server ever sees these; they go.
+    sqlx::query("DELETE FROM access_tokens WHERE grant_id = $1")
+        .bind(grant.0)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM refresh_tokens WHERE grant_id = $1")
+        .bind(grant.0)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        "UPDATE oauth_grants SET idle_expires_at = $2, absolute_expires_at = $3 WHERE id = $1",
+    )
+    .bind(grant.0)
+    .bind(now + time::Duration::days(i64::from(auth.browser_idle_days)))
+    .bind(now + time::Duration::days(i64::from(auth.browser_max_days)))
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(grant)
+}
+
+async fn redeem(
+    state: &AppState,
+    r: &Redeem<'_>,
+) -> Result<(tokens::GrantId, tokens::TokenResponse), OAuthError> {
+    let Redeem {
+        code,
+        redirect_uri,
+        verifier,
+        client_id,
+        jkt,
+        device_name,
+        resource: asked_resource,
+    } = *r;
+    let hash = secret::hash(Kind::Code, code).ok_or_else(OAuthError::invalid_grant)?;
 
     let mut tx = state.db().pool().begin().await?;
     type CodeRow = (
@@ -565,18 +658,18 @@ async fn exchange_code(
         }
         return Err(OAuthError::invalid_grant());
     }
-    let challenge_ok = is_pkce_value(&verifier)
+    let challenge_ok = is_pkce_value(verifier)
         && URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes())) == challenge;
     if !live || code_client != client_id || code_redirect != redirect_uri || !challenge_ok {
         return Err(OAuthError::invalid_grant());
     }
-    if code_jkt.is_some_and(|j| Some(j) != jkt) {
+    if code_jkt.is_some_and(|j| Some(j.as_str()) != jkt) {
         return Err(OAuthError::new(
             "invalid_dpop_proof",
             "the proof is signed by another key than the code is bound to",
         ));
     }
-    if let Some(asked) = &form.resource
+    if let Some(asked) = asked_resource
         && Some(asked.trim_end_matches('/')) != resource.as_deref()
     {
         return Err(OAuthError::new(
@@ -591,11 +684,11 @@ async fn exchange_code(
         &mut tx,
         &NewGrant {
             user: drusite_model::UserId::from_uuid(user),
-            client_id: &client_id,
+            client_id,
             scope,
-            dpop_jkt: jkt.as_deref(),
+            dpop_jkt: jkt,
             method,
-            device_name: form.device_name.as_deref().unwrap_or_default(),
+            device_name,
             resource: resource.as_deref(),
             access,
             client_name: &client_name,
@@ -613,7 +706,7 @@ async fn exchange_code(
     } else {
         tracing::info!(grant = %grant.0, %user, "device signed in");
     }
-    Ok(tokens)
+    Ok((grant, tokens))
 }
 
 async fn refresh(

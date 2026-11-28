@@ -13,11 +13,19 @@ publish.workspace = true
 default = ["zstd"]
 # Compressed frames. Off for the browser build, which reads and writes uncompressed frames.
 zstd = ["dep:zstd"]
+# Reading compressed frames without C: the browser build sends plain frames and reads the
+# server's compressed ones with ruzstd, a decoder in Rust.
+unzstd = ["dep:ruzstd"]
 
 [dependencies]
 prost.workspace = true
 thiserror.workspace = true
 zstd = { workspace = true, optional = true }
+ruzstd = { workspace = true, optional = true, features = ["std"] }
+
+[dev-dependencies]
+# Writes the compressed frames the ruzstd path is tested on.
+zstd.workspace = true
 
 [lints]
 workspace = true

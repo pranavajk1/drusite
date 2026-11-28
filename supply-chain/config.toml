@@ -950,6 +950,10 @@ criteria = "safe-to-deploy"
 version = "0.1.5"
 criteria = "safe-to-deploy"
 
+[[exemptions.http-range-header]]
+version = "0.4.2"
+criteria = "safe-to-deploy"
+
 [[exemptions.httparse]]
 version = "1.10.1"
 criteria = "safe-to-deploy"
@@ -1356,6 +1360,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.mime]]
 version = "0.3.18"
+criteria = "safe-to-deploy"
+
+[[exemptions.mime_guess]]
+version = "2.0.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.minimal-lexical]]
@@ -1974,6 +1982,10 @@ criteria = "safe-to-deploy"
 version = "0.3.1"
 criteria = "safe-to-run"
 
+[[exemptions.ruzstd]]
+version = "0.9.1"
+criteria = "safe-to-deploy"
+
 [[exemptions.ryu]]
 version = "1.0.23"
 criteria = "safe-to-deploy"
@@ -2240,6 +2252,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.sqlite-wasm-rs]]
 version = "0.6.3"
+criteria = "safe-to-deploy"
+
+[[exemptions.sqlite-wasm-vfs]]
+version = "0.3.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.sqlx]]

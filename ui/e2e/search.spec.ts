@@ -4,7 +4,7 @@
 
 import { expect, test } from "@playwright/test";
 
-import { openApp } from "./helpers";
+import { makePage, openApp } from "./helpers";
 
 test("search finds a block on another page and opens it there", async ({ page }) => {
   await openApp(page);
@@ -12,8 +12,7 @@ test("search finds a block on another page and opens it there", async ({ page })
   await page.keyboard.press("Enter");
   await page.keyboard.type("Call the plumber about the heron-shaped tap");
   await page.getByLabel("Page title").fill("Errands");
-  await page.getByRole("button", { name: "New page", exact: true }).click();
-  await expect(page.getByLabel("Page title")).toBeFocused();
+  await makePage(page, page.getByRole("button", { name: "New page", exact: true }));
 
   await page.keyboard.press("ControlOrMeta+k");
   const box = page.getByRole("dialog", { name: "Search" });

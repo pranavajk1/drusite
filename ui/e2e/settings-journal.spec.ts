@@ -8,7 +8,7 @@
 
 import { type Locator, type Page, expect, test } from "@playwright/test";
 
-import { openApp, openSettings } from "./helpers";
+import { makePage, openApp, openSettings, wasm } from "./helpers";
 
 const STATE = /^\s*(on|off|enabled|disabled)\b/i;
 
@@ -24,6 +24,8 @@ async function sameEitherWay(row: Locator, desc: Locator) {
 }
 
 test("switches in Settings and Share say what they do, not whether they're on", async ({ page }) => {
+  // Publishing needs a server; the in-memory core plays one.
+  test.skip(wasm(), "publishing needs a server");
   await openApp(page);
   await page.getByLabel("Page title").fill("Recipes");
   const sheet = await openSettings(page, "Journal");
@@ -64,7 +66,7 @@ test("new entries start from an empty page or an ordinary one, never the journal
   await page.getByLabel("Page title").fill("Templates");
   // A page inside it, and a journal entry (which makes the Journal page).
   await page.getByRole("treeitem", { name: "Templates" }).hover();
-  await page.getByRole("treeitem", { name: "Templates" }).getByRole("button", { name: "Add a page inside" }).click();
+  await makePage(page, page.getByRole("treeitem", { name: "Templates" }).getByRole("button", { name: "Add a page inside" }));
   await page.getByLabel("Page title").fill("Daily");
   await page.keyboard.press("Enter");
   await page.keyboard.type("Grateful for {{weekday}}");
@@ -82,10 +84,10 @@ test("new entries start from an empty page or an ordinary one, never the journal
 
   // The core holds to the same rule: the journal page itself is refused.
   const refused = await page.evaluate(async () => {
-    const core = window.drusiteMemoryCore!;
-    const journal = (await core.transport.call({ type: "settings" })) as { settings: { journalParent: string } };
+    const core = (window.drusiteMemoryCore ?? window.drusiteWebCore)!;
+    const journal = (await core.handle({ type: "settings" })) as { settings: { journalParent: string } };
     try {
-      await core.transport.call({ type: "setSetting", setting: { type: "journalTemplate", value: journal.settings.journalParent } });
+      await core.handle({ type: "setSetting", setting: { type: "journalTemplate", value: journal.settings.journalParent } });
       return false;
     } catch {
       return true;

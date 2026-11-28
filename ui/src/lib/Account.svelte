@@ -43,9 +43,14 @@
       <span class="account-avatar"><Icon name="cloud-off" size={20} /></span>
       <div class="account-card-text">
         <strong>Not syncing</strong>
-        <span class="hint">Your notes are on this device only.</span>
+        <span class="hint">{client.web ? "Your notes are in this browser only." : "Your notes are on this device only."}</span>
       </div>
     </div>
+    {#if client.web}
+      <!-- The browser version: the server is the one this page came from. -->
+      <p class="set-desc">Sign in to keep your notes in sync with your other devices.</p>
+      <button class="btn primary" disabled={busy} onclick={() => act(() => client.signIn(location.origin))}>Sign in</button>
+    {:else}
     <p class="set-desc">
       Sign in to a Drusite server to keep your notes in sync between your devices. Signing in opens the server's
       sign-in page in your browser.
@@ -70,6 +75,7 @@
         </button>
       </div>
     </form>
+    {/if}
   {:else if status.phase === "signingIn"}
     <div class="account-card">
       <span class="account-avatar"><Icon name="loader-circle" size={20} class="spin" /></span>
@@ -106,7 +112,11 @@
     <div class="set-row">
       <div class="set-row-text">
         <span class="set-label">Sign out</span>
-        <span class="set-desc">Signing out keeps your notes on this device.</span>
+        <span class="set-desc">
+          {client.web
+            ? "Signing out removes your notes from this browser. They stay on the server and your other devices."
+            : "Signing out keeps your notes on this device."}
+        </span>
       </div>
       <button class="btn danger" disabled={busy} onclick={() => act(() => client.signOut())}>
         <Icon name="log-out" size={15} />Sign out

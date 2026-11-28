@@ -109,6 +109,39 @@ pub struct Config {
     pub ask: AskConfig,
     #[serde(default)]
     pub publish: PublishConfig,
+    #[serde(default)]
+    pub web: WebConfig,
+}
+
+/// The browser version: the app itself, served from this server at `/`, signing in through it
+/// with a session cookie (see `auth::web`).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WebConfig {
+    /// Serve it, when there's one in `dir`. On unless set.
+    #[serde(default = "yes")]
+    pub enabled: bool,
+    /// The built web app (`ui/dist-web`): `index.html`, `sw.js` and `app/`. The container image
+    /// has it at `/usr/share/drusite/web`. Unset (or `enabled = false`), there's no web app:
+    /// nothing at `/`, and no browser sign-in routes.
+    #[serde(default)]
+    pub dir: Option<std::path::PathBuf>,
+}
+
+impl Default for WebConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            dir: None,
+        }
+    }
+}
+
+impl WebConfig {
+    /// Where the web app being served is, if one is.
+    pub fn served(&self) -> Option<&std::path::Path> {
+        self.dir.as_deref().filter(|_| self.enabled)
+    }
 }
 
 /// Publish to web: pages shared as read-only links, rendered by this server as plain HTML.
@@ -577,6 +610,13 @@ pub struct AuthConfig {
     /// How long a browser stays signed in to the sign-in pages and account settings.
     #[serde(default = "default_session_hours")]
     pub session_hours: u32,
+    /// The web app in a browser that hasn't been used for this long is signed out. Shorter than
+    /// a device's: a browser on someone else's computer is likelier to be left behind.
+    #[serde(default = "default_browser_idle_days")]
+    pub browser_idle_days: u32,
+    /// The web app signs in again after this long, however often it's used.
+    #[serde(default = "default_browser_max_days")]
+    pub browser_max_days: u32,
 }
 
 const fn default_access_token_minutes() -> u32 {
@@ -595,6 +635,14 @@ const fn default_session_hours() -> u32 {
     12
 }
 
+const fn default_browser_idle_days() -> u32 {
+    14
+}
+
+const fn default_browser_max_days() -> u32 {
+    90
+}
+
 impl Default for AuthConfig {
     fn default() -> Self {
         Self {
@@ -607,6 +655,8 @@ impl Default for AuthConfig {
             device_idle_days: default_device_idle_days(),
             device_max_days: default_device_max_days(),
             session_hours: default_session_hours(),
+            browser_idle_days: default_browser_idle_days(),
+            browser_max_days: default_browser_max_days(),
         }
     }
 }
@@ -843,6 +893,15 @@ impl Config {
                 ));
             }
             other => return invalid(format!("public_url has unsupported scheme {other:?}")),
+        }
+
+        if let Some(dir) = self.web.served()
+            && !crate::web::is_built(dir)
+        {
+            return invalid(format!(
+                "[web] dir {} has no web app in it (index.html and app/, from ui/dist-web)",
+                dir.display()
+            ));
         }
 
         let publish = &self.publish;

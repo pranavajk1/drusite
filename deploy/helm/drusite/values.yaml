@@ -55,6 +55,11 @@ ingress:
   host: notes.example.com
   tls: []
 
+# The web app: the full app in a browser, at the server's own address (public_url), signing in
+# with a cookie through the server. The image carries it; off, the server serves no app at /.
+web:
+  enabled: true
+
 # Publish to web on a host of its own. The pod listens for published pages on `port` (nothing
 # else is served there), the Service gets a `public` port, and `ingress` routes `host` to it, so
 # the internet can reach published pages while the app's own Ingress stays private.

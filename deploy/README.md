@@ -230,6 +230,27 @@ When the server fetches a client's metadata document, it refuses addresses on pr
 networks. Your reverse proxy must pass the `/.well-known/oauth-protected-resource` paths through
 to Drusite.
 
+## The web app
+
+The full app in a browser, for computers where it can't be installed: the server serves it at
+its own address (`public_url`), so there's nothing else to deploy. The image carries the built
+app and turns it on (`[web] dir`); `[web] enabled = false` (the chart's `web.enabled`) turns it
+off. Building the server yourself, point `dir` at `ui/dist-web` (`cd ui && npm run wasm &&
+npm run build:web`).
+
+It runs the same core as the apps, as WebAssembly, and keeps an encrypted copy of the notes in
+the browser (OPFS), so it opens and edits offline and syncs when it's back. It signs in through
+the server with every login method the server has on, and holds no token: the server keeps the
+browser's sign-in, which is listed under Account → Devices like any device, and gives the
+browser an HttpOnly, SameSite=Strict cookie that works only from the server's own pages.
+Signing out, or signing the browser out from Devices, deletes its copy. Browsers stay signed in
+for 14 days unused and 90 at most (`[auth] browser_idle_days`, `browser_max_days`).
+
+What a browser can't do, the web app leaves out: the Markdown folder, agents on the same
+computer (local MCP), AI providers kept on the device, and importing from Notion's API (Ask your
+notes and importing a Notion export work). Whatever routes to the server must pass WebSockets
+for sync, as for the apps.
+
 ## Publish to web
 
 Anyone who can edit a page can share it as a read-only link, from the page's Share button. The

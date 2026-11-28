@@ -11,22 +11,31 @@
 use std::collections::{HashMap, HashSet};
 
 use drusite_model::{BlockId, BlockKind, PageId};
-use tantivy::collector::TopDocs;
-use tantivy::query::{BooleanQuery, FuzzyTermQuery, Occur, Query, TermQuery};
-use tantivy::schema::{
-    Field, IndexRecordOption, OwnedValue, STORED, STRING, Schema, TextFieldIndexing, TextOptions,
-};
-use tantivy::tokenizer::{AsciiFoldingFilter, LowerCaser, SimpleTokenizer, TextAnalyzer};
-use tantivy::{Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, Term};
 
 use drusite_model::search::{fold_words, snippet};
 
 use crate::api::{ApiError, ErrorCode, SearchHit};
 use crate::engine::Core;
 
-const TOKENIZER: &str = "drusite";
-/// Memory the index writer may use before it flushes; tantivy's minimum.
-const WRITER_MEMORY: usize = 15_000_000;
+#[cfg(any(target_family = "wasm", test))]
+#[cfg_attr(not(target_family = "wasm"), allow(dead_code))]
+mod memory;
+#[cfg(not(target_family = "wasm"))]
+mod tantivy_index;
+
+#[cfg(target_family = "wasm")]
+use memory::Index;
+#[cfg(not(target_family = "wasm"))]
+use tantivy_index::Index;
+
+/// One document the index found: a block, a page's title (no block, no text), or a row's values
+/// (no block, the values as text).
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Found {
+    pub(crate) page: PageId,
+    pub(crate) block: Option<BlockId>,
+    pub(crate) text: Option<String>,
+}
 
 /// The search state the core keeps: the index once built, and what changed since.
 #[derive(Default)]
@@ -37,19 +46,9 @@ pub(crate) struct Search {
 }
 
 struct Built {
-    writer: IndexWriter,
-    reader: IndexReader,
-    fields: Fields,
+    index: Index,
     /// The titles indexed, to see which changed.
     titles: HashMap<PageId, String>,
-}
-
-#[derive(Clone, Copy)]
-struct Fields {
-    page: Field,
-    block: Field,
-    title: Field,
-    text: Field,
 }
 
 impl Search {
@@ -71,90 +70,8 @@ impl Search {
     }
 }
 
-fn analyzer() -> TextAnalyzer {
-    TextAnalyzer::builder(SimpleTokenizer::default())
-        .filter(LowerCaser)
-        .filter(AsciiFoldingFilter)
-        .build()
-}
-
-/// The words of `text` as the index sees them: lower case, accents folded.
-fn words(text: &str) -> Vec<String> {
-    let mut analyzer = analyzer();
-    let mut stream = analyzer.token_stream(text);
-    let mut out = Vec::new();
-    while stream.advance() {
-        out.push(stream.token().text.clone());
-    }
-    out
-}
-
 fn search_error(e: impl std::fmt::Display) -> ApiError {
     ApiError::new(ErrorCode::Internal, format!("search index: {e}"))
-}
-
-impl Built {
-    fn new() -> Result<Self, ApiError> {
-        let mut schema = Schema::builder();
-        let indexed = TextOptions::default().set_stored().set_indexing_options(
-            TextFieldIndexing::default()
-                .set_tokenizer(TOKENIZER)
-                .set_index_option(IndexRecordOption::WithFreqsAndPositions),
-        );
-        let fields = Fields {
-            page: schema.add_text_field("page", STRING | STORED),
-            block: schema.add_text_field("block", STRING | STORED),
-            title: schema.add_text_field("title", indexed.clone()),
-            text: schema.add_text_field("text", indexed),
-        };
-        let index = Index::create_in_ram(schema.build());
-        index.tokenizers().register(TOKENIZER, analyzer());
-        let writer = index
-            .writer_with_num_threads(1, WRITER_MEMORY)
-            .map_err(search_error)?;
-        let reader = index
-            .reader_builder()
-            .reload_policy(ReloadPolicy::Manual)
-            .try_into()
-            .map_err(search_error)?;
-        Ok(Self {
-            writer,
-            reader,
-            fields,
-            titles: HashMap::new(),
-        })
-    }
-
-    fn remove_page(&mut self, page: PageId) {
-        self.writer
-            .delete_term(Term::from_field_text(self.fields.page, &page.to_string()));
-    }
-
-    fn add_title(&mut self, page: PageId, title: &str) -> Result<(), ApiError> {
-        let mut doc = TantivyDocument::default();
-        doc.add_text(self.fields.page, page.to_string());
-        doc.add_text(self.fields.title, title);
-        self.writer.add_document(doc).map_err(search_error)?;
-        Ok(())
-    }
-
-    /// A database row's values ("Status: Done · Priority: High"), found like its text.
-    fn add_values(&mut self, page: PageId, text: &str) -> Result<(), ApiError> {
-        let mut doc = TantivyDocument::default();
-        doc.add_text(self.fields.page, page.to_string());
-        doc.add_text(self.fields.text, text);
-        self.writer.add_document(doc).map_err(search_error)?;
-        Ok(())
-    }
-
-    fn add_block(&mut self, page: PageId, block: BlockId, text: &str) -> Result<(), ApiError> {
-        let mut doc = TantivyDocument::default();
-        doc.add_text(self.fields.page, page.to_string());
-        doc.add_text(self.fields.block, block.to_string());
-        doc.add_text(self.fields.text, text);
-        self.writer.add_document(doc).map_err(search_error)?;
-        Ok(())
-    }
 }
 
 impl Core {
@@ -187,7 +104,13 @@ impl Core {
             None => {
                 self.search.dirty.clear();
                 self.search.titles_changed = false;
-                (Built::new()?, titles.keys().copied().collect())
+                (
+                    Built {
+                        index: Index::new()?,
+                        titles: HashMap::new(),
+                    },
+                    titles.keys().copied().collect(),
+                )
             }
         };
         if todo.is_empty() {
@@ -196,15 +119,15 @@ impl Core {
         }
         let mut retry = HashSet::new();
         for page in todo.drain() {
-            built.remove_page(page);
+            built.index.remove_page(page);
             built.titles.remove(&page);
             let Some(title) = titles.get(&page) else {
                 continue; // deleted
             };
             let (shown, vals) = title.split_once('\u{1}').unwrap_or((title.as_str(), ""));
-            built.add_title(page, shown)?;
+            built.index.add_title(page, shown)?;
             if !vals.is_empty() {
-                built.add_values(page, vals)?;
+                built.index.add_values(page, vals)?;
             }
             built.titles.insert(page, title.clone());
             let blocks = match self.open.get(&page) {
@@ -225,12 +148,11 @@ impl Core {
                 }
                 let text = block.text();
                 if !text.trim().is_empty() {
-                    built.add_block(page, block.id, &text)?;
+                    built.index.add_block(page, block.id, &text)?;
                 }
             }
         }
-        built.writer.commit().map_err(search_error)?;
-        built.reader.reload().map_err(search_error)?;
+        built.index.commit()?;
         self.search.dirty.extend(retry);
         self.search.built = Some(built);
         Ok(())
@@ -270,7 +192,7 @@ impl Core {
     /// typing), best first: at most one hit per page, at the block that matched best.
     pub(crate) fn search(&mut self, query: &str, limit: u32) -> Result<Vec<SearchHit>, ApiError> {
         let marked = fold_words(query);
-        let words = words(query);
+        let words = Index::words(query);
         if words.is_empty() || limit == 0 {
             return Ok(Vec::new());
         }
@@ -280,37 +202,9 @@ impl Core {
             .built
             .as_ref()
             .ok_or_else(|| search_error("not built"))?;
-        let f = built.fields;
-        let last = words.len() - 1;
-        let clauses: Vec<(Occur, Box<dyn Query>)> = words
-            .iter()
-            .enumerate()
-            .map(|(i, w)| {
-                let either: Vec<(Occur, Box<dyn Query>)> = [f.title, f.text]
-                    .into_iter()
-                    .map(|field| {
-                        let term = Term::from_field_text(field, w);
-                        let q: Box<dyn Query> = if i == last {
-                            Box::new(FuzzyTermQuery::new_prefix(term, 0, true))
-                        } else {
-                            Box::new(TermQuery::new(term, IndexRecordOption::WithFreqs))
-                        };
-                        (Occur::Should, q)
-                    })
-                    .collect();
-                (
-                    Occur::Must,
-                    Box::new(BooleanQuery::new(either)) as Box<dyn Query>,
-                )
-            })
-            .collect();
-        let query = BooleanQuery::new(clauses);
-        let searcher = built.reader.searcher();
         // Several blocks of one page can match; look further than `limit` to fill it with pages.
         let wanted = (limit as usize).saturating_mul(8).max(64);
-        let top = searcher
-            .search(&query, &TopDocs::with_limit(wanted).order_by_score())
-            .map_err(search_error)?;
+        let top = built.index.search(&words, wanted)?;
 
         let titles: HashMap<PageId, String> = self
             .workspace
@@ -320,30 +214,20 @@ impl Core {
             .collect();
         let mut seen = HashSet::new();
         let mut hits = Vec::new();
-        for (_score, address) in top {
-            let doc: TantivyDocument = searcher.doc(address).map_err(search_error)?;
-            let text_of = |field: Field| {
-                doc.get_first(field)
-                    .and_then(|v| match OwnedValue::from(v) {
-                        OwnedValue::Str(s) => Some(s),
-                        _ => None,
-                    })
-            };
-            let Some(page) = text_of(f.page).and_then(|s| s.parse::<PageId>().ok()) else {
-                continue;
-            };
+        for found in top {
+            let page = found.page;
             let Some(title) = titles.get(&page) else {
                 continue; // deleted since it was indexed
             };
             if !seen.insert(page) {
                 continue;
             }
-            let block = text_of(f.block).and_then(|s| s.parse::<BlockId>().ok());
+            let block = found.block;
             let snippet = match &block {
-                Some(_) => snippet(&text_of(f.text).unwrap_or_default(), &marked),
+                Some(_) => snippet(found.text.as_deref().unwrap_or_default(), &marked),
                 // A row's values matched (they have no block), or else the title.
-                None => match text_of(f.text) {
-                    Some(values) => snippet(&values, &marked),
+                None => match found.text.as_deref() {
+                    Some(values) => snippet(values, &marked),
                     None => snippet(title, &marked),
                 },
             };

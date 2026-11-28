@@ -72,6 +72,8 @@ export interface Transport {
   pickFolder?: (title: string) => Promise<string | null>;
   /** The system's file picker, for files ending in one of `extensions`; desktops only. */
   pickFile?: (title: string, extensions: string[]) => Promise<string | null>;
+  /** The browser version: the server is the one the page came from, and signing in goes there. */
+  web?: boolean;
 }
 
 /** A failed command, with the core's error code. */
@@ -241,6 +243,11 @@ export class CoreClient {
   /** Asks for a folder; null if the person cancels or the platform can't. */
   async pickFolder(title: string): Promise<string | null> {
     return (await this.transport.pickFolder?.(title)) ?? null;
+  }
+
+  /** The browser version (see `Transport.web`). */
+  get web(): boolean {
+    return !!this.transport.web;
   }
 
   /** Whether this platform can give a file's path (desktops); elsewhere files come as bytes. */

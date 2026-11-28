@@ -1017,67 +1017,18 @@ async fn workspace_to_join(
         .core
         .lock()
         .map_err(|_| JoinProblem::Network("the core crashed".to_owned()))?;
-    let mine = core.workspace_id();
-    if ids.iter().any(|(id, _)| *id == mine) {
-        return Ok(None);
+    match core.workspace_to_join(&ids) {
+        Ok(crate::sync::Join::Own) => Ok(None),
+        Ok(crate::sync::Join::Take(id)) => Ok(Some(id)),
+        Ok(crate::sync::Join::Conflict) => Err(JoinProblem::Conflict),
+        Err(e) => Err(JoinProblem::Network(e.to_string())),
     }
-    let core_error = |e: crate::Error| JoinProblem::Network(e.to_string());
-    if core
-        .store
-        .sync_state(&mine.to_string())
-        .map_err(core_error)?
-        .on_server
-    {
-        core.store.forget_server().map_err(core_error)?;
-    }
-    let blank = core.is_blank().map_err(core_error)?;
-    choose(mine, blank, &ids)
-}
-
-/// What to sync, from the account's workspaces (`(id, owned)`): this device's own, the account's
-/// (for a blank device), or neither.
-fn choose(
-    mine: WorkspaceId,
-    blank: bool,
-    account: &[(WorkspaceId, bool)],
-) -> Result<Option<WorkspaceId>, JoinProblem> {
-    if account.is_empty() || account.iter().any(|(id, _)| *id == mine) {
-        return Ok(None);
-    }
-    if !blank {
-        return Err(JoinProblem::Conflict);
-    }
-    let pick = account
-        .iter()
-        .find(|(_, owned)| *owned)
-        .or_else(|| account.first())
-        .map(|(id, _)| *id);
-    Ok(pick)
 }
 
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
-
-    #[test]
-    fn a_device_syncs_its_own_workspace_or_takes_the_accounts() {
-        let mine = WorkspaceId::new();
-        let other = WorkspaceId::new();
-        let shared = WorkspaceId::new();
-        // The account has nothing yet: this device's becomes its first.
-        assert!(matches!(choose(mine, false, &[]), Ok(None)));
-        // The account has this device's.
-        assert!(matches!(choose(mine, false, &[(mine, true)]), Ok(None)));
-        // A blank device takes the account's, the one it owns first.
-        let account = [(shared, false), (other, true)];
-        assert!(matches!(choose(mine, true, &account), Ok(Some(w)) if w == other));
-        // A device with notes of its own can't, yet.
-        assert!(matches!(
-            choose(mine, false, &account),
-            Err(JoinProblem::Conflict)
-        ));
-    }
 
     #[test]
     fn typed_addresses_become_base_urls() {

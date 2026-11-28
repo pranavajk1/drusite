@@ -105,6 +105,13 @@ tempfile = "3.27.0"
 thiserror = "2.0.21"
 uuid = { version = "1.29.3", features = ["v7"] }
 windows-sys = "0.61.2"
+# The browser build.
+js-sys = "0.3.107"
+wasm-bindgen = "0.2.130"
+wasm-bindgen-futures = "0.4.80"
+sqlite-wasm-rs = { version = "0.6.3", default-features = false }
+sqlite-wasm-vfs = { version = "0.3.0", default-features = false }
+ruzstd = { version = "0.9.1", default-features = false }
 zeroize = "1.9.2"
 
 [workspace.lints.rust]
@@ -121,3 +128,14 @@ unwrap_used = "warn"
 
 [profile.release]
 debug = "line-tables-only"
+
+# The browser build: small over fast to compile. `cargo build --profile wasm --target
+# wasm32-unknown-unknown -p drusite-wasm` (see ui/scripts/wasm.sh).
+[profile.wasm]
+inherits = "release"
+debug = false
+strip = "debuginfo"
+lto = true
+codegen-units = 1
+opt-level = "s"
+panic = "abort"

@@ -10,7 +10,10 @@
     "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "test": "vitest run",
     "tauri": "TAURI_APP_PATH=../crates/drusite-app TAURI_FRONTEND_PATH=. tauri",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "wasm": "scripts/wasm.sh",
+    "build:web": "vite build --mode web && node scripts/compress.mjs",
+    "test:web": "playwright test --config playwright.web.config.ts"
   },
   "dependencies": {
     "@tauri-apps/api": "2.12.5",

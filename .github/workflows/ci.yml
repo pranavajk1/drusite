@@ -61,10 +61,6 @@ jobs:
           sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libsoup-3.0-dev xvfb
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
-      # The browser version needs everything outside the platform crates to build as WebAssembly.
-      - name: Build the portable crates for wasm32
-        if: matrix.os == 'ubuntu-latest'
-        run: cargo build --package drusite-model --package drusite-crdt --package drusite-wasm --target wasm32-unknown-unknown --locked
 
   server:
     name: server on PostgreSQL 16
@@ -161,8 +157,40 @@ jobs:
         if: runner.os == 'Linux'
         run: xvfb-run -a cargo xtask budgets
 
+  wasm:
+    name: the core as WebAssembly
+    # The browser version: the core and its adapter built for wasm32 (clippy too), and the
+    # JavaScript glue the web app loads it with, for the jobs below.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # SQLCipher is C: clang compiles it for wasm32, and llvm-ar archives it so the linker can
+      # find its symbols (the system ar can't index wasm objects).
+      - name: Install wasm-bindgen and llvm-ar
+        run: |
+          rustup component add llvm-tools
+          version=$(awk '/^name = "wasm-bindgen"$/ { getline; gsub(/version = |"/, ""); print; exit }' Cargo.lock)
+          cargo install wasm-bindgen-cli --version "$version" --locked
+      - name: Clippy for wasm32
+        run: |
+          export AR_wasm32_unknown_unknown="$(find "$(rustc --print sysroot)/lib/rustlib" -name llvm-ar -type f | head -1)"
+          cargo clippy --package drusite-wasm --package drusite-core --package drusite-proto --target wasm32-unknown-unknown --locked -- -D warnings
+      - name: Build
+        working-directory: ui
+        run: scripts/wasm.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wasm
+          path: ui/src/core/web/wasm/
+          retention-days: 3
+          if-no-files-found: error
+
   ui:
     name: UI types and tests
+    needs: wasm
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -174,6 +202,11 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26
+      # The web transport's types come from the core's JavaScript glue.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: wasm
+          path: ui/src/core/web/wasm/
       - name: Type-check and test the UI
         working-directory: ui
         run: |
@@ -190,6 +223,40 @@ jobs:
       - name: npm audit
         working-directory: ui
         run: npm audit --audit-level=low
+
+  web:
+    name: the web app (${{ matrix.browser }})
+    # The browser version as served: built with its download budget checked, then the UI's
+    # specs and its own against the real WebAssembly core, in each engine. Chromium also
+    # checks the tab's memory budget.
+    needs: wasm
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, webkit, firefox]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: wasm
+          path: ui/src/core/web/wasm/
+      - name: Build the web app and check its download budget
+        working-directory: ui
+        run: |
+          npm ci --no-fund
+          npm run build:web
+      - name: Install the test browser
+        working-directory: ui
+        run: npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Browser tests on the WebAssembly core
+        working-directory: ui
+        run: npm run test:web -- --project ${{ matrix.browser }}
 
   supply-chain:
     name: supply chain
