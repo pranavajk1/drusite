@@ -47,6 +47,13 @@ test("deleting the last page leaves no pages, and New page starts again", async 
   await expectTrash(page, ["Untitled"]);
   await expectTree(page, []);
 
+  // The buttons' icons take their button's colour; only the large one above is greyed.
+  for (const name of ["New page", "Today"]) {
+    const button = empty(page).getByRole("button", { name });
+    const [text, icon] = await button.evaluate((b) => [getComputedStyle(b).color, getComputedStyle(b.querySelector("svg")!).color]);
+    expect(icon, name).toBe(text);
+  }
+
   await empty(page).getByRole("button", { name: "New page" }).click();
   await expect(page.getByLabel("Page title")).toBeFocused();
   await page.keyboard.type("Fresh");

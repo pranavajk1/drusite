@@ -493,7 +493,7 @@ kbd,
   text-align: center;
 }
 
-.empty .icon {
+.empty > .icon {
   color: var(--text-3);
 }
 
