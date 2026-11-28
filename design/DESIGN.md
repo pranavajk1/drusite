@@ -253,6 +253,9 @@ Moods use Lucide faces (angry, frown, meh, smile, laugh) in the mood colours.
   after a row, or an accent outline inside it.
 - **Top bar**, 44 px, sticky. It holds the breadcrumb (ancestors, then the current page, each one a
   button), the sync status (dot and label), and "…" (Page actions).
+- **No pages**: when the last page goes to the trash, nothing is open. The page area shows the empty
+  state ("No pages yet", a `file-text` icon) with New page (primary) and Today, centred between the
+  bars; the top bar keeps only the sync status and Ask. Only a new install opens on a blank page.
 
 ### 7.3 Page (`PageEditor.svelte`, `Properties.svelte`, `page.css`)
 

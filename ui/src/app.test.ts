@@ -27,7 +27,7 @@ async function until(check: () => boolean, what: string) {
   throw new Error(`timed out waiting for ${what}`);
 }
 
-async function start(memory = new MemoryCore()) {
+async function start(memory = new MemoryCore(), open: "a page" | "none" = "a page") {
   const target = document.createElement("div");
   document.body.append(target);
   const errors: string[] = [];
@@ -38,7 +38,8 @@ async function start(memory = new MemoryCore()) {
   const title = () => q<HTMLInputElement>(".page-title")?.value;
   const text = () => q(".ProseMirror")?.textContent ?? "";
   const ready = (t: string) => until(() => title() === t && q(".ProseMirror") !== null, `page "${t}"`);
-  await until(() => q(".ProseMirror") !== null, "the first page");
+  if (open === "a page") await until(() => q(".ProseMirror") !== null, "the first page");
+  else await until(() => q(".no-pages") !== null, "no pages");
   return {
     memory,
     client,
@@ -139,5 +140,31 @@ it("moves to another page when the open page's parent is deleted", async () => {
   del();
   await t.ready("C");
   expect(t.errors()).toBeNull();
+  t.close();
+});
+
+it("opens a new install on a blank page, but keeps an emptied workspace empty", async () => {
+  // A new install: one blank page to type in.
+  let t = await start();
+  expect(t.rows()).toHaveLength(1);
+  t.close();
+
+  // Its pages all went to the trash: it opens on none.
+  const memory = new MemoryCore();
+  const client = new CoreClient(memory.transport);
+  const a = await client.createPage(null, "A");
+  await client.deletePage(a.id);
+  localStorage.clear();
+  t = await start(memory, "none");
+  expect(t.rows()).toHaveLength(0);
+  expect(await client.trash()).toHaveLength(1);
+  t.close();
+
+  // And once the trash is emptied, this device still remembers it had pages.
+  await client.emptyTrash();
+  t = await start(memory, "none");
+  expect(t.rows()).toHaveLength(0);
+  expect(await client.listPages()).toHaveLength(0);
+  expect(localStorage.getItem("drusite.lastPage")).toBeNull();
   t.close();
 });

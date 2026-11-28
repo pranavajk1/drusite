@@ -509,6 +509,18 @@ button.crumb:hover {
   flex-direction: column;
 }
 
+/* No page open, because there are none. */
+.no-pages {
+  flex: 1;
+  justify-content: center;
+}
+
+.no-pages-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
 .error {
   display: flex;
   align-items: center;
@@ -668,6 +680,13 @@ button.crumb:hover {
 
   .content {
     padding-bottom: calc(var(--tabbar) + env(safe-area-inset-bottom));
+  }
+
+  /* The frame isn't a grid here, so nothing stretches the page area: fill what's between the bars. */
+  .no-pages {
+    min-height: calc(
+      100dvh - var(--topbar) - var(--tabbar) - env(safe-area-inset-top) - env(safe-area-inset-bottom)
+    );
   }
 
   /* Landscape with the keyboard up leaves little height: give it all to the page. */

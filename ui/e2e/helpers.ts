@@ -31,6 +31,9 @@ declare global {
 
 /** Opens the app on a fresh in-memory core, with the cursor in the body of its one page. */
 export async function openApp(page: Page): Promise<void> {
+  // The in-memory core starts empty on each load, as a new install's does; the app opens a new
+  // install on a blank page only while it hasn't started on this device before.
+  if (page.url().startsWith("http")) await page.evaluate(() => localStorage.removeItem("drusite.hadPages"));
   await page.goto("/");
   await expect(page.locator(".editor")).toBeVisible();
   // A new page focuses its (empty) title; Enter there goes to the body.
