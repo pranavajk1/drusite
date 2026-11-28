@@ -1204,7 +1204,11 @@ async fn a_question_from_a_page_keeps_to_it_and_the_pages_inside() {
         .ask(&server.url, None, "Where is the key?")
         .await
         .unwrap();
-    assert!(pages_of(&all).contains(&office.to_string()), "{:?}", all.events);
+    assert!(
+        pages_of(&all).contains(&office.to_string()),
+        "{:?}",
+        all.events
+    );
 
     // From the House page: the house and its shed, never the office.
     let scoped = device
@@ -1214,7 +1218,9 @@ async fn a_question_from_a_page_keeps_to_it_and_the_pages_inside() {
     let pages = pages_of(&scoped);
     assert!(!pages.is_empty(), "{:?}", scoped.events);
     assert!(
-        pages.iter().all(|p| *p == house.to_string() || *p == shed.id.to_string()),
+        pages
+            .iter()
+            .all(|p| *p == house.to_string() || *p == shed.id.to_string()),
         "{pages:?}"
     );
     assert!(!scoped.text().contains("drawer"), "{}", scoped.text());
