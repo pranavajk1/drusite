@@ -5,7 +5,7 @@
 
 import { type Page, expect, test } from "@playwright/test";
 
-import { openApp } from "./helpers";
+import { makePage, openApp } from "./helpers";
 
 const title = (page: Page) => page.getByLabel("Page title");
 
@@ -58,7 +58,7 @@ test("on a phone, Back closes what's open, then goes back a page", async ({ page
 
 test("what was closed with its own button doesn't take a Back", async ({ page }) => {
   await title(page).fill("Alpha");
-  await page.getByRole("button", { name: "New page", exact: true }).click();
+  await makePage(page, page.getByRole("button", { name: "New page", exact: true }));
   await title(page).fill("Beta");
 
   await page.getByRole("button", { name: "Search", exact: true }).last().click();
@@ -74,7 +74,7 @@ test("what was closed with its own button doesn't take a Back", async ({ page })
 
 test("a page picked from the drawer goes back to the one before, not to the drawer", async ({ page }) => {
   await title(page).fill("Alpha");
-  await page.getByRole("button", { name: "New page", exact: true }).click();
+  await makePage(page, page.getByRole("button", { name: "New page", exact: true }));
   await title(page).fill("Beta");
 
   await page.getByRole("button", { name: "Pages", exact: true }).last().click();

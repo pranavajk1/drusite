@@ -4,7 +4,7 @@
 
 import { type Page, expect, test } from "@playwright/test";
 
-import { expectBlocks, expectTree, fromAccountMenu, leaf, openApp, openTitle, trashFromTree } from "./helpers";
+import { expectBlocks, expectTree, fromAccountMenu, leaf, makePage, openApp, openTitle, trashFromTree } from "./helpers";
 
 /** The sidebar row of the page titled `title`. */
 const row = (page: Page, title: string) =>
@@ -37,8 +37,7 @@ test("pages are created, renamed, nested and deleted from the sidebar", async ({
   await expectOpen(page, "Home");
 
   // A new top-level page opens with its title ready for typing.
-  await page.getByRole("button", { name: "New page", exact: true }).click();
-  await expect(page.getByLabel("Page title")).toBeFocused();
+  await makePage(page, page.getByRole("button", { name: "New page", exact: true }));
   await expectTree(page, [leaf("Home"), leaf("Untitled")]);
   await page.keyboard.type("Projects");
   await expectTree(page, [leaf("Home"), leaf("Projects")]);
@@ -46,8 +45,7 @@ test("pages are created, renamed, nested and deleted from the sidebar", async ({
 
   // A page inside another.
   await row(page, "Projects").hover();
-  await row(page, "Projects").getByRole("button", { name: "Add a page inside" }).click();
-  await expect(page.getByLabel("Page title")).toBeFocused();
+  await makePage(page, row(page, "Projects").getByRole("button", { name: "Add a page inside" }));
   await page.keyboard.type("Drusite");
   await expectTree(page, [leaf("Home"), { title: "Projects", children: [leaf("Drusite")] }]);
   await expectOpen(page, "Drusite");
@@ -55,7 +53,7 @@ test("pages are created, renamed, nested and deleted from the sidebar", async ({
 
   // And one inside that.
   await row(page, "Drusite").hover();
-  await row(page, "Drusite").getByRole("button", { name: "Add a page inside" }).click();
+  await makePage(page, row(page, "Drusite").getByRole("button", { name: "Add a page inside" }));
   await page.keyboard.type("Ideas");
   await expectTree(page, [
     leaf("Home"),
@@ -121,7 +119,7 @@ test("pages are created, renamed, nested and deleted from the sidebar", async ({
 
 test("dragging a page onto another nests it there", async ({ page }) => {
   await typeTitle(page, "A");
-  await page.getByRole("button", { name: "New page", exact: true }).click();
+  await makePage(page, page.getByRole("button", { name: "New page", exact: true }));
   await page.keyboard.type("B");
   await expectTree(page, [leaf("A"), leaf("B")]);
 
@@ -138,7 +136,7 @@ test("what's typed on a page is still there after opening another and coming bac
   await page.locator(".todo-box").click();
   await expectBlocks(page, [{ kind: { type: "todo", checked: true }, text: "Remember me", box: true, struck: true }]);
 
-  await page.getByRole("button", { name: "New page", exact: true }).click();
+  await makePage(page, page.getByRole("button", { name: "New page", exact: true }));
   await page.keyboard.type("Other");
   await expectOpen(page, "Other");
   await expectBlocks(page, [{ kind: { type: "paragraph" }, text: "" }]);
@@ -157,7 +155,7 @@ test("a title being typed isn't cut short by an earlier save coming back", async
   // field still has the focus (typing pauses between words, so this happens on phones).
   await page.waitForTimeout(400);
   await page.evaluate(async () => {
-    const core = window.drusiteMemoryCore!;
+    const core = (window.drusiteMemoryCore ?? window.drusiteWebCore)!;
     const pages = await core.handle({ type: "listPages" });
     if (pages.type !== "pages") return;
     const open = pages.pages.find((p) => p.title === "Mulch the")!;
@@ -170,7 +168,7 @@ test("a title being typed isn't cut short by an earlier save coming back", async
   await expect
     .poll(() =>
       page.evaluate(async () => {
-        const r = await window.drusiteMemoryCore!.handle({ type: "listPages" });
+        const r = await (window.drusiteMemoryCore ?? window.drusiteWebCore)!.handle({ type: "listPages" });
         return r.type === "pages" ? r.pages.map((p) => p.title) : [];
       }),
     )

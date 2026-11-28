@@ -29,7 +29,7 @@ test("a mood is picked, changed and cleared", async ({ page }) => {
   await page.getByRole("radio", { name: "Great" }).click();
   await expect(good).toHaveAttribute("aria-checked", "false");
   await expect(page.getByRole("radio", { name: "Great" })).toHaveAttribute("aria-checked", "true");
-  const mood = () => page.evaluate(() => window.drusiteMemoryCore!.handle({ type: "listPages" }));
+  const mood = () => page.evaluate(() => (window.drusiteMemoryCore ?? window.drusiteWebCore)!.handle({ type: "listPages" }));
   await expect
     .poll(async () => {
       const r = await mood();
@@ -74,11 +74,10 @@ test("a filter block lists matching pages and keeps its query", async ({ page })
   // The query is saved in the block.
   await expect
     .poll(() =>
-      page.evaluate(() => {
-        const core = window.drusiteMemoryCore!;
-        return core
-          .openPages()
-          .flatMap((id) => core.blocks(id))
+      page.evaluate(async () => {
+        const core = (window.drusiteMemoryCore ?? window.drusiteWebCore)!;
+        const blocks = (await Promise.all(core.openPages().map(async (id) => await core.blocks(id)))).flat();
+        return blocks
           .filter((b) => b.kind.type === "query")
           .map((b) => (b.kind.type === "query" ? JSON.parse(b.kind.query).conditions : null));
       }),

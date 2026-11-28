@@ -135,8 +135,9 @@ channel.onmessage = (e: MessageEvent<Wire>) => {
 scope.onmessage = (e: MessageEvent<FromTab>) => {
   const m = e.data;
   if (m.kind === "call") {
-    void call(m.command).then((result) => {
-      if ("ok" in result) track(m.command);
+    const command = JSON.parse(m.command) as Command;
+    void call(command).then((result) => {
+      if ("ok" in result) track(command);
       toTab({ kind: "reply", id: m.id, result });
     });
   } else if (m.kind === "wake") {

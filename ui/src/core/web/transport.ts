@@ -6,8 +6,9 @@
 import type { Transport } from "../client";
 import type { ApiError, Command, Event, Response } from "../types";
 
-/** From a tab to its worker. */
-export type FromTab = { kind: "call"; id: number; command: Command } | { kind: "wake" };
+/** From a tab to its worker. The command goes as JSON: the UI builds some from Svelte's
+ *  reactive state, whose proxies can't be cloned into a message. */
+export type FromTab = { kind: "call"; id: number; command: string } | { kind: "wake" };
 
 /** From a worker to its tab. */
 export type ToTab =
@@ -74,7 +75,7 @@ export function webCore(): WebCore {
       return new Promise((resolve, reject) => {
         const id = nextId++;
         waiting.set(id, { resolve, reject });
-        post({ kind: "call", id, command });
+        post({ kind: "call", id, command: JSON.stringify(command) });
       });
     },
     subscribe(handler: (event: Event) => void): () => void {

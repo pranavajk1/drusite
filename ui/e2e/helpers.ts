@@ -35,6 +35,15 @@ declare global {
 // The UI's types leave out Node's; this is the one Node global used here.
 declare const process: { env: Record<string, string | undefined> };
 
+/** JSON with object keys sorted, so two cores that order keys differently compare equal. */
+export function canonical(value: unknown): string {
+  return JSON.stringify(value, (_k, v: unknown) =>
+    v && typeof v === "object" && !Array.isArray(v)
+      ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)))
+      : v,
+  );
+}
+
 /** Whether the page runs the WebAssembly core rather than the in-memory one. */
 export function wasm(): boolean {
   return process.env.DRUSITE_CORE === "wasm";
@@ -102,7 +111,7 @@ export async function expectBlocks(page: Page, expected: Partial<ShownBlock>[]):
     .poll(async () => {
       const [shown, held] = [await shownBlocks(page), await heldBlocks(page)];
       const page_ = shown.map(({ hidden: _, ...b }) => b);
-      if (typeof held === "string" || JSON.stringify(page_) !== JSON.stringify(held)) return { page: page_, core: held };
+      if (typeof held === "string" || canonical(page_) !== canonical(held)) return { page: page_, core: held };
       return held.map(({ id: _, ...b }) => b);
     })
     .toEqual(expected.map((b) => expect.objectContaining(b)));
@@ -151,7 +160,7 @@ export async function expectTree(page: Page, expected: TreeNode[]): Promise<void
   await expect
     .poll(async () => {
       const [shown, held] = [await shownTree(page), await heldTree(page)];
-      if (JSON.stringify(shown) !== JSON.stringify(held)) return { sidebar: shown, core: held };
+      if (canonical(shown) !== canonical(held)) return { sidebar: shown, core: held };
       return held;
     })
     .toEqual(expected);
@@ -169,6 +178,21 @@ export async function openTitle(page: Page): Promise<string | null> {
 }
 
 export const leaf = (title: string): TreeNode => ({ title, children: [] });
+
+/**
+ * Clicks something that makes a page (New page, Add a page inside), and waits until that page
+ * is open, its title focused: the core answers when it answers, and typing before then would
+ * go into the page that was open.
+ */
+export async function makePage(page: Page, button: Locator): Promise<void> {
+  const rows = page.locator(".tree-row");
+  const before = await rows.count();
+  await button.click();
+  await expect(rows).toHaveCount(before + 1);
+  await expect(page.locator(".tree-row.current .tree-title")).toHaveText("Untitled");
+  await expect(page.getByLabel("Page title")).toHaveValue("");
+  await expect(page.getByLabel("Page title")).toBeFocused();
+}
 
 /**
  * Moves the cursor to the start or end of the line. WebKit on a Mac does what Safari does there:
