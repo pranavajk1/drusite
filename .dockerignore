@@ -1,7 +1,11 @@
-# The server image needs the Rust workspace and nothing else.
+# The server image needs the Rust workspace, and the UI's sources for the web app it serves.
 target/
 spikes/
 **/node_modules/
 ui/dist/
+ui/dist-web/
+ui/src/core/web/wasm/
+ui/test-results/
+ui/playwright-report/
 .git/
 crates/drusite-app/gen/

@@ -71,7 +71,7 @@ impl FromRequestParts<AppState> for Authenticated {
 
     async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Rejection> {
         if !parts.headers.contains_key(header::AUTHORIZATION)
-            && state.config().web.dir.is_some()
+            && state.config().web.served().is_some()
             && super::session::read_cookie(&parts.headers, super::web::cookie_name(state)).is_some()
         {
             return from_web_cookie(parts, state).await;

@@ -202,7 +202,7 @@ async fn authorize_inner(
     };
     let Some(redirect_uri) = q.redirect_uri.filter(|r| match client.kind {
         clients::Kind::Web => {
-            state.config().web.dir.is_some() && *r == super::web::callback_url(state)
+            state.config().web.served().is_some() && *r == super::web::callback_url(state)
         }
         _ => clients::redirect_allowed(&client, r),
     }) else {

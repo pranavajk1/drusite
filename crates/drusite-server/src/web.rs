@@ -55,7 +55,7 @@ pub fn is_built(dir: &Path) -> bool {
 
 /// The web app's routes, or none when the server has no web app.
 pub fn routes(state: &AppState) -> Router<AppState> {
-    let Some(dir) = state.config().web.dir.clone() else {
+    let Some(dir) = state.config().web.served().map(Path::to_path_buf) else {
         return Router::new();
     };
     let files = ServeDir::new(dir.join("app"))
@@ -79,7 +79,7 @@ pub fn routes(state: &AppState) -> Router<AppState> {
 
 /// A file from the web app's folder.
 fn file(state: &AppState, name: &str) -> Option<PathBuf> {
-    state.config().web.dir.as_ref().map(|d| d.join(name))
+    state.config().web.served().map(|d| d.join(name))
 }
 
 /// A file of the web app, served with the page's headers.

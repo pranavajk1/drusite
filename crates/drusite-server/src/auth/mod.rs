@@ -141,7 +141,7 @@ pub fn routes(state: &AppState) -> Router<AppState> {
     ));
 
     // The web app signs in here, when the server has one to serve.
-    let web = if state.config().web.dir.is_some() {
+    let web = if state.config().web.served().is_some() {
         web::routes()
     } else {
         Router::new()

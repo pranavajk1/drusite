@@ -41,6 +41,8 @@ spec:
               value: /etc/drusite/drusite.toml
             - name: DRUSITE__SERVER__LISTEN
               value: "0.0.0.0:8080"
+            - name: DRUSITE__WEB__ENABLED
+              value: {{ .Values.web.enabled | quote }}
             {{- if .Values.publish.enabled }}
             - name: DRUSITE__PUBLISH__LISTEN
               value: "0.0.0.0:{{ .Values.publish.port }}"

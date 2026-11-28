@@ -142,3 +142,5 @@ text_config = "simple"
 # The browser version: the full app, served here at <public_url>/, for computers where the app
 # can't be installed. The built web app (ui/dist-web); the container image has it here.
 # dir = "/usr/share/drusite/web"
+# Off, the server has no web app even with one in dir (the image sets dir):
+# enabled = true

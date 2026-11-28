@@ -115,14 +115,33 @@ pub struct Config {
 
 /// The browser version: the app itself, served from this server at `/`, signing in through it
 /// with a session cookie (see `auth::web`).
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WebConfig {
+    /// Serve it, when there's one in `dir`. On unless set.
+    #[serde(default = "yes")]
+    pub enabled: bool,
     /// The built web app (`ui/dist-web`): `index.html`, `sw.js` and `app/`. The container image
-    /// has it at `/usr/share/drusite/web`. Unset, there's no web app: nothing at `/`, and no
-    /// browser sign-in routes.
+    /// has it at `/usr/share/drusite/web`. Unset (or `enabled = false`), there's no web app:
+    /// nothing at `/`, and no browser sign-in routes.
     #[serde(default)]
     pub dir: Option<std::path::PathBuf>,
+}
+
+impl Default for WebConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            dir: None,
+        }
+    }
+}
+
+impl WebConfig {
+    /// Where the web app being served is, if one is.
+    pub fn served(&self) -> Option<&std::path::Path> {
+        self.dir.as_deref().filter(|_| self.enabled)
+    }
 }
 
 /// Publish to web: pages shared as read-only links, rendered by this server as plain HTML.
@@ -876,7 +895,7 @@ impl Config {
             other => return invalid(format!("public_url has unsupported scheme {other:?}")),
         }
 
-        if let Some(dir) = &self.web.dir
+        if let Some(dir) = self.web.served()
             && !crate::web::is_built(dir)
         {
             return invalid(format!(
