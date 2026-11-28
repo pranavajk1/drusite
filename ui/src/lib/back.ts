@@ -37,8 +37,8 @@ function push() {
   history.pushState({ drusite: entries.length, page } satisfies State, "");
 }
 
-/** Starts at `first`; `onpage` opens a page Back (or Forward) went to. */
-export function startHistory(first: string, onpage: (page: string) => void): () => void {
+/** Starts at `first` (null with no page open); `onpage` opens a page Back (or Forward) went to. */
+export function startHistory(first: string | null, onpage: (page: string) => void): () => void {
   page = first;
   show = onpage;
   entries.length = 0;
@@ -65,8 +65,11 @@ export function pushPage(id: string) {
   });
 }
 
-/** The open page is swapped for another (the one open was deleted): Back doesn't return to it. */
-export function replacePage(id: string) {
+/**
+ * The open page is swapped for another, or for none (the one open was deleted, or none was open):
+ * Back doesn't return to it.
+ */
+export function replacePage(id: string | null) {
   later(() => {
     page = id;
     if (started) history.replaceState({ drusite: entries.length, page } satisfies State, "");

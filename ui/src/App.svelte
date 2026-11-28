@@ -117,6 +117,12 @@
   let sharing = $state<{ anchor: HTMLElement | null } | null>(null);
 
   const LAST = "drusite.lastPage";
+  /** Set once the app has started on this device: an empty workspace after that stays empty. */
+  const HAD_PAGES = "drusite.hadPages";
+  /** Startup has settled what's open (until then, no page open doesn't mean there are none). */
+  let loaded = $state(false);
+  /** Pages being made here, each opened by what made it. */
+  let making = 0;
 
   function show(e: unknown) {
     error = e instanceof Error ? e.message : String(e);
@@ -128,10 +134,13 @@
         pages = event.pages;
         // The open page can go away underneath: deleted on another device, or a new device's
         // empty first page given up for the account's notes.
-        if (current !== null && !pages.some((p) => p.id === current)) {
+        // With none left, nothing is open. And pages arriving while none is open (another
+        // device's, or restored from the trash) open the first, unless a page made here opens itself.
+        const gone = current !== null && !pages.some((p) => p.id === current);
+        if (gone || (current === null && loaded && making === 0)) {
           const first = pages[0];
           if (first) select(first.id, "replace");
-          else void createPage(null, "replace");
+          else if (gone) select(null);
         }
       }
       if (event.type === "accountChanged") account = event.status;
@@ -144,14 +153,17 @@
         account = await client.accountStatus();
         settings = await client.settings();
         pages = await client.listPages();
-        if (pages.length === 0) {
-          const first = await client.createPage(null, "");
+        // A new install opens on a blank page, so there's somewhere to type. A workspace that
+        // was emptied stays empty: it has had pages on this device, or still has some in the trash.
+        if (pages.length === 0 && localStorage.getItem(HAD_PAGES) === null && (await client.trash()).length === 0) {
+          await client.createPage(null, "");
           pages = await client.listPages();
-          current = first.id;
-        } else {
-          const last = localStorage.getItem(LAST);
-          current = pages.find((p) => p.id === last)?.id ?? pages[0]!.id;
         }
+        localStorage.setItem(HAD_PAGES, "1");
+        const last = localStorage.getItem(LAST);
+        current = pages.find((p) => p.id === last)?.id ?? pages[0]?.id ?? null;
+        if (!current) localStorage.removeItem(LAST);
+        loaded = true;
         stopHistory = startHistory(current, (id) => {
           if (byId.has(id)) select(id, "none");
         });
@@ -167,13 +179,18 @@
 
   let stopHistory: (() => void) | undefined;
 
-  /** Opens a page. `push` lets Back return to the one before; `replace` doesn't (it went away). */
-  function select(id: PageId, how: "push" | "replace" | "none" = "push") {
-    if (how === "push") pushPage(id);
+  /**
+   * Opens a page, or none (the last one went to the trash). `push` lets Back return to the one
+   * before; `replace` doesn't (it went away, or there was none open).
+   */
+  function select(id: PageId | null, how: "push" | "replace" | "none" = "push") {
+    if (id === null || current === null) how = how === "none" ? "none" : "replace";
+    if (how === "push" && id) pushPage(id);
     else if (how === "replace") replacePage(id);
     current = id;
     drawer = false;
-    localStorage.setItem(LAST, id);
+    if (id) localStorage.setItem(LAST, id);
+    else localStorage.removeItem(LAST);
   }
 
   // What's open over the page closes with Back: the pages drawer, and Ask where it fills a phone.
@@ -184,12 +201,15 @@
     if (showAsk && phone()) return openLayer(() => (showAsk = false));
   });
 
-  async function createPage(parent: PageId | null, how: "push" | "replace" = "push") {
+  async function createPage(parent: PageId | null) {
+    making++;
     try {
       const page = await client.createPage(parent, "");
-      select(page.id, how);
+      select(page.id);
     } catch (e) {
       show(e);
+    } finally {
+      making--;
     }
   }
 
@@ -293,12 +313,15 @@
 
   /** Opens the journal entry for `date`, making it from the template if it's new. */
   async function openDay(date: string) {
+    making++;
     try {
       const { page } = await client.openJournalDay(date);
       pages = await client.listPages();
       select(page.id);
     } catch (e) {
       show(e);
+    } finally {
+      making--;
     }
   }
 
@@ -314,8 +337,7 @@
       const rest = await client.listPages();
       if (current === null || !rest.some((p) => p.id === current)) {
         const next = rest.find((p) => p.id === parent)?.id ?? rest[0]?.id;
-        if (next) select(next, "replace");
-        else await createPage(null, "replace");
+        select(next ?? null, "replace");
       }
     } catch (e) {
       show(e);
@@ -343,11 +365,14 @@
   }
 
   async function createDatabase(parent: PageId | null, template: "empty" | "tasks") {
+    making++;
     try {
       const { page } = await client.createDatabase(parent, template === "tasks" ? "Tasks" : "", false, template);
       select(page.id);
     } catch (e) {
       show(e);
+    } finally {
+      making--;
     }
   }
 
@@ -513,27 +538,33 @@
           <Icon name="panel-left-open" />
         </button>
       {/if}
-      <nav class="breadcrumb" aria-label="Breadcrumb">
-        {#each trail as p (p.id)}
-          <button class="crumb" onclick={() => select(p.id)}>{p.title || "Untitled"}</button>
-          <span class="crumb-sep" aria-hidden="true">/</span>
-        {/each}
-        <span class="crumb current topbar-title" aria-current="page">{title || "Untitled"}</span>
-      </nav>
+      {#if current}
+        <nav class="breadcrumb" aria-label="Breadcrumb">
+          {#each trail as p (p.id)}
+            <button class="crumb" onclick={() => select(p.id)}>{p.title || "Untitled"}</button>
+            <span class="crumb-sep" aria-hidden="true">/</span>
+          {/each}
+          <span class="crumb current topbar-title" aria-current="page">{title || "Untitled"}</span>
+        </nav>
+      {:else}
+        <span class="breadcrumb"></span>
+      {/if}
       <button class="topbar-sync" aria-label="Sync: {syncLabel}" title={syncLabel} onclick={() => (settingsAt = "account")}>
         {@render syncDot()}<span class="topbar-sync-label">{syncLabel}</span>
       </button>
-      <button
-        bind:this={shareButton}
-        class="btn ghost small topbar-share"
-        class:published={info?.published}
-        aria-haspopup="dialog"
-        aria-expanded={sharing !== null}
-        title={info?.published ? "Published to web" : "Share to web"}
-        onclick={(e) => (sharing = sharing ? null : { anchor: e.currentTarget })}
-      >
-        {#if info?.published}<Icon name="globe" size={14} />{/if}Share
-      </button>
+      {#if current}
+        <button
+          bind:this={shareButton}
+          class="btn ghost small topbar-share"
+          class:published={info?.published}
+          aria-haspopup="dialog"
+          aria-expanded={sharing !== null}
+          title={info?.published ? "Published to web" : "Share to web"}
+          onclick={(e) => (sharing = sharing ? null : { anchor: e.currentTarget })}
+        >
+          {#if info?.published}<Icon name="globe" size={14} />{/if}Share
+        </button>
+      {/if}
       <button
         class="icon-btn topbar-ask"
         class:active={showAsk}
@@ -544,15 +575,17 @@
       >
         <Icon name="sparkles" size={18} />
       </button>
-      <button
-        class="icon-btn topbar-more"
-        aria-label="Page actions"
-        aria-haspopup="menu"
-        aria-expanded={pageMenu !== null}
-        onclick={(e) => (pageMenu = pageMenu ? null : e.currentTarget)}
-      >
-        <Icon name="ellipsis" size={18} />
-      </button>
+      {#if current}
+        <button
+          class="icon-btn topbar-more"
+          aria-label="Page actions"
+          aria-haspopup="menu"
+          aria-expanded={pageMenu !== null}
+          onclick={(e) => (pageMenu = pageMenu ? null : e.currentTarget)}
+        >
+          <Icon name="ellipsis" size={18} />
+        </button>
+      {/if}
     </header>
 
     <main class="content">
@@ -579,6 +612,15 @@
             onerror={show}
           />
         {/key}
+      {:else if loaded}
+        <div class="empty no-pages" {@attach opened}>
+          <Icon name="file-text" size={28} />
+          <span>No pages yet</span>
+          <div class="no-pages-actions">
+            <button class="btn primary" onclick={() => createPage(null)}><Icon name="square-pen" />New page</button>
+            <button class="btn" onclick={() => openDay(today())}><Icon name="calendar-days" />Today</button>
+          </div>
+        </div>
       {/if}
     </main>
   </div>
