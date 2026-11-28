@@ -9,5 +9,30 @@ repository.workspace = true
 authors.workspace = true
 publish.workspace = true
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+drusite-core.workspace = true
+drusite-model.workspace = true
+drusite-proto = { workspace = true, default-features = false, features = ["unzstd"] }
+serde.workspace = true
+serde_json.workspace = true
+
+# Everything browser-only. Off wasm the crate is empty, so `cargo build --workspace` still works.
+[target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies]
+wasm-bindgen.workspace = true
+wasm-bindgen-futures.workspace = true
+js-sys.workspace = true
+# The browser's randomness and clock for the crates that need them.
+getrandom = { workspace = true, features = ["wasm_js"] }
+getrandom03 = { package = "getrandom", version = "0.3.4", features = ["wasm_js"] }
+uuid = { workspace = true, features = ["js"] }
+# SQLite's host functions in the browser, and the store in OPFS.
+sqlite-wasm-rs = { workspace = true, features = ["wasm-bindgen"] }
+sqlite-wasm-vfs = { workspace = true, features = ["sahpool"] }
+# The VFS's file management (clearing the store on sign-out).
+rsqlite-vfs = "0.2.0"
+
 [lints]
 workspace = true
