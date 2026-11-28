@@ -225,6 +225,10 @@ pub enum Command {
         question: String,
         /// The local date, `YYYY-MM-DD`, so "yesterday" means the asker's.
         today: Option<String>,
+        /// Keeps the answer to this page and the pages inside it (asked from that page). Only
+        /// where [`AskStatus::page_scope`] says the server can.
+        #[serde(default)]
+        page: Option<PageId>,
     },
     /// Stops following an answer. The server still finishes and saves it.
     CancelAsk {
@@ -431,6 +435,8 @@ pub struct AskStatus {
     pub embedding_model: Option<String>,
     /// Documents waiting to be indexed.
     pub indexing: u32,
+    /// Whether a question can be kept to one page and the pages inside it; older servers can't.
+    pub page_scope: bool,
 }
 
 /// A saved conversation, as listed.

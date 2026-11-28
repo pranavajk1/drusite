@@ -336,6 +336,7 @@ async fn core(state: tauri::State<'_, AppState>, command: Command) -> Result<Res
             conversation,
             question,
             today,
+            page,
         } => {
             let events = state.handle.clone();
             ready
@@ -345,6 +346,7 @@ async fn core(state: tauri::State<'_, AppState>, command: Command) -> Result<Res
                     conversation,
                     question,
                     today,
+                    page,
                     move |request, update| {
                         emit(
                             &events,

@@ -343,6 +343,7 @@ impl Core {
                     semantic: false,
                     embedding_model: None,
                     indexing: 0,
+                    page_scope: false,
                 },
             }),
             Command::Conversations => Ok(Response::Conversations {

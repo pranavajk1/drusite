@@ -402,11 +402,17 @@ export class CoreClient {
   }
 
   /**
-   * Asks the notes. The answer comes as `ask` events naming `request`; this resolves once it's
-   * on its way.
+   * Asks the notes, or only `page` and the pages inside it. The answer comes as `ask` events
+   * naming `request`; this resolves once it's on its way.
    */
-  async ask(request: string, conversation: string | null, question: string, today: string | null): Promise<void> {
-    await this.call({ type: "ask", request, conversation, question, today }, "done");
+  async ask(
+    request: string,
+    conversation: string | null,
+    question: string,
+    today: string | null,
+    page: PageId | null = null,
+  ): Promise<void> {
+    await this.call({ type: "ask", request, conversation, question, today, page }, "done");
   }
 
   /** Stops following an answer; the server still finishes and saves it. */

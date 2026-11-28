@@ -1,9 +1,17 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!--
-  Ask your notes: a panel beside the page (full screen on phones), as in Notion AI. Answers are
-  written on the server from the asker's pages and stream in; each citation opens its block.
-  Conversations are kept in the account, so every device has them.
+  Ask your notes. Answers are written on the server from the asker's pages and stream in; each
+  citation opens its block. Conversations are kept in the account, so every device has them.
+
+  Where it sits is the host's (App.svelte): opened from a page, it's a panel beside that page and
+  asks about it; opened from the sidebar, it floats over the page, and can fill it for long chats.
+  On phones it fills the screen either way.
 -->
+<script lang="ts" module>
+  /** Beside the page it was opened from, over the page, or filling it. */
+  export type AskMode = "side" | "overlay" | "full";
+</script>
+
 <script lang="ts">
   import { onMount, tick } from "svelte";
 
@@ -18,6 +26,10 @@
     client,
     settings,
     signedIn,
+    mode,
+    page = null,
+    pageTitle = "",
+    onmode,
     onclose,
     oncite,
     onsettings,
@@ -26,6 +38,12 @@
     settings: Settings;
     /** Changes when the account does, so the status is asked again. */
     signedIn: string;
+    /** Beside the page, over it, or filling it. */
+    mode: AskMode;
+    /** The page it was opened from: questions keep to it (and the pages inside) unless the person says otherwise. */
+    page?: PageId | null;
+    pageTitle?: string;
+    onmode: (mode: AskMode) => void;
     onclose: () => void;
     oncite: (page: PageId, block: BlockId | null) => void;
     onsettings: (section: "account" | "journal") => void;
@@ -66,6 +84,15 @@
   let keyboard = $state(0);
   let input = $state<HTMLTextAreaElement | null>(null);
 
+  /** Whether questions keep to `page`; asked again for each page it's opened beside. */
+  let scoped = $state(true);
+  $effect(() => {
+    void page;
+    scoped = true;
+  });
+  /** The page questions keep to, where the server can do that. */
+  const scope = $derived(status?.pageScope && page && scoped ? page : null);
+
   let seq = 0;
   const newRequest = () => `ask-${Date.now().toString(36)}-${(seq += 1)}`;
 
@@ -73,7 +100,17 @@
     try {
       status = await client.askStatus();
     } catch (e) {
-      status = { signedIn: false, available: false, message: String(e), reason: "unreachable", model: null, semantic: false, embeddingModel: null, indexing: 0 };
+      status = {
+        signedIn: false,
+        available: false,
+        message: String(e),
+        reason: "unreachable",
+        model: null,
+        semantic: false,
+        embeddingModel: null,
+        indexing: 0,
+        pageScope: false,
+      };
     }
   }
 
@@ -160,7 +197,7 @@
     phase = "searching";
     void follow(true);
     try {
-      await client.ask(id, conversation, q, today());
+      await client.ask(id, conversation, q, today(), scope);
     } catch (e) {
       const last = messages[messages.length - 1];
       if (last) {
@@ -319,7 +356,7 @@
   {/each}
 {/snippet}
 
-<section class="ask" aria-label="Ask your notes" style:--ask-keyboard="{keyboard}px">
+<section class="ask ask-{mode}" aria-label="Ask your notes" style:--ask-keyboard="{keyboard}px">
   <header class="ask-head">
     <span class="ask-title">
       {#if view === "history"}Chats{:else}{title || "Ask your notes"}{/if}
@@ -330,6 +367,15 @@
     <button class="icon-btn" aria-label="New chat" title="New chat" onclick={newChat}>
       <Icon name="square-pen" />
     </button>
+    {#if mode === "overlay"}
+      <button class="icon-btn ask-expand" aria-label="Expand to full page" title="Expand to full page" onclick={() => onmode("full")}>
+        <Icon name="maximize-2" />
+      </button>
+    {:else if mode === "full"}
+      <button class="icon-btn ask-expand" aria-label="Shrink to a panel" title="Shrink to a panel" onclick={() => onmode("overlay")}>
+        <Icon name="minimize-2" />
+      </button>
+    {/if}
     <button class="icon-btn" aria-label="Close Ask" title="Close (Esc)" onclick={onclose}>
       <Icon name="x" />
     </button>
@@ -402,7 +448,7 @@
           <Icon name="sparkles" size={28} />
           <p class="ask-empty-title">Ask a question about your notes</p>
           <p class="ask-empty-text">
-            Answers come from your pages, with a link to each block they use{#if status?.model}, written by {status.model}{/if}.
+            {#if scope}Answers come from this page and the pages inside it.{:else}Answers come from your pages.{/if}
           </p>
           <p class="ask-empty-text">
             {#if settings.askJournal}Journal entries are included.{:else}Journal entries are left out.{/if}
@@ -478,20 +524,41 @@
         class="ask-input"
         rows="1"
         maxlength="4000"
-        placeholder={messages.length ? "Ask a follow-up…" : "Ask anything about your notes…"}
+        placeholder={messages.length ? "Ask a follow-up…" : scope ? "Ask about this page…" : "Ask anything about your notes…"}
         aria-label="Question"
         disabled={unavailable}
         onkeydown={key}
       ></textarea>
-      {#if request}
-        <button type="button" class="icon-btn ask-send" aria-label="Stop" title="Stop" onclick={stop}>
-          <Icon name="square" />
-        </button>
-      {:else}
-        <button type="submit" class="icon-btn ask-send" aria-label="Ask" title="Ask (Enter)" disabled={!question.trim() || unavailable}>
-          <Icon name="arrow-up" />
-        </button>
-      {/if}
+      <div class="ask-compose-bar">
+        {#if status?.pageScope && page}
+          {#if scoped}
+            <span class="ask-scope" title="Answers come from this page and the pages inside it">
+              <Icon name="file-text" size={14} />
+              <span class="ask-scope-title">{pageTitle || "Untitled"}</span>
+              <button type="button" class="ask-scope-clear" aria-label="Ask all your notes" title="Ask all your notes" onclick={() => (scoped = false)}>
+                <Icon name="x" size={12} />
+              </button>
+            </span>
+          {:else}
+            <button type="button" class="ask-scope-add" onclick={() => (scoped = true)}>
+              <Icon name="file-text" size={14} />Ask this page
+            </button>
+          {/if}
+        {/if}
+        <span class="ask-compose-gap"></span>
+        {#if status?.available && status.model}
+          <span class="ask-model" title="The model your server answers with">{status.model}</span>
+        {/if}
+        {#if request}
+          <button type="button" class="icon-btn ask-send" aria-label="Stop" title="Stop" onclick={stop}>
+            <Icon name="square" />
+          </button>
+        {:else}
+          <button type="submit" class="icon-btn ask-send" aria-label="Ask" title="Ask (Enter)" disabled={!question.trim() || unavailable}>
+            <Icon name="arrow-up" />
+          </button>
+        {/if}
+      </div>
     </form>
   {/if}
 </section>

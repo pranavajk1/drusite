@@ -46,6 +46,9 @@ pub(super) struct AskBody {
     question: String,
     /// The asker's local date (`YYYY-MM-DD`), so "yesterday" means theirs.
     today: Option<String>,
+    /// Keeps the answer to this page and the pages inside it: asked from that page.
+    #[serde(default)]
+    page: Option<Uuid>,
 }
 
 fn event(name: &str, data: &serde_json::Value) -> Event {
@@ -108,9 +111,12 @@ pub(super) async fn ask(
 
     let mut tx = state.db().as_user(auth.user).await?;
     require_reader(&state, &mut tx, auth.user, ws).await?;
-    let readable = readable_pages(&state, &mut tx, ws)
+    let mut readable = readable_pages(&state, &mut tx, ws)
         .await?
         .ok_or(AskError::NotFound)?;
+    if let Some(page) = body.page {
+        readable.within(page);
+    }
     let (conversation, title, history) = match body.conversation {
         Some(id) => {
             let title = conversations::find(&state, &mut tx, ws, id)

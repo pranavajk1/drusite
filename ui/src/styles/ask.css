@@ -1,26 +1,105 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 
-/* Ask your notes (`lib/Ask.svelte`): a panel at the right of the page on desktops, the whole
-   screen on phones. design/DESIGN.md §7.9. */
+/* Ask your notes (`lib/Ask.svelte`). On desktops and in the browser: beside the page it was
+   opened from (a right panel, `lib/ui/RightPanel.svelte`), or over the page from the sidebar,
+   which can fill the page. Phones: the whole screen either way. design/DESIGN.md §7.9. */
 
-.app.ask-open {
-  grid-template-columns: var(--sidebar-width) minmax(0, 1fr) var(--ask-width);
+/* ---- The right panel: a third column beside the page ---- */
+
+.app.right-open {
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr) auto;
 }
 
-.app.ask-open.collapsed {
-  grid-template-columns: 0 minmax(0, 1fr) var(--ask-width);
+.app.right-open.collapsed {
+  grid-template-columns: 0 minmax(0, 1fr) auto;
 }
 
-.ask {
+.right-panel {
   position: sticky;
   top: 0;
   height: 100vh;
   height: 100dvh;
+  /* As wide as it was left, but never squeezing the page under 360px. */
+  width: max(280px, min(var(--right-width), calc(100vw - var(--sidebar-width) - 360px)));
+  min-width: 0;
+  box-shadow: inset 1px 0 0 var(--divider);
+}
+
+.app.collapsed .right-panel {
+  width: max(280px, min(var(--right-width), calc(100vw - 360px)));
+}
+
+.right-panel-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 1;
+  transition: box-shadow var(--dur-fast);
+}
+
+.right-panel-resize:hover,
+.right-panel-resize:focus-visible,
+.panel-resizing .right-panel-resize {
+  outline: none;
+  box-shadow: inset 2px 0 0 var(--border-strong);
+}
+
+.panel-resizing,
+.panel-resizing * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+/* ---- Over the page, or filling it ---- */
+
+.ask-float {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: var(--z-drawer);
+  width: min(var(--ask-width), 90vw);
+  box-shadow: var(--shadow-lg);
+}
+
+.ask-float .ask {
+  background: var(--bg-elevated);
+}
+
+.ask-float.full {
+  left: var(--sidebar-width);
+  width: auto;
+  box-shadow: none;
+}
+
+.app.collapsed .ask-float.full {
+  left: 0;
+}
+
+.ask-float.full .ask {
+  background: var(--bg);
+}
+
+/* Filling the page, the chat keeps to a readable measure, as the page does. */
+.ask-float.full :is(.ask-messages, .ask-empty, .ask-list, .ask-compose) {
+  width: 100%;
+  max-width: 760px;
+  margin-inline: auto;
+}
+
+.ask-float.full .ask-compose {
+  width: calc(100% - 2 * var(--space-3));
+}
+
+.ask {
   display: flex;
   flex-direction: column;
+  height: 100%;
   min-width: 0;
   background: var(--bg);
-  box-shadow: inset 1px 0 0 var(--divider);
   font-size: var(--text-md);
   color: var(--text);
 }
@@ -264,10 +343,13 @@
 
 /* ---- The question box ---- */
 
+/* The question box: the question on top, then a bar with what it asks about, the server's
+   model and the send button (as in Gemini). Its own row keeps the placeholder centred however
+   tall the send button is. */
 .ask-compose {
   display: flex;
-  align-items: flex-end;
-  gap: var(--space-2);
+  flex-direction: column;
+  gap: var(--space-1);
   margin: 0 var(--space-3) var(--space-3);
   padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
   border-radius: var(--radius-lg);
@@ -280,14 +362,19 @@
   box-shadow: var(--shadow-sm), inset 0 0 0 1px var(--accent), 0 0 0 3px var(--focus);
 }
 
+/* A whole line of text tall, plus its padding: a box shorter than its line (16px type on phones
+   in a 24px box) drew the placeholder off centre on Android. */
 .ask-input {
-  flex: 1;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
   min-width: 0;
-  min-height: 24px;
+  min-height: calc(1.5em + 2 * var(--space-1));
   max-height: 160px;
   field-sizing: content;
   resize: none;
-  padding: var(--space-0) 0;
+  margin: 0;
+  padding: var(--space-1) var(--space-1) var(--space-1) 0;
   border: 0;
   outline: none;
   background: transparent;
@@ -298,6 +385,79 @@
 
 .ask-input::placeholder {
   color: var(--text-3);
+  line-height: inherit;
+}
+
+.ask-compose-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.ask-compose-gap {
+  flex: 1;
+}
+
+.ask-scope,
+.ask-scope-add {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 60%;
+  height: 26px;
+  padding: 0 var(--space-1) 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--bg-hover);
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+
+.ask-scope-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ask-scope-clear {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.ask-scope-clear:hover {
+  background: var(--bg-active);
+  color: var(--text);
+}
+
+.ask-scope-add {
+  padding-right: var(--space-2);
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.ask-scope-add:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.ask-model {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-3);
+  font-size: var(--text-xs);
 }
 
 .ask-send {
@@ -400,34 +560,23 @@
   color: var(--text-2);
 }
 
-/* ---- Narrow windows: the panel goes over the page instead of squeezing it ---- */
-
-@media (min-width: 701px) and (max-width: 1100px) {
-  .app.ask-open {
-    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
-  }
-
-  .app.ask-open.collapsed {
-    grid-template-columns: 0 minmax(0, 1fr);
-  }
-
-  .ask {
-    position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    z-index: var(--z-drawer);
-    width: min(var(--ask-width), 90vw);
-    height: auto;
-    background: var(--bg-elevated);
-    box-shadow: var(--shadow-lg);
-  }
-}
-
 /* ---- Phones: the whole screen, over everything but the toast ---- */
 
 @media (max-width: 700px) {
-  .ask {
+  /* No room beside the page: whichever way it was opened, Ask is laid out by itself. */
+  .right-panel,
+  .ask-float,
+  .ask-float.full {
+    display: contents;
+  }
+
+  .right-panel-resize,
+  .ask-expand {
+    display: none;
+  }
+
+  .ask,
+  .ask-float .ask {
     position: fixed;
     inset: 0;
     /* Above the on-screen keyboard while it's up (set by Ask.svelte). */
@@ -452,11 +601,6 @@
   .ask-input {
     font-size: 16px; /* iOS zooms into anything smaller */
   }
-
-  /* Phones reach Ask from the tab bar. */
-  .topbar-ask {
-    display: none;
-  }
 }
 
 @media (pointer: coarse) {
@@ -475,10 +619,6 @@
     width: 40px;
     height: 40px;
   }
-}
-
-.ask-host {
-  min-width: 0;
 }
 
 .topbar-ask.active {

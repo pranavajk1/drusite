@@ -159,6 +159,8 @@ export type AskStatus = {
 	embeddingModel: string | null,
 	/**  Documents waiting to be indexed. */
 	indexing: number,
+	/**  Whether a question can be kept to one page and the pages inside it; older servers can't. */
+	pageScope: boolean,
 };
 
 /**  A step in an answer as it streams in. */
@@ -429,7 +431,12 @@ export type Command =
  */
 { type: "ask"; request: string; conversation: string | null; question: string; 
 /**  The local date, `YYYY-MM-DD`, so "yesterday" means the asker's. */
-today: string | null } | 
+today: string | null; 
+/**
+ *  Keeps the answer to this page and the pages inside it (asked from that page). Only
+ *  where [`AskStatus::page_scope`] says the server can.
+ */
+page?: PageId | null } | 
 /**  Stops following an answer. The server still finishes and saves it. */
 { type: "cancelAsk"; request: string } | 
 /**
