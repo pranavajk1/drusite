@@ -139,6 +139,9 @@ server, sync state and Sign out.
 
 ## Decisions
 
+The first two were Pranava's to make; no answer had come by the end of the build, so they are
+the recommendations, each a config default or a few lines to change.
+
 | decision | choice | why |
 |---|---|---|
 | Local copy on a machine I can't install on | **An encrypted copy that opens offline**, wiped on sign-out and when the server says the browser was signed out | The point is a full app on that machine, offline included; the wipe covers leaving it behind |
@@ -146,3 +149,47 @@ server, sync state and Sign out.
 | Where the web app lives | **The server's own address, at `/`** | Same origin is what makes an HttpOnly, SameSite=Strict cookie work with no CORS at all; nothing else to deploy |
 | Several tabs | **All live**, one owns the store | A second tab that only says "open elsewhere" isn't the full app |
 | Device AI providers, Notion API import | **Not in the browser** | Vendors' APIs refuse browser origins, and keys would sit in JavaScript; Ask runs on the server either way |
+
+## Results
+
+Built as planned, with these differences:
+
+- **Search** in the browser is the small in-memory index (tantivy needs threads); same rules,
+  BM25 ranking, and the core's search tests run against both.
+- **Commands cross to the worker as JSON**: the UI builds some from Svelte's reactive state,
+  whose proxies can't be cloned into a message.
+- **A store whose key is gone** (site data partly cleared, so IndexedDB lost the key and OPFS
+  kept the store) is replaced at start, not left unopenable. Signed in, the notes come back from
+  the server.
+- **Offline from the start** the browser remembers who it was signed in as (beside the wrapped
+  key, and gone with it), so it says it's offline for that account rather than signed out.
+- **Two tabs, one closing mid-command**: a command in flight to the tab that held the store is
+  refused, and the editor shows what was saved; the other tabs reopen their pages under the new
+  owner.
+
+Budgets on the first build: the core's WebAssembly 1,667 KiB brotli (budget 2,100), the app's
+JavaScript 147 KiB (181). Memory, a Chromium tab with 1,000 pages and one open: 36 MB, of which
+5 MB is the core's WebAssembly memory (budget 48).
+
+### The exit test
+
+| what | how | result |
+|---|---|---|
+| Server tests: web app served, BFF sign-in, cookie only from the server's own origin (sibling subdomain and `Sec-Fetch-Site: same-site` refused), token endpoint refuses web codes, a sign-in can't be finished or spent from another browser, Devices revoke → `signed_out`, sign-out ends grant + cookie + sign-in session, no tokens kept for browsers; no web routes without `[web] dir` | `cargo test -p drusite-server` (PostgreSQL 16 + versitygw in containers) | all 115 pass |
+| The UI's specs on the WebAssembly core | Playwright, local: Chromium and WebKit; CI also Firefox | 59 + 4 browser-only, each engine; 1 skipped (publishing needs a server) |
+| The UI's specs on the in-memory core | Playwright, Chromium and WebKit | 144 pass |
+| Memory budget | Playwright, full Chromium | 36 MB of 48 |
+| **By hand**, in the built-in browser against the local server (debug build, own Postgres and S3 containers, `[web] dir` = the built app) | | |
+| First visit | blank browser at `/` | straight to the server's sign-in page ("continue to Drusite in a browser") |
+| Sign in | new password account (synthetic) | back in the app, signed in, Synced |
+| Pages, journal, databases | typed a page, picked a mood and wrote today's entry, made a task board and a card (opens in its title) | all saved and synced |
+| Ask | the right-hand panel | a CPU-bound local model (qwen3 1.7B in Ollama) ran past the server's 5-minute limit, and the panel showed the server's "took too long" error; with a local stub that streams a fixed cited answer: answer streamed, citation to the page, clicking it put the cursor in the cited block |
+| Sync with the Mac app built from this branch | debug bundle with its own identifier and data folder and a file key (no Keychain), signed in to the same account (its sign-in URL taken from a stand-in `open` and finished in the built-in browser) | it took the account's notes; an edit on the Mac appeared in the browser; a live edit in the browser appeared on the open page on the Mac |
+| Offline, then reconnect | Playwright Chromium against the same server (the built-in browser doesn't allow service workers) | signed in through the BFF, notes arrived; offline: edit, reload (app from the service worker, notes from OPFS, status "Offline; changes wait on this device"), edit again; online: Synced with no reload, and both offline edits reached the Mac |
+| Two tabs at once | same | the second tab opened the page through the first and its edit showed in the first; both reached the Mac |
+| Sign out | Settings → Sign out | back at the sign-in page; the store's files, the wrapped key and the remembered session gone; the server session ended |
+
+Not covered by hand: Firefox (Playwright's Firefox doesn't start on this Mac's macOS; CI runs
+it on Linux), Safari itself (Playwright's WebKit stands in), passkeys and OIDC through the web
+sign-in (the same sign-in pages as the apps; the server tests use passwords), and a phone's
+browser.
