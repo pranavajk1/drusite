@@ -66,6 +66,8 @@ impl Core {
     /// Opens the workspace stored in `data_dir`, creating the store and an empty workspace the
     /// first time.
     pub fn open(data_dir: &Path, key: &StoreKey, events: EventSink) -> Result<Self> {
+        // In the browser the store's "folder" is a name in the VFS: there's no file system.
+        #[cfg(not(target_family = "wasm"))]
         std::fs::create_dir_all(data_dir)
             .map_err(|e| Error::Corrupt(format!("can't create {}: {e}", data_dir.display())))?;
         let mut store = Store::open(&data_dir.join(STORE_FILE), key)?;

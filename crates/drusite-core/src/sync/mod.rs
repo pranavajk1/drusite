@@ -104,6 +104,48 @@ fn subscribe(
     }))
 }
 
+/// What a device syncs: see [`Core::workspace_to_join`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Join {
+    /// Its own workspace.
+    Own,
+    /// The account's, in place of this blank device's own.
+    Take(WorkspaceId),
+    /// Neither: this device has notes, and the account has a workspace from elsewhere.
+    Conflict,
+}
+
+fn choose(mine: WorkspaceId, blank: bool, account: &[(WorkspaceId, bool)]) -> Join {
+    if account.is_empty() || account.iter().any(|(id, _)| *id == mine) {
+        return Join::Own;
+    }
+    if !blank {
+        return Join::Conflict;
+    }
+    account
+        .iter()
+        .find(|(_, owned)| *owned)
+        .or_else(|| account.first())
+        .map_or(Join::Own, |(id, _)| Join::Take(*id))
+}
+
+#[cfg(test)]
+#[test]
+fn a_device_syncs_its_own_workspace_or_takes_the_accounts() {
+    let mine = WorkspaceId::new();
+    let other = WorkspaceId::new();
+    let shared = WorkspaceId::new();
+    // The account has nothing yet: this device's becomes its first.
+    assert_eq!(choose(mine, false, &[]), Join::Own);
+    // The account has this device's.
+    assert_eq!(choose(mine, false, &[(mine, true)]), Join::Own);
+    // A blank device takes the account's, the one it owns first.
+    let account = [(shared, false), (other, true)];
+    assert_eq!(choose(mine, true, &account), Join::Take(other));
+    // A device with notes of its own can't, yet.
+    assert_eq!(choose(mine, false, &account), Join::Conflict);
+}
+
 impl Core {
     /// The workspace this device holds.
     pub fn workspace_id(&self) -> WorkspaceId {
@@ -130,6 +172,23 @@ impl Core {
             }
         }
         Ok(true)
+    }
+
+    /// Which workspace to sync, given the account's workspaces on the server as `(id, owned)`:
+    /// this device's own (already there, or becoming the account's first), the account's (for a
+    /// blank device to take), or neither. The server is asked every time rather than trusting
+    /// that this device synced before: if it no longer has this device's workspace (its data
+    /// was reset, or this is another account), what this device believed it had is forgotten.
+    pub fn workspace_to_join(&mut self, account: &[(WorkspaceId, bool)]) -> Result<Join> {
+        let mine = self.workspace_id();
+        if account.iter().any(|(id, _)| *id == mine) {
+            return Ok(Join::Own);
+        }
+        if self.store.sync_state(&mine.to_string())?.on_server {
+            self.store.forget_server()?;
+        }
+        let blank = self.is_blank()?;
+        Ok(choose(mine, blank, account))
     }
 
     /// Replaces this blank device's workspace with the account's, from the server's entries for

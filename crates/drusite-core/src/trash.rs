@@ -11,10 +11,17 @@ use crate::engine::Core;
 pub(crate) const KEEP_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 
 /// Now, in Unix milliseconds.
+#[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
 pub(crate) fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
+}
+
+/// Now, in Unix milliseconds: the browser's clock (`SystemTime` panics on wasm32).
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+pub(crate) fn now_ms() -> i64 {
+    js_sys::Date::now() as i64
 }
 
 impl Core {
