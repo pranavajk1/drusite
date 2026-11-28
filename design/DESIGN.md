@@ -195,7 +195,8 @@ Moods use Lucide faces (angry, frown, meh, smile, laugh) in the mood colours.
 |---|---|
 | Search | `search` |
 | Today | `calendar-days` |
-| Journal (its page in the tree too) | `book-open` |
+| Journals (the sidebar's row: the journal's calendar and views) | `notebook-tabs` |
+| The Journal page in the tree, where entries are saved | `book-open` |
 | A journal entry | `calendar-days` |
 | A page / a page with subpages | `file` / `file-text` |
 | Settings / Trash | `settings` / `trash-2` |
