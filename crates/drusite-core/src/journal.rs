@@ -47,7 +47,11 @@ impl Core {
 
     /// Whether a page can be what new journal entries start from: an ordinary page, not the
     /// page entries go under, an entry, a database or a database's row.
-    fn can_be_template(&self, id: PageId, journal_parent: Option<PageId>) -> Result<bool, ApiError> {
+    fn can_be_template(
+        &self,
+        id: PageId,
+        journal_parent: Option<PageId>,
+    ) -> Result<bool, ApiError> {
         if Some(id) == journal_parent {
             return Ok(false);
         }
