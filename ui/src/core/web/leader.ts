@@ -42,7 +42,6 @@ export class Leader {
   private asking = new Map<string, AbortController>();
   /** Signed in, as far as the last word from the server goes. */
   private signedIn = false;
-  private noServer = false;
 
   private constructor(
     private core: WasmCore,
@@ -52,14 +51,25 @@ export class Leader {
   /** Opens the store (OPFS where the browser has it) and starts the session with the server. */
   static async start(host: Host): Promise<Leader> {
     await init();
-    const key = await storeKey();
+    const { key, fresh } = await storeKey();
     // A tab that closed a moment ago may still hold OPFS's handles: try a few times.
     let core: WasmCore | null = null;
+    let cleared = false;
     for (let attempt = 0; ; attempt++) {
       try {
         core = await WasmCore.open(key, true);
         break;
       } catch (e) {
+        // A key made just now meeting a store from before: that store's key is gone (the
+        // browser's site data was partly cleared), so nothing can read it. Start afresh; a
+        // signed-in browser gets its notes back from the server.
+        if (fresh && !cleared && String(e).includes("store key doesn't open")) {
+          console.warn("drusite: this browser's store is from a key it no longer has; starting afresh");
+          wipeStore();
+          cleared = true;
+          continue;
+        }
+        console.warn("drusite: opening the store", e);
         if (attempt >= 20) throw e;
         await new Promise((r) => setTimeout(r, 250));
       }
@@ -288,7 +298,6 @@ export class Leader {
       }
       if (session === "noServer") {
         // The development server: notes stay in this browser.
-        this.noServer = true;
         this.signedIn = false;
         this.setStatus("signedOut");
         return;
@@ -300,6 +309,12 @@ export class Leader {
         return;
       }
       if (session === "none") {
+        // A first visit (or just signed out): straight to signing in. A browser with notes of
+        // its own (its sign-in ran out) keeps them and offers Sign in under Settings.
+        if (this.core.isBlank()) {
+          this.host.navigate("/web/login");
+          return;
+        }
         this.signedIn = false;
         this.status = { ...this.status, server: location.origin + "/", email: null };
         this.setStatus("signedOut", null);
@@ -454,11 +469,6 @@ export class Leader {
         console.warn(`drusite: attachment ${blob}`, e);
       });
     }
-  }
-
-  /** Whether this browser's notes are kept only until the dev server's tab closes. */
-  get local(): boolean {
-    return this.noServer;
   }
 }
 

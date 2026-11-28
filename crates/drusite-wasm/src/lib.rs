@@ -42,7 +42,7 @@ pub fn command(json: &str) -> Result<Command, ApiError> {
 pub fn unsupported_here(command: &Command) -> Option<ApiError> {
     use drusite_core::api::ErrorCode::Unsupported;
     let message = match command {
-        Command::ImportFolder { .. } | Command::SetBridgeFolder { .. } => {
+        Command::BridgeStatus | Command::ImportFolder { .. } | Command::SetBridgeFolder { .. } => {
             "a browser has no folders to keep Markdown in"
         }
         Command::ImportNotion { .. } => "choose the export's .zip file instead",
@@ -69,7 +69,12 @@ mod tests {
             "no",
         )));
         assert!(e.starts_with(r#"{"err":{"code":"invalid""#), "{e}");
-        assert!(unsupported_here(&Command::ImportFolder { folder: "/x".into() }).is_some());
+        assert!(
+            unsupported_here(&Command::ImportFolder {
+                folder: "/x".into()
+            })
+            .is_some()
+        );
         assert!(unsupported_here(&Command::ListPages).is_none());
     }
 }

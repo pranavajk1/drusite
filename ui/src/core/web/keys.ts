@@ -33,21 +33,21 @@ function run<T>(db: IDBDatabase, mode: IDBTransactionMode, f: (s: IDBObjectStore
   });
 }
 
-/** The store key, made the first time. */
-export async function storeKey(): Promise<Uint8Array> {
+/** The store key, made the first time; `fresh` when it was made just now. */
+export async function storeKey(): Promise<{ key: Uint8Array; fresh: boolean }> {
   const db = await open();
   try {
     const kept = await run<Kept | undefined>(db, "readonly", (s) => s.get(NAME));
     if (kept) {
       const raw = await crypto.subtle.decrypt({ name: "AES-GCM", iv: kept.iv }, kept.wrapper, kept.wrapped);
-      return new Uint8Array(raw);
+      return { key: new Uint8Array(raw), fresh: false };
     }
     const key = crypto.getRandomValues(new Uint8Array(32));
     const wrapper = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const wrapped = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, wrapper, key);
     await run(db, "readwrite", (s) => s.put({ wrapper, iv, wrapped } satisfies Kept, NAME));
-    return key;
+    return { key, fresh: true };
   } finally {
     db.close();
   }

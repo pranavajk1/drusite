@@ -12,8 +12,8 @@ use drusite_core::{Core, StoreKey};
 use drusite_model::WorkspaceId;
 use drusite_proto::{ClientMessage, Ping, ServerMessage, client_message, server_message};
 use js_sys::{Array, Uint8Array};
-use sqlite_wasm_rs::WasmOsCallback;
 use rsqlite_vfs::VfsFilesManager as _;
+use sqlite_wasm_rs::WasmOsCallback;
 use sqlite_wasm_vfs::sahpool::{OpfsSAHPoolCfgBuilder, OpfsSAHPoolUtil, install};
 use wasm_bindgen::prelude::*;
 // Here only for their browser features (randomness, clock).
@@ -69,7 +69,9 @@ impl WasmCore {
                     true
                 }
                 Err(e) => {
-                    web_log(&format!("drusite: OPFS isn't available ({e}); keeping notes in memory"));
+                    web_log(&format!(
+                        "drusite: OPFS isn't available ({e}); keeping notes in memory"
+                    ));
                     false
                 }
             }
@@ -107,6 +109,12 @@ impl WasmCore {
         CHANGED.swap(false, Ordering::SeqCst)
     }
 
+    /// Whether this browser holds nothing of its own yet (a first visit, or just signed out).
+    #[wasm_bindgen(js_name = isBlank)]
+    pub fn is_blank(&self) -> bool {
+        self.core.is_blank().unwrap_or(false)
+    }
+
     #[wasm_bindgen(js_name = workspaceId)]
     pub fn workspace_id(&self) -> String {
         self.core.workspace_id().to_string()
@@ -122,7 +130,8 @@ impl WasmCore {
             role: String,
         }
         let list: Vec<Info> = serde_json::from_str(account).map_err(js_error)?;
-        let ids: Vec<(WorkspaceId, bool)> = list.iter().map(|w| (w.id, w.role == "owner")).collect();
+        let ids: Vec<(WorkspaceId, bool)> =
+            list.iter().map(|w| (w.id, w.role == "owner")).collect();
         Ok(match self.core.workspace_to_join(&ids).map_err(js_error)? {
             Join::Own => "own".to_owned(),
             Join::Conflict => "conflict".to_owned(),
@@ -191,7 +200,10 @@ impl WasmCore {
         let result = page
             .parse()
             .map_err(|_| {
-                drusite_core::api::ApiError::new(drusite_core::api::ErrorCode::Invalid, "not a page")
+                drusite_core::api::ApiError::new(
+                    drusite_core::api::ErrorCode::Invalid,
+                    "not a page",
+                )
             })
             .and_then(|page| self.core.local_share(page));
         match result {

@@ -13,6 +13,8 @@ const ci = !!process.env.CI;
 
 export default defineConfig({
   testDir: "e2e",
+  // The browser version's own specs need the WebAssembly core (playwright.web.config.ts).
+  testIgnore: ["web/**"],
   fullyParallel: true,
   forbidOnly: ci,
   retries: 0,

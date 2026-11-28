@@ -23,10 +23,15 @@ async function transport(): Promise<Transport> {
   if (import.meta.env.MODE === "web" || import.meta.env.VITE_DRUSITE_CORE === "wasm") {
     const { webCore } = await import("./core/web/transport");
     const core = webCore();
-    // The browser tests (`e2e/`) reach the core the way the UI does.
-    if (import.meta.env.VITE_DRUSITE_TEST) (window as { drusiteWebCore?: unknown }).drusiteWebCore = core.transport;
     if (import.meta.env.PROD && "serviceWorker" in navigator) void navigator.serviceWorker.register("/sw.js");
     await core.ready;
+    // The browser tests (`e2e/`) compare what the page shows with what the core holds.
+    if (import.meta.env.VITE_DRUSITE_TEST) {
+      const { testCore } = await import("./core/web/testing");
+      const t = testCore(core.transport);
+      (window as { drusiteWebCore?: unknown }).drusiteWebCore = t.core;
+      return t.transport;
+    }
     return core.transport;
   }
   const { MemoryCore } = await import("./core/memory");

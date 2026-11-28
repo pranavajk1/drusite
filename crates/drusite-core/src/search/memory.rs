@@ -197,10 +197,14 @@ mod tests {
         let (walks, recipes) = (PageId::new(), PageId::new());
         let (b1, b2, b3) = (BlockId::new(), BlockId::new(), BlockId::new());
         index.add_title(walks, "Walks").unwrap();
-        index.add_block(walks, b1, "A long walk by the river").unwrap();
+        index
+            .add_block(walks, b1, "A long walk by the river")
+            .unwrap();
         index.add_block(walks, b2, "Coffee at Café Noir").unwrap();
         index.add_title(recipes, "Recipes").unwrap();
-        index.add_block(recipes, b3, "River trout with lemon").unwrap();
+        index
+            .add_block(recipes, b3, "River trout with lemon")
+            .unwrap();
         index.add_values(recipes, "Status: Done").unwrap();
         index.commit().unwrap();
         let find = |index: &Index, q: &str| index.search(&Index::words(q), 10).unwrap();
@@ -210,8 +214,14 @@ mod tests {
         assert_eq!(find(&index, "CAFE no")[0].block, Some(b2));
         assert_eq!(find(&index, "river").len(), 2);
         let title = &find(&index, "recip")[0];
-        assert_eq!((title.page, title.block, title.text.as_deref()), (recipes, None, None));
-        assert_eq!(find(&index, "done")[0].text.as_deref(), Some("Status: Done"));
+        assert_eq!(
+            (title.page, title.block, title.text.as_deref()),
+            (recipes, None, None)
+        );
+        assert_eq!(
+            find(&index, "done")[0].text.as_deref(),
+            Some("Status: Done")
+        );
         assert!(find(&index, "walk lemon").is_empty());
 
         index.remove_page(recipes);
@@ -224,7 +234,13 @@ mod tests {
         let mut index = Index::new().unwrap();
         let page = PageId::new();
         let (short, long) = (BlockId::new(), BlockId::new());
-        index.add_block(page, long, "notes notes about the heron and many other birds seen").unwrap();
+        index
+            .add_block(
+                page,
+                long,
+                "notes notes about the heron and many other birds seen",
+            )
+            .unwrap();
         index.add_block(page, short, "heron").unwrap();
         let hits = index.search(&Index::words("heron"), 10).unwrap();
         assert_eq!(hits[0].block, Some(short));
@@ -242,6 +258,9 @@ mod tests {
         }
         index.commit().unwrap();
         assert_eq!(index.docs.len(), 1);
-        assert_eq!(index.search(&Index::words("kept"), 10).unwrap()[0].page, keep);
+        assert_eq!(
+            index.search(&Index::words("kept"), 10).unwrap()[0].page,
+            keep
+        );
     }
 }

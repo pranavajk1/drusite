@@ -35,13 +35,15 @@ self.addEventListener("fetch", (event) => {
   // kept copy.
   if (request.mode === "navigate" && url.pathname === "/") {
     event.respondWith(
-      fetch(request).catch(() => caches.match("/").then((r) => r ?? Response.error())),
+      fetch(request).catch(() => caches.match("/", { ignoreVary: true }).then((r) => r ?? Response.error())),
     );
     return;
   }
-  // The app's files are named by their content: kept ones are always right.
+  // The app's files are named by their content: kept ones are always right. Matched by URL
+  // alone: module scripts are fetched in CORS mode, and a response that varies on Origin
+  // wouldn't match the request that kept it.
   if (url.pathname.startsWith("/app/")) {
-    event.respondWith(caches.match(request).then((r) => r ?? fetch(request)));
+    event.respondWith(caches.match(url.pathname, { ignoreVary: true }).then((r) => r ?? fetch(request)));
   }
   // Everything else (the API, sign-in pages, published pages) goes to the network untouched.
 });

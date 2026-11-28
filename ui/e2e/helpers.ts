@@ -6,6 +6,7 @@
 import { type Locator, type Page, expect } from "@playwright/test";
 
 import type { MemoryCore } from "../src/core/memory";
+import type { TestCore } from "../src/core/web/testing";
 import type { BlockKind } from "../src/core/types";
 
 export interface ShownBlock {
@@ -26,7 +27,17 @@ export interface TreeNode {
 declare global {
   interface Window {
     drusiteMemoryCore?: MemoryCore;
+    /** The WebAssembly core, in the web build's tests (playwright.web.config.ts). */
+    drusiteWebCore?: TestCore;
   }
+}
+
+// The UI's types leave out Node's; this is the one Node global used here.
+declare const process: { env: Record<string, string | undefined> };
+
+/** Whether the page runs the WebAssembly core rather than the in-memory one. */
+export function wasm(): boolean {
+  return process.env.DRUSITE_CORE === "wasm";
 }
 
 /** Opens the app on a fresh in-memory core, with the cursor in the body of its one page. */
@@ -63,12 +74,12 @@ function shownBlocks(page: Page): Promise<(ShownBlock & { id: string | null; hid
 
 /** The blocks of the open page as the core holds them, or a reason it can't say yet. */
 function heldBlocks(page: Page): Promise<(ShownBlock & { id: string })[] | string> {
-  return page.evaluate(() => {
-    const core = window.drusiteMemoryCore;
-    if (!core) return "no in-memory core on the page";
+  return page.evaluate(async () => {
+    const core = window.drusiteMemoryCore ?? window.drusiteWebCore;
+    if (!core) return "no core on the page to compare with";
     const open = core.openPages();
     if (open.length !== 1) return `${open.length} pages open`;
-    return core.blocks(open[0]!).map((b) => {
+    return (await core.blocks(open[0]!)).map((b) => {
       const checked = b.kind.type === "todo" && b.kind.checked;
       return {
         id: b.id,
@@ -119,8 +130,8 @@ function shownTree(page: Page): Promise<TreeNode[]> {
 /** The page tree as the core holds it, titled as the sidebar titles it. */
 function heldTree(page: Page): Promise<TreeNode[] | string> {
   return page.evaluate(async () => {
-    const core = window.drusiteMemoryCore;
-    if (!core) return "no in-memory core on the page";
+    const core = window.drusiteMemoryCore ?? window.drusiteWebCore;
+    if (!core) return "no core on the page to compare with";
     const res = await core.handle({ type: "listPages" });
     if (res.type !== "pages") return `listPages answered ${res.type}`;
     const byId = new Map(res.pages.map((p) => [p.id, p]));
@@ -149,7 +160,7 @@ export async function expectTree(page: Page, expected: TreeNode[]): Promise<void
 /** The title of the page the core has open, once exactly one is. */
 export async function openTitle(page: Page): Promise<string | null> {
   return page.evaluate(async () => {
-    const core = window.drusiteMemoryCore!;
+    const core = (window.drusiteMemoryCore ?? window.drusiteWebCore)!;
     const open = core.openPages();
     if (open.length !== 1) return null;
     const res = await core.handle({ type: "listPages" });
