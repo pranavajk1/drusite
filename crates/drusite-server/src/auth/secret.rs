@@ -17,6 +17,8 @@ pub(super) enum Kind {
     Refresh,
     Access,
     MagicLink,
+    /// The web app's session cookie.
+    Web,
 }
 
 impl Kind {
@@ -27,6 +29,7 @@ impl Kind {
             Self::Refresh => "drr_",
             Self::Access => "dra_",
             Self::MagicLink => "drm_",
+            Self::Web => "drw_",
         }
     }
 }

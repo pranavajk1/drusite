@@ -20,3 +20,4 @@ pub mod search;
 pub mod storage;
 pub mod sync;
 pub mod telemetry;
+pub mod web;

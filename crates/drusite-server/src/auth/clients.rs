@@ -20,6 +20,12 @@ use crate::app::AppState;
 /// The Drusite app: desktop, Android and iOS.
 pub const APP: &str = "drusite-app";
 
+/// The web app (the browser version), served by this server. The server is its OAuth client:
+/// it keeps the code verifier, redeems the code itself, and gives the browser a cookie, never a
+/// token. Its one redirect is this server's own `/web/callback`, checked where the server's
+/// address is known (`oauth::authorize`), and the token endpoint refuses it.
+pub const WEB: &str = "drusite-web";
+
 /// The private-use URI scheme the mobile apps catch the redirect on (RFC 8252 §7.1): the
 /// app's reverse-DNS identifier.
 pub const APP_SCHEME_REDIRECT: &str = "dev.drusite.app:/oauth/callback";
@@ -27,6 +33,8 @@ pub const APP_SCHEME_REDIRECT: &str = "dev.drusite.app:/oauth/callback";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Kind {
     App,
+    /// The web app: see [`WEB`].
+    Web,
     /// An MCP client, with the redirect URIs its metadata document lists.
     Agent {
         redirect_uris: Vec<String>,
@@ -67,9 +75,17 @@ fn app() -> Client {
     }
 }
 
-/// The built-in app, by its ID. For agents, use [`resolve`].
+/// The built-in apps, by ID. For agents, use [`resolve`].
 pub fn find(id: &str) -> Option<Client> {
-    (id == APP).then(app)
+    match id {
+        APP => Some(app()),
+        WEB => Some(Client {
+            id: WEB.to_owned(),
+            name: "Drusite in a browser".to_owned(),
+            kind: Kind::Web,
+        }),
+        _ => None,
+    }
 }
 
 /// Fetched metadata documents, kept a few minutes.
@@ -285,6 +301,8 @@ pub fn redirect_allowed(client: &Client, redirect_uri: &str) -> bool {
         return false;
     }
     match &client.kind {
+        // Only this server's own address, which `oauth::authorize` checks.
+        Kind::Web => false,
         Kind::App => {
             if redirect_uri == APP_SCHEME_REDIRECT {
                 return true;

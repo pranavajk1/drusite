@@ -89,13 +89,18 @@ pub(super) fn escape(text: &str) -> String {
 
 /// A page with a title and a message, for errors that end in the browser.
 pub(super) fn message_page(title: &str, message: &str) -> String {
+    message_page_html(title, &escape(message))
+}
+
+/// [`message_page`], with `html` (already escaped) as its message.
+pub(super) fn message_page_html(title: &str, html: &str) -> String {
     format!(
         "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
          <title>{t}</title><link rel=\"stylesheet\" href=\"/assets/signin.css\"></head>\
          <body><main><h1>{t}</h1><p>{m}</p></main></body></html>",
         t = escape(title),
-        m = escape(message),
+        m = html,
     )
 }
 

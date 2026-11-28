@@ -51,6 +51,9 @@ self_signup = false
 # device_idle_days = 30       # a device unused this long is signed out
 # device_max_days = 365       # every device signs in again after this long
 # session_hours = 12          # how long a browser stays signed in to the sign-in pages
+# The web app ([web]) signs in with a cookie instead of tokens, for shorter:
+# browser_idle_days = 14      # a browser unused this long is signed out
+# browser_max_days = 90       # every browser signs in again after this long
 
 [auth.passkeys]
 enabled = true
@@ -134,3 +137,8 @@ text_config = "simple"
 # Requests a minute from one address, and where to find the address behind a proxy:
 # per_minute = 300
 # client_ip_header = "x-forwarded-for"
+
+[web]
+# The browser version: the full app, served here at <public_url>/, for computers where the app
+# can't be installed. The built web app (ui/dist-web); the container image has it here.
+# dir = "/usr/share/drusite/web"
